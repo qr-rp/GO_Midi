@@ -1,0 +1,65 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-make mingw-w64-x86_64-wxWidgets
+    
+    - name: Build with wxWidgets
+      shell: msys2 {0}
+      run: |
+        mkdir build
+        cd build
+        cmake .. -G "MinGW Makefiles" \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DwxWidgets_ROOT_DIR=/mingw64 \
+          -DwxWidgets_LIB_DIR=/mingw64/lib \
+          -DUSE_STATIC_WX=OFF
+        mingw32-make -j$(nproc)
+    
+    - name: Collect DLLs
+      shell: msys2 {0}
+      run: |
+        mkdir release
+        cp build/GO_MIDI!.exe release/
+        # Copy required DLLs
+        cp /mingw64/bin/wx*.dll release/ || true
+        cp /mingw64/bin/libgcc_s_seh-1.dll release/ || true
+        cp /mingw64/bin/libstdc++-6.dll release/ || true
+        cp /mingw64/bin/libwinpthread-1.dll release/ || true
+        cp /mingw64/bin/zlib1.dll release/ || true
+        cp /mingw64/bin/libpng16-16.dll release/ || true
+        cp /mingw64/bin/libjpeg-8.dll release/ || true
+        cp /mingw64/bin/libtiff-6.dll release/ || true
+        cp /mingw64/bin/libexpat-1.dll release/ || true
+        cp /mingw64/bin/liblzma-5.dll release/ || true
+        cp /mingw64/bin/libbz2-1.dll release/ || true
+        cp /mingw64/bin/libzstd.dll release/ || true
+    
+    - name: Create archive
+      run: |
+        cd release
+        7z a -tzip ../GO_MIDI-Windows.zip .
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: GO_MIDI-Windows.zip
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
