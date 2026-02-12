@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+env:
+  WX_VERSION: "3.3.1"
+
 jobs:
   build:
     runs-on: windows-latest
@@ -18,41 +21,44 @@ jobs:
       with:
         msystem: MINGW64
         update: true
-        install: mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-make mingw-w64-x86_64-wxWidgets
+        install: mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-make mingw-w64-x86_64-pkg-config mingw-w64-x86_64-ninja
     
-    - name: Build with wxWidgets
+    - name: Cache wxWidgets
+      id: cache-wx
+      uses: actions/cache@v4
+      with:
+        path: D:\wxWidgets-install
+        key: wxwidgets-${{ env.WX_VERSION }}-mingw64
+    
+    - name: Download and Build wxWidgets
+      if: steps.cache-wx.outputs.cache-hit != 'true'
+      shell: msys2 {0}
+      run: |
+        cd /d
+        curl -L -o wxWidgets.tar.gz "https://github.com/wxWidgets/wxWidgets/releases/download/v${WX_VERSION}/wxWidgets-${WX_VERSION}.tar.bz2"
+        tar -xf wxWidgets.tar.gz
+        cd wxWidgets-${WX_VERSION}
+        mkdir build && cd build
+        ../configure --prefix=/d/wxWidgets-install --disable-debug --disable-shared --enable-static --without-libtiff --without-libjpeg --without-libpng
+        make -j$(nproc)
+        make install
+    
+    - name: Build Application
       shell: msys2 {0}
       run: |
         mkdir build
         cd build
         cmake .. -G "MinGW Makefiles" \
           -DCMAKE_BUILD_TYPE=Release \
-          -DwxWidgets_ROOT_DIR=/mingw64 \
-          -DwxWidgets_LIB_DIR=/mingw64/lib \
-          -DUSE_STATIC_WX=OFF
+          -DwxWidgets_ROOT_DIR=/d/wxWidgets-install \
+          -DwxWidgets_LIB_DIR=/d/wxWidgets-install/lib \
+          -DUSE_STATIC_WX=ON
         mingw32-make -j$(nproc)
-    
-    - name: Collect DLLs
-      shell: msys2 {0}
-      run: |
-        mkdir release
-        cp build/GO_MIDI!.exe release/
-        # Copy required DLLs
-        cp /mingw64/bin/wx*.dll release/ || true
-        cp /mingw64/bin/libgcc_s_seh-1.dll release/ || true
-        cp /mingw64/bin/libstdc++-6.dll release/ || true
-        cp /mingw64/bin/libwinpthread-1.dll release/ || true
-        cp /mingw64/bin/zlib1.dll release/ || true
-        cp /mingw64/bin/libpng16-16.dll release/ || true
-        cp /mingw64/bin/libjpeg-8.dll release/ || true
-        cp /mingw64/bin/libtiff-6.dll release/ || true
-        cp /mingw64/bin/libexpat-1.dll release/ || true
-        cp /mingw64/bin/liblzma-5.dll release/ || true
-        cp /mingw64/bin/libbz2-1.dll release/ || true
-        cp /mingw64/bin/libzstd.dll release/ || true
     
     - name: Create archive
       run: |
+        mkdir release
+        cp build/GO_MIDI!.exe release/
         cd release
         7z a -tzip ../GO_MIDI-Windows.zip .
     
