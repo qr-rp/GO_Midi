@@ -67,7 +67,7 @@ jobs:
       run: |
         mkdir release
         copy build\Release\GO_MIDI!.exe release\
-        copy -Recurse keymaps release\keymaps
+        copy "keymaps\燕云十六声默认键位.txt" release\
         cd release
         7z a -tzip ..\GO_MIDI-Windows.zip .
     
