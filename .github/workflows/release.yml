@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 env:
   WX_VERSION: "3.3.1"
 
@@ -33,14 +36,11 @@ jobs:
         cd D:\
         Invoke-WebRequest -Uri "https://github.com/wxWidgets/wxWidgets/releases/download/v${{ env.WX_VERSION }}/wxWidgets-${{ env.WX_VERSION }}.tar.bz2" -OutFile "wxWidgets.tar.bz2"
         
-        # Install 7zip if needed and extract
+        # Extract
         7z x "wxWidgets.tar.bz2" -y
         7z x "wxWidgets.tar" -o"D:\wxWidgets-src" -y
         
-        # List contents to find correct path
-        Get-ChildItem D:\wxWidgets-src -Recurse -Depth 1 | Select-Object FullName
-        
-        # Build wxWidgets
+        # Find and build wxWidgets
         $wxDir = Get-ChildItem D:\wxWidgets-src -Directory | Where-Object { $_.Name -like "wxWidgets*" } | Select-Object -First 1
         Write-Host "Found wxWidgets at: $($wxDir.FullName)"
         
