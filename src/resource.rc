@@ -1,0 +1,9 @@
+
+1 ICON "assets/icon.ico"
+APP_ICON ICON "assets/icon.ico"
+
+// Embed the application manifest for administrator privileges
+// Manifest ID 1 is for the executable, 2 is for the installer
+1 RT_MANIFEST "Win32.manifest"
+
+#include <wx/msw/wx.rc>

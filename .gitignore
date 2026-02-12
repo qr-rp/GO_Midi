@@ -1,0 +1,44 @@
+# Build directories
+build_mingw/
+build/
+cmake-build-*/
+out/
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Temp files
+*.tmp
+*.temp
+*.log
+
+# Config files (user-specific)
+config.ini
+
+# Executables
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Object files
+*.o
+*.obj
+*.a
+*.lib
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# Memory data
+memory_data/
+
+# Third-party libraries (use submodule instead)
+wxWidgets-*/
