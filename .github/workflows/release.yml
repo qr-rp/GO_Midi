@@ -24,29 +24,46 @@ jobs:
       uses: actions/cache@v4
       with:
         path: D:\wxWidgets-install
-        key: wxwidgets-${{ env.WX_VERSION }}-msvc-v1
+        key: wxwidgets-${{ env.WX_VERSION }}-msvc-v2
     
     - name: Download and Build wxWidgets
       if: steps.cache-wx.outputs.cache-hit != 'true'
+      shell: pwsh
       run: |
         cd D:\
-        curl -L -o wxWidgets.tar.bz2 "https://github.com/wxWidgets/wxWidgets/releases/download/v${{ env.WX_VERSION }}/wxWidgets-${{ env.WX_VERSION }}.tar.bz2"
-        7z x wxWidgets.tar.bz2 -y
-        7z x wxWidgets.tar -o"D:\wxWidgets-${{ env.WX_VERSION }}" -y
-        cd D:\wxWidgets-${{ env.WX_VERSION }}\build\msw
+        Invoke-WebRequest -Uri "https://github.com/wxWidgets/wxWidgets/releases/download/v${{ env.WX_VERSION }}/wxWidgets-${{ env.WX_VERSION }}.tar.bz2" -OutFile "wxWidgets.tar.bz2"
+        
+        # Install 7zip if needed and extract
+        7z x "wxWidgets.tar.bz2" -y
+        7z x "wxWidgets.tar" -o"D:\wxWidgets-src" -y
+        
+        # List contents to find correct path
+        Get-ChildItem D:\wxWidgets-src -Recurse -Depth 1 | Select-Object FullName
+        
+        # Build wxWidgets
+        $wxDir = Get-ChildItem D:\wxWidgets-src -Directory | Where-Object { $_.Name -like "wxWidgets*" } | Select-Object -First 1
+        Write-Host "Found wxWidgets at: $($wxDir.FullName)"
+        
+        cd "$($wxDir.FullName)\build\msw"
         msbuild wx_vc17.sln /m /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
+        
+        # Copy to install location
+        New-Item -ItemType Directory -Path "D:\wxWidgets-install" -Force
+        Copy-Item -Recurse "$($wxDir.FullName)\*" "D:\wxWidgets-install\" -Force
     
     - name: Build Application
+      shell: pwsh
       run: |
         mkdir build
         cd build
         cmake .. -G "Visual Studio 17 2022" -A x64 `
           -DCMAKE_BUILD_TYPE=Release `
-          -DwxWidgets_ROOT_DIR="D:\wxWidgets-${{ env.WX_VERSION }}" `
-          -DwxWidgets_LIB_DIR="D:\wxWidgets-${{ env.WX_VERSION }}\lib\vc_x64_lib"
+          -DwxWidgets_ROOT_DIR="D:\wxWidgets-install" `
+          -DwxWidgets_LIB_DIR="D:\wxWidgets-install\lib\vc_x64_lib"
         cmake --build . --config Release
     
     - name: Create archive
+      shell: pwsh
       run: |
         mkdir release
         copy build\Release\GO_MIDI!.exe release\
