@@ -67,6 +67,7 @@ jobs:
       run: |
         mkdir release
         copy build\Release\GO_MIDI!.exe release\
+        copy -Recurse keymaps release\keymaps
         cd release
         7z a -tzip ..\GO_MIDI-Windows.zip .
     
