@@ -1,7 +1,9 @@
-# <img src="src/assets/icon.ico" width="64" height="64" alt="GO_MIDI! Icon"> GO_MIDI!
+<p align="center">
+  <img src="src/assets/icon.ico" width="64" height="64" alt="GO_MIDI! Icon"> GO_MIDI!
+</p>
 
 <p align="center">
-  <strong>强大的 MIDI 文件播放器 | 键盘模拟器</strong>
+  <strong>强大的 MIDI 自动演奏工具</strong>
 </p>
 
 <p align="center">
