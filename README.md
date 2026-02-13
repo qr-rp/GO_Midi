@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/assets/icon.ico" width="64" height="64" alt="GO_MIDI! Icon"> GO_MIDI!
+  <img src="src/assets/icon.ico" width="64" height="64" alt="GO_MIDI! Icon">
 </p>
 
 <p align="center">
