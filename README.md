@@ -20,12 +20,6 @@
 </p>
 
 <p align="center">
-  <a href="https://qm.qq.com/q/qDWtM0egCW">
-    <img src="https://img.shields.io/badge/QQ%E7%BE%A4-GO__MIDI!-12B7F5?style=for-the-badge&logo=tencent-qq&logoColor=white" alt="QQ群">
-  </a>
-</p>
-
-<p align="center">
   💬 <a href="https://qm.qq.com/q/qDWtM0egCW"><strong>点击链接加入群聊【GO_MIDI!】</strong></a>
 </p>
 
