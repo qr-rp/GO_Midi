@@ -31,6 +31,12 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_LIST_ITEM_ACTIVATED(ID_PLAYLIST_CTRL, MainFrame::OnPlaylistActivated)
     EVT_LIST_BEGIN_DRAG(ID_PLAYLIST_CTRL, MainFrame::OnPlaylistBeginDrag)
     
+    // 多播放列表事件
+    EVT_CHOICE(ID_PLAYLIST_CHOICE, MainFrame::OnPlaylistChoice)
+    EVT_BUTTON(ID_ADD_PLAYLIST_BTN, MainFrame::OnAddPlaylist)
+    EVT_BUTTON(ID_DELETE_PLAYLIST_BTN, MainFrame::OnDeletePlaylist)
+    EVT_BUTTON(ID_RENAME_PLAYLIST_BTN, MainFrame::OnRenamePlaylist)
+    
     EVT_BUTTON(ID_PREV_BTN, MainFrame::OnPrev)
     EVT_BUTTON(ID_PLAY_BTN, MainFrame::OnPlay)
     EVT_BUTTON(ID_STOP_BTN, MainFrame::OnStop)
@@ -305,6 +311,28 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     wxPanel* panel = new wxPanel(parent);
     wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
     
+    // 播放列表选择器行
+    wxBoxSizer* playlistSizer = new wxBoxSizer(wxHORIZONTAL);
+    
+    wxStaticText* playlistLabel = new wxStaticText(panel, wxID_ANY, wxString::FromUTF8("播放列表:"));
+    m_playlistChoice = new wxChoice(panel, ID_PLAYLIST_CHOICE);
+    m_playlistChoice->SetMinSize(wxSize(120, -1));
+    
+    m_addPlaylistBtn = new wxButton(panel, ID_ADD_PLAYLIST_BTN, wxString::FromUTF8("新建"));
+    m_addPlaylistBtn->SetMinSize(wxSize(45, -1));
+    m_deletePlaylistBtn = new wxButton(panel, ID_DELETE_PLAYLIST_BTN, wxString::FromUTF8("删除"));
+    m_deletePlaylistBtn->SetMinSize(wxSize(45, -1));
+    m_renamePlaylistBtn = new wxButton(panel, ID_RENAME_PLAYLIST_BTN, wxString::FromUTF8("重命名"));
+    m_renamePlaylistBtn->SetMinSize(wxSize(55, -1));
+    
+    playlistSizer->Add(playlistLabel, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
+    playlistSizer->Add(m_playlistChoice, 1, wxALL | wxEXPAND, 2);
+    playlistSizer->Add(m_addPlaylistBtn, 0, wxALL, 2);
+    playlistSizer->Add(m_deletePlaylistBtn, 0, wxALL, 2);
+    playlistSizer->Add(m_renamePlaylistBtn, 0, wxALL, 2);
+    
+    sizer->Add(playlistSizer, 0, wxEXPAND | wxALL, 2);
+    
     // Toolbar
     wxBoxSizer* toolbarSizer = new wxBoxSizer(wxHORIZONTAL);
     
@@ -346,7 +374,7 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     font.SetPointSize(10);
     m_playlistCtrl->SetFont(font);
     
-    m_playlistCtrl->SetMinSize(wxSize(-1, 168)); // Approx 7 items
+    m_playlistCtrl->SetMinSize(wxSize(-1, 145)); // 略微减小高度以容纳播放列表选择器
     
     sizer->Add(m_playlistCtrl, 1, wxALL | wxEXPAND, 2);
     
@@ -651,16 +679,9 @@ void MainFrame::OnImportFile(wxCommandEvent& event) {
     m_playlistCtrl->Freeze();
 
     for (const auto& path : paths) {
-        // Check if already exists
-        bool exists = false;
-        for (const auto& f : m_playlist_files) {
-            if (f == path) {
-                exists = true;
-                break;
-            }
-        }
-        
-        if (!exists) {
+        // 使用 PlaylistManager 添加文件
+        if (m_playlistManager.AddFile(path)) {
+            // 同步更新本地缓存
             m_playlist_files.push_back(path);
             long newModelIndex = static_cast<long>(m_playlist_files.size() - 1);
             
@@ -693,7 +714,10 @@ void MainFrame::OnRemoveFile(wxCommandEvent& event) {
 
     wxString removedPath = m_playlist_files[modelIndex];
     
-    // Remove from model
+    // 使用 PlaylistManager 移除文件
+    m_playlistManager.RemoveFile(static_cast<size_t>(modelIndex));
+    
+    // 同步更新本地缓存
     m_playlist_files.erase(m_playlist_files.begin() + modelIndex);
 
     // Remove from view
@@ -753,7 +777,11 @@ void MainFrame::OnClearList(wxCommandEvent& event) {
     }
 
     m_playlistCtrl->DeleteAllItems();
+    
+    // 使用 PlaylistManager 清空文件
+    m_playlistManager.ClearFiles();
     m_playlist_files.clear();
+    
     m_current_path = "";
     m_current_midi.reset();
     
@@ -1845,44 +1873,24 @@ void MainFrame::SaveGlobalConfig() {
 
 void MainFrame::LoadPlaylistConfig() {
     m_playlistCtrl->DeleteAllItems();
-    m_playlist_files.clear();
-
-    if (!m_config->HasGroup("/Playlist")) {
-        return;
-    }
-
-    m_config->SetPath("/Playlist");
-
-    long count = 0;
-    m_config->Read("Count", &count, 0L);
-    for (long i = 0; i < count; ++i) {
-        wxString key = wxString::Format("Item_%ld", i);
-        wxString path;
-        if (m_config->Read(key, &path) && !path.IsEmpty() && wxFileExists(path)) {
-            m_playlist_files.push_back(path);
-        }
-    }
-
-    m_config->SetPath("/");
-
-    wxCommandEvent dummy;
-    OnSearch(dummy);
+    
+    // 使用 PlaylistManager 加载配置
+    m_playlistManager.LoadConfig(m_config.get());
+    
+    // 更新播放列表选择器
+    UpdatePlaylistChoice();
+    
+    // 刷新文件列表UI
+    RefreshPlaylistUI();
 }
 
 void MainFrame::SavePlaylistConfig() {
-    m_config->SetPath("/");
-    m_config->DeleteGroup("Playlist");
-    m_config->SetPath("/Playlist");
-
-    long count = static_cast<long>(m_playlist_files.size());
-    m_config->Write("Count", count);
-    for (long i = 0; i < count; ++i) {
-        wxString key = wxString::Format("Item_%ld", i);
-        m_config->Write(key, m_playlist_files[i]);
-    }
-
-    m_config->SetPath("/");
-    m_config->Flush();
+    // 同步当前文件列表到 PlaylistManager
+    // 注意：m_playlist_files 现在是 PlaylistManager 的引用代理
+    // 这里不需要额外同步，因为文件操作已经直接操作 PlaylistManager
+    
+    // 使用 PlaylistManager 保存配置
+    m_playlistManager.SaveConfig(m_config.get());
 }
 
 void MainFrame::LoadKeymapConfig() {
@@ -2165,5 +2173,179 @@ void MainFrame::LoadFileConfig(const wxString& filename) {
     }
 
     // LOG("LoadFileConfig finished.");
+}
+
+// ================= 多播放列表功能实现 =================
+
+void MainFrame::OnPlaylistChoice(wxCommandEvent& event) {
+    int sel = m_playlistChoice->GetSelection();
+    if (sel != wxNOT_FOUND && sel != m_playlistManager.GetCurrentPlaylistIndex()) {
+        SwitchToPlaylist(sel);
+    }
+}
+
+void MainFrame::OnAddPlaylist(wxCommandEvent& event) {
+    // 弹出对话框输入新播放列表名称
+    wxString name = wxGetTextFromUser(
+        wxString::FromUTF8("请输入新播放列表的名称:"),
+        wxString::FromUTF8("新建播放列表"),
+        wxString::FromUTF8("新列表"),
+        this
+    );
+    
+    if (!name.IsEmpty()) {
+        int newIndex = m_playlistManager.CreatePlaylist(name);
+        UpdatePlaylistChoice();
+        m_playlistChoice->SetSelection(newIndex);
+        SwitchToPlaylist(newIndex);
+        SavePlaylistConfig();
+        UpdateStatusText(wxString::FromUTF8("已创建播放列表: ") + name);
+    }
+}
+
+void MainFrame::OnDeletePlaylist(wxCommandEvent& event) {
+    // 检查是否只有一个播放列表
+    if (m_playlistManager.GetPlaylistCount() <= 1) {
+        wxMessageBox(
+            wxString::FromUTF8("至少需要保留一个播放列表"),
+            wxString::FromUTF8("提示"),
+            wxOK | wxICON_INFORMATION
+        );
+        return;
+    }
+    
+    wxString currentName = m_playlistManager.GetCurrentPlaylist() 
+        ? m_playlistManager.GetCurrentPlaylist()->name 
+        : wxString::FromUTF8("当前列表");
+    
+    int result = wxMessageBox(
+        wxString::Format(wxString::FromUTF8("确定要删除播放列表 \"%s\" 吗？\n该操作不可撤销。"), currentName),
+        wxString::FromUTF8("删除播放列表"),
+        wxYES_NO | wxICON_QUESTION
+    );
+    
+    if (result == wxYES) {
+        int currentIndex = m_playlistManager.GetCurrentPlaylistIndex();
+        
+        // 停止播放
+        if (m_engine.is_playing()) {
+            wxCommandEvent dummy;
+            OnStop(dummy);
+        }
+        
+        m_playlistManager.DeletePlaylist(currentIndex);
+        UpdatePlaylistChoice();
+        RefreshPlaylistUI();
+        SavePlaylistConfig();
+        UpdateStatusText(wxString::FromUTF8("已删除播放列表: ") + currentName);
+    }
+}
+
+void MainFrame::OnRenamePlaylist(wxCommandEvent& event) {
+    if (!m_playlistManager.GetCurrentPlaylist()) return;
+    
+    wxString oldName = m_playlistManager.GetCurrentPlaylist()->name;
+    
+    wxString newName = wxGetTextFromUser(
+        wxString::FromUTF8("请输入新的播放列表名称:"),
+        wxString::FromUTF8("重命名播放列表"),
+        oldName,
+        this
+    );
+    
+    if (!newName.IsEmpty() && newName != oldName) {
+        if (m_playlistManager.RenamePlaylist(m_playlistManager.GetCurrentPlaylistIndex(), newName)) {
+            UpdatePlaylistChoice();
+            SavePlaylistConfig();
+            UpdateStatusText(wxString::FromUTF8("已重命名为: ") + newName);
+        } else {
+            wxMessageBox(
+                wxString::FromUTF8("名称已存在或无效"),
+                wxString::FromUTF8("重命名失败"),
+                wxOK | wxICON_WARNING
+            );
+        }
+    }
+}
+
+void MainFrame::UpdatePlaylistChoice() {
+    m_playlistChoice->Clear();
+    wxArrayString names = m_playlistManager.GetPlaylistNames();
+    for (const auto& name : names) {
+        m_playlistChoice->Append(name);
+    }
+    
+    int currentIndex = m_playlistManager.GetCurrentPlaylistIndex();
+    if (currentIndex >= 0 && currentIndex < m_playlistChoice->GetCount()) {
+        m_playlistChoice->SetSelection(currentIndex);
+    }
+}
+
+void MainFrame::RefreshPlaylistUI() {
+    m_playlistCtrl->DeleteAllItems();
+    
+    // 从 PlaylistManager 获取文件列表
+    m_playlist_files.clear();
+    const auto& files = m_playlistManager.GetFiles();
+    for (const auto& file : files) {
+        m_playlist_files.push_back(file);
+    }
+    
+    // 应用搜索过滤
+    wxString keyword = m_searchCtrl->GetValue().Lower();
+    bool hasSearch = !keyword.IsEmpty();
+    
+    long idx = 0;
+    for (size_t i = 0; i < m_playlist_files.size(); ++i) {
+        wxString path = m_playlist_files[i];
+        wxString name = path.AfterLast('\\');
+        
+        if (!hasSearch || name.Lower().Contains(keyword)) {
+            m_playlistCtrl->InsertItem(idx, name);
+            m_playlistCtrl->SetItemData(idx, static_cast<long>(i));
+            
+            // 高亮当前播放的文件
+            if (path == m_current_path) {
+                m_playlistCtrl->SetItemState(idx, wxLIST_STATE_SELECTED, wxLIST_STATE_SELECTED);
+                m_current_play_index = static_cast<int>(idx);
+            }
+            
+            idx++;
+        }
+    }
+}
+
+void MainFrame::SwitchToPlaylist(int index) {
+    // 停止当前播放
+    if (m_engine.is_playing()) {
+        wxCommandEvent dummy;
+        OnStop(dummy);
+    }
+    
+    // 切换播放列表
+    m_playlistManager.SetCurrentPlaylist(index);
+    
+    // 重置状态
+    m_current_path = "";
+    m_current_midi.reset();
+    m_current_play_index = -1;
+    
+    // 更新UI
+    m_playlistChoice->SetSelection(index);
+    RefreshPlaylistUI();
+    
+    // 更新文件标签
+    m_currentFileLabel->SetLabel(wxString::FromUTF8("未选择文件"));
+    m_totalTimeLabel->SetLabel("00:00");
+    m_currentTimeLabel->SetLabel("00:00");
+    m_progressSlider->SetValue(0);
+    GetStatusBar()->SetStatusText("BPM: --", 2);
+    
+    SavePlaylistConfig();
+    
+    wxString playlistName = m_playlistManager.GetCurrentPlaylist() 
+        ? m_playlistManager.GetCurrentPlaylist()->name 
+        : wxString::FromUTF8("播放列表");
+    UpdateStatusText(wxString::FromUTF8("已切换到: ") + playlistName);
 }
 

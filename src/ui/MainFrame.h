@@ -21,6 +21,7 @@
 #include "../core/PlaybackEngine.h"
 #include "Widgets.h"
 #include "PlaybackState.h"
+#include "../util/PlaylistManager.h"
 
 // Define Control IDs
 enum {
@@ -29,6 +30,12 @@ enum {
     ID_CLEAR_BTN,
     ID_SEARCH_CTRL,
     ID_PLAYLIST_CTRL,
+    
+    // 多播放列表控件ID
+    ID_PLAYLIST_CHOICE,
+    ID_ADD_PLAYLIST_BTN,
+    ID_DELETE_PLAYLIST_BTN,
+    ID_RENAME_PLAYLIST_BTN,
     
     ID_PREV_BTN,
     ID_PLAY_BTN,
@@ -89,6 +96,12 @@ private:
     void OnPlaylistActivated(wxListEvent& event);
     void OnPlaylistBeginDrag(wxListEvent& event);
     void OnPlaylistEndDrag(wxMouseEvent& event);
+    
+    // 多播放列表事件处理
+    void OnPlaylistChoice(wxCommandEvent& event);
+    void OnAddPlaylist(wxCommandEvent& event);
+    void OnDeletePlaylist(wxCommandEvent& event);
+    void OnRenamePlaylist(wxCommandEvent& event);
     
     void OnPlay(wxCommandEvent& event);
     void OnStop(wxCommandEvent& event);
@@ -151,6 +164,11 @@ private:
     void UpdateWindowList();
     void UpdateTrackList(); // Updates track choices in all channel configs
     
+    // 多播放列表辅助函数
+    void RefreshPlaylistUI();                           // 刷新文件列表UI
+    void UpdatePlaylistChoice();                        // 更新播放列表下拉框
+    void SwitchToPlaylist(int index);                   // 切换播放列表
+    
     // Enhanced Random Playback
     void InitializeRandomShuffle();
     int GetNextRandomIndex();
@@ -186,6 +204,15 @@ private:
     wxButton* m_clearBtn;
     wxTextCtrl* m_searchCtrl;
     wxListView* m_playlistCtrl;
+    
+    // 多播放列表UI成员
+    wxChoice* m_playlistChoice;
+    wxButton* m_addPlaylistBtn;
+    wxButton* m_deletePlaylistBtn;
+    wxButton* m_renamePlaylistBtn;
+    
+    // 播放列表管理器
+    Util::PlaylistManager m_playlistManager;
 
     // UI Members - Controls
     wxButton* m_prevBtn;
