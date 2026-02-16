@@ -48,6 +48,79 @@ namespace {
         return std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isdigit(c); });
     }
 
+    // 检测文件编码并转换为 UTF-8
+    std::string read_file_with_encoding(const std::string& path) {
+        std::ifstream file(path, std::ios::binary);
+        if (!file.is_open()) return "";
+
+        std::vector<char> buffer((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        if (buffer.empty()) return "";
+
+        // 检测 UTF-8 BOM
+        if (buffer.size() >= 3 && 
+            static_cast<unsigned char>(buffer[0]) == 0xEF &&
+            static_cast<unsigned char>(buffer[1]) == 0xBB &&
+            static_cast<unsigned char>(buffer[2]) == 0xBF) {
+            // UTF-8 with BOM，跳过 BOM
+            return std::string(buffer.begin() + 3, buffer.end());
+        }
+
+        // 尝试作为 UTF-8 处理（不带 BOM）
+        // 简单的 UTF-8 有效性检查
+        bool is_utf8 = true;
+        size_t i = 0;
+        while (i < buffer.size()) {
+            if (static_cast<unsigned char>(buffer[i]) < 0x80) {
+                i++;
+            } else if (static_cast<unsigned char>(buffer[i]) < 0xC0) {
+                is_utf8 = false;
+                break;
+            } else if (static_cast<unsigned char>(buffer[i]) < 0xE0) {
+                if (i + 1 >= buffer.size()) { is_utf8 = false; break; }
+                if ((static_cast<unsigned char>(buffer[i+1]) & 0xC0) != 0x80) { is_utf8 = false; break; }
+                i += 2;
+            } else if (static_cast<unsigned char>(buffer[i]) < 0xF0) {
+                if (i + 2 >= buffer.size()) { is_utf8 = false; break; }
+                if ((static_cast<unsigned char>(buffer[i+1]) & 0xC0) != 0x80) { is_utf8 = false; break; }
+                if ((static_cast<unsigned char>(buffer[i+2]) & 0xC0) != 0x80) { is_utf8 = false; break; }
+                i += 3;
+            } else if (static_cast<unsigned char>(buffer[i]) < 0xF8) {
+                if (i + 3 >= buffer.size()) { is_utf8 = false; break; }
+                if ((static_cast<unsigned char>(buffer[i+1]) & 0xC0) != 0x80) { is_utf8 = false; break; }
+                if ((static_cast<unsigned char>(buffer[i+2]) & 0xC0) != 0x80) { is_utf8 = false; break; }
+                if ((static_cast<unsigned char>(buffer[i+3]) & 0xC0) != 0x80) { is_utf8 = false; break; }
+                i += 4;
+            } else {
+                is_utf8 = false;
+                break;
+            }
+        }
+
+        if (is_utf8) {
+            return std::string(buffer.begin(), buffer.end());
+        }
+
+        // 如果不是 UTF-8，尝试使用系统默认编码转换
+        // 获取系统代码页
+        UINT codepage = GetACP();
+        
+        // 使用 MultiByteToWideChar 转换为宽字符
+        int wide_len = MultiByteToWideChar(codepage, 0, buffer.data(), static_cast<int>(buffer.size()), nullptr, 0);
+        if (wide_len == 0) return std::string(buffer.begin(), buffer.end());
+        
+        std::vector<wchar_t> wide_buffer(wide_len);
+        MultiByteToWideChar(codepage, 0, buffer.data(), static_cast<int>(buffer.size()), wide_buffer.data(), wide_len);
+        
+        // 再转换为 UTF-8
+        int utf8_len = WideCharToMultiByte(CP_UTF8, 0, wide_buffer.data(), wide_len, nullptr, 0, nullptr, nullptr);
+        if (utf8_len == 0) return std::string(buffer.begin(), buffer.end());
+        
+        std::vector<char> utf8_buffer(utf8_len);
+        WideCharToMultiByte(CP_UTF8, 0, wide_buffer.data(), wide_len, utf8_buffer.data(), utf8_len, nullptr, nullptr);
+        
+        return std::string(utf8_buffer.begin(), utf8_buffer.end());
+    }
+
     const std::map<std::string, int>& get_vk_map() {
         static std::map<std::string, int> map = {
             {"q", 0x51}, {"w", 0x57}, {"e", 0x45}, {"r", 0x52}, {"t", 0x54}, {"y", 0x59}, {"u", 0x55}, {"i", 0x49}, {"o", 0x4F}, {"p", 0x50},
@@ -87,12 +160,8 @@ namespace Util {
     }
 
     bool KeyManager::load_config(const std::string& path) {
-        std::ifstream file(path, std::ios::binary);
-        if (!file.is_open()) return false;
-
-        std::ostringstream ss;
-        ss << file.rdbuf();
-        std::string content = ss.str();
+        std::string content = read_file_with_encoding(path);
+        if (content.empty()) return false;
 
         std::map<int, KeyMapping> new_map;
 
@@ -188,9 +257,16 @@ namespace Util {
             out << " 音符 " << entry.first << " (" << name << "): " << entry.second << "\n";
         }
 
+        std::string content = out.str();
         std::ofstream file(path, std::ios::binary);
         if (!file.is_open()) return false;
-        file << out.str();
+        
+        // 写入 UTF-8 BOM
+        unsigned char bom[] = {0xEF, 0xBB, 0xBF};
+        file.write(reinterpret_cast<const char*>(bom), sizeof(bom));
+        
+        // 写入内容
+        file << content;
         return true;
     }
 
