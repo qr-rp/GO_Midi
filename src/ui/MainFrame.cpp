@@ -1449,7 +1449,7 @@ void MainFrame::OnLoadKeymap(wxCommandEvent &event)
     if (openFileDialog.ShowModal() == wxID_CANCEL)
         return;
 
-    bool ok = m_engine.get_key_manager().load_config(openFileDialog.GetPath().ToStdString());
+    bool ok = m_engine.get_key_manager().load_config(openFileDialog.GetPath().ToStdString(wxConvUTF8));
     if (ok)
         UpdateStatusText(wxString::FromUTF8("键位已加载"));
     else
@@ -1469,7 +1469,7 @@ void MainFrame::OnSaveKeymap(wxCommandEvent &event)
     if (saveFileDialog.ShowModal() == wxID_CANCEL)
         return;
 
-    bool ok = m_engine.get_key_manager().save_config(saveFileDialog.GetPath().ToStdString());
+    bool ok = m_engine.get_key_manager().save_config(saveFileDialog.GetPath().ToStdString(wxConvUTF8));
     if (ok)
         UpdateStatusText(wxString::FromUTF8("键位已保存"));
     else

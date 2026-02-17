@@ -209,13 +209,37 @@ namespace
     // 检测文件编码并转换为 UTF-8
     std::string read_file_with_encoding(const std::string &path)
     {
-        std::ifstream file(path, std::ios::binary);
+        LOG_DEBUG("[read_file_with_encoding] 尝试打开文件: " << path);
+        std::ifstream file;
+#ifdef _WIN32
+        // On Windows, convert narrow string path to wide string to support non-ASCII characters
+        int wide_len = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), static_cast<int>(path.size()), nullptr, 0);
+        if (wide_len > 0)
+        {
+            std::vector<wchar_t> wide_path(wide_len);
+            MultiByteToWideChar(CP_UTF8, 0, path.c_str(), static_cast<int>(path.size()), wide_path.data(), wide_len);
+            file.open(wide_path.data(), std::ios::binary);
+        }
+        else
+        {
+            file.open(path, std::ios::binary);
+        }
+#else
+        file.open(path, std::ios::binary);
+#endif
         if (!file.is_open())
+        {
+            LOG_ERROR("[read_file_with_encoding] 无法打开文件: " << path);
             return "";
+        }
 
         std::vector<char> buffer((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        LOG_DEBUG("[read_file_with_encoding] 文件大小 (字节): " << buffer.size());
         if (buffer.empty())
+        {
+            LOG_ERROR("[read_file_with_encoding] 文件内容为空");
             return "";
+        }
 
         // 检测 UTF-8 BOM
         if (buffer.size() >= 3 &&
@@ -223,6 +247,7 @@ namespace
             static_cast<unsigned char>(buffer[1]) == 0xBB &&
             static_cast<unsigned char>(buffer[2]) == 0xBF)
         {
+            LOG_DEBUG("[read_file_with_encoding] 检测到 UTF-8 with BOM");
             // UTF-8 with BOM，跳过 BOM
             return std::string(buffer.begin() + 3, buffer.end());
         }
@@ -303,11 +328,13 @@ namespace
 
         if (is_utf8)
         {
+            LOG_DEBUG("[read_file_with_encoding] 检测到 UTF-8 (无 BOM)");
             return std::string(buffer.begin(), buffer.end());
         }
 
         // UTF-8 检测失败，使用字节频率分析来辅助检测编码
         EncodingInfo encoding = analyze_encoding(buffer);
+        LOG_DEBUG("[read_file_with_encoding] 分析出的编码: " << encoding.name << ", codepage: " << encoding.codepage);
 
         // 按优先级尝试不同的编码转换
         // 编码优先级列表：GBK, GB2312, Big5, Shift-JIS, Windows-1252, ISO-8859-1, 系统默认
@@ -326,7 +353,12 @@ namespace
         {
             if (try_convert_to_utf8(buffer, encoding.codepage, result))
             {
+                LOG_DEBUG("[read_file_with_encoding] 使用分析出的编码转换成功: " << encoding.name);
                 return result;
+            }
+            else
+            {
+                LOG_DEBUG("[read_file_with_encoding] 使用分析出的编码转换失败: " << encoding.name);
             }
         }
 
@@ -339,11 +371,17 @@ namespace
 
             if (try_convert_to_utf8(buffer, enc.codepage, result))
             {
+                LOG_DEBUG("[read_file_with_encoding] 使用编码转换成功: " << enc.name);
                 return result;
+            }
+            else
+            {
+                LOG_DEBUG("[read_file_with_encoding] 使用编码转换失败: " << enc.name);
             }
         }
 
         // 所有编码都失败，返回原始数据
+        LOG_DEBUG("[read_file_with_encoding] 所有编码转换失败，返回原始数据");
         return std::string(buffer.begin(), buffer.end());
     }
 
@@ -391,8 +429,10 @@ namespace Util
     bool KeyManager::load_config(const std::string &path)
     {
         LOG_DEBUG("[KeyManager] 加载键位配置: " << path);
+        LOG_DEBUG("[KeyManager] 检查文件是否存在: " << path);
 
         std::string content = read_file_with_encoding(path);
+        LOG_DEBUG("[KeyManager] read_file_with_encoding returned content length: " << content.size());
         if (content.empty())
         {
             LOG_WARN("无法读取键位配置文件或文件为空: " << path);
@@ -524,7 +564,23 @@ namespace Util
         }
 
         std::string content = out.str();
-        std::ofstream file(path, std::ios::binary);
+        std::ofstream file;
+#ifdef _WIN32
+        // On Windows, convert narrow string path to wide string to support non-ASCII characters
+        int wide_len = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), static_cast<int>(path.size()), nullptr, 0);
+        if (wide_len > 0)
+        {
+            std::vector<wchar_t> wide_path(wide_len);
+            MultiByteToWideChar(CP_UTF8, 0, path.c_str(), static_cast<int>(path.size()), wide_path.data(), wide_len);
+            file.open(wide_path.data(), std::ios::binary);
+        }
+        else
+        {
+            file.open(path, std::ios::binary);
+        }
+#else
+        file.open(path, std::ios::binary);
+#endif
         if (!file.is_open())
         {
             LOG_ERROR("无法创建键位配置文件: " << path);
