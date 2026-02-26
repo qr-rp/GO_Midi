@@ -67,7 +67,7 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
 wxEND_EVENT_TABLE()
 
 MainFrame::MainFrame()
-    : wxFrame(nullptr, wxID_ANY, "GO_Midi!", wxDefaultPosition, wxSize(500, 650), wxDEFAULT_FRAME_STYLE & ~(wxRESIZE_BORDER | wxMAXIMIZE_BOX))
+    : wxFrame(nullptr, wxID_ANY, "GO_Midi!", wxDefaultPosition, wxSize(500, 680), wxDEFAULT_FRAME_STYLE & ~(wxRESIZE_BORDER | wxMAXIMIZE_BOX))
 {
     wxIcon icon("APP_ICON", wxBITMAP_TYPE_ICO_RESOURCE);
     if (icon.IsOk()) {
