@@ -2314,30 +2314,12 @@ void MainFrame::RefreshPlaylistUI() {
 }
 
 void MainFrame::SwitchToPlaylist(int index) {
-    // 停止当前播放
-    if (m_engine.is_playing()) {
-        wxCommandEvent dummy;
-        OnStop(dummy);
-    }
-    
     // 切换播放列表
     m_playlistManager.SetCurrentPlaylist(index);
-    
-    // 重置状态
-    m_current_path = "";
-    m_current_midi.reset();
-    m_current_play_index = -1;
     
     // 更新UI
     m_playlistChoice->SetSelection(index);
     RefreshPlaylistUI();
-    
-    // 更新文件标签
-    m_currentFileLabel->SetLabel(wxString::FromUTF8("未选择文件"));
-    m_totalTimeLabel->SetLabel("00:00");
-    m_currentTimeLabel->SetLabel("00:00");
-    m_progressSlider->SetValue(0);
-    GetStatusBar()->SetStatusText("BPM: --", 2);
     
     SavePlaylistConfig();
     
