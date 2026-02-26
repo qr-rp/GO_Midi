@@ -5,6 +5,9 @@
 #include <wx/string.h>
 #include <wx/arrstr.h>
 
+// 前向声明 wxConfigBase（在全局命名空间）
+class wxConfigBase;
+
 namespace Util {
 
 /**
