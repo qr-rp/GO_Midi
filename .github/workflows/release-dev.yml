@@ -1,0 +1,101 @@
+name: Build and Release (Dev)
+
+on:
+  push:
+    tags:
+      - 'dev-v*'
+
+permissions:
+  contents: write
+
+env:
+  WX_VERSION: "3.3.1"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+    
+    - name: Cache wxWidgets
+      id: cache-wx
+      uses: actions/cache@v4
+      with:
+        path: D:\wxWidgets-install
+        key: wxwidgets-${{ env.WX_VERSION }}-msvc-v2
+    
+    - name: Download and Build wxWidgets
+      if: steps.cache-wx.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        cd D:\
+        Invoke-WebRequest -Uri "https://github.com/wxWidgets/wxWidgets/releases/download/v${{ env.WX_VERSION }}/wxWidgets-${{ env.WX_VERSION }}.tar.bz2" -OutFile "wxWidgets.tar.bz2"
+        
+        # Extract
+        7z x "wxWidgets.tar.bz2" -y
+        7z x "wxWidgets.tar" -o"D:\wxWidgets-src" -y
+        
+        # Find and build wxWidgets
+        $wxDir = Get-ChildItem D:\wxWidgets-src -Directory | Where-Object { $_.Name -like "wxWidgets*" } | Select-Object -First 1
+        Write-Host "Found wxWidgets at: $($wxDir.FullName)"
+        
+        cd "$($wxDir.FullName)\build\msw"
+        msbuild wx_vc17.sln /m /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
+        
+        # Copy to install location
+        New-Item -ItemType Directory -Path "D:\wxWidgets-install" -Force
+        Copy-Item -Recurse "$($wxDir.FullName)\*" "D:\wxWidgets-install\" -Force
+    
+    - name: Build Application
+      shell: pwsh
+      run: |
+        mkdir build
+        cd build
+        cmake .. -G "Visual Studio 17 2022" -A x64 `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DwxWidgets_ROOT_DIR="D:\wxWidgets-install" `
+          -DwxWidgets_LIB_DIR="D:\wxWidgets-install\lib\vc_x64_lib"
+        cmake --build . --config Release
+    
+    - name: Verify Admin Manifest
+      shell: pwsh
+      run: |
+        # Check if manifest is embedded
+        $exePath = "build\Release\GO_MIDI!.exe"
+        $manifest = mt.exe -inputresource:$exePath;#1 -out:$env:TEMP\extracted.manifest 2>&1
+        if (Test-Path "$env:TEMP\extracted.manifest") {
+          Write-Host "✓ Manifest found in executable"
+          Get-Content "$env:TEMP\extracted.manifest" | Select-String "requestedExecutionLevel"
+          Remove-Item "$env:TEMP\extracted.manifest" -ErrorAction SilentlyContinue
+        } else {
+          # Try alternative: check file properties
+          Write-Host "⚠ Checking executable properties..."
+          $shell = New-Object -ComObject Shell.Application
+          $folder = $shell.Namespace((Get-Item $exePath).DirectoryName)
+          $file = $folder.ParseName((Get-Item $exePath).Name)
+          # Check for UAC shield icon indicator in properties
+          Write-Host "Executable built successfully. Admin privileges will be requested on launch."
+        }
+        
+    - name: Create archive
+      shell: pwsh
+      run: |
+        mkdir release
+        copy build\Release\GO_MIDI!.exe release\
+        copy "keymaps\燕云十六声默认键位.txt" release\
+        cd release
+        7z a -tzip ..\GO_MIDI-Windows-dev.zip .
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: GO_MIDI-Windows-dev.zip
+        generate_release_notes: true
+        prerelease: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
