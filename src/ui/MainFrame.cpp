@@ -314,7 +314,6 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     // 播放列表选择器行
     wxBoxSizer* playlistSizer = new wxBoxSizer(wxHORIZONTAL);
     
-    wxStaticText* playlistLabel = new wxStaticText(panel, wxID_ANY, wxString::FromUTF8("播放列表:"));
     m_playlistChoice = new wxChoice(panel, ID_PLAYLIST_CHOICE);
     m_playlistChoice->SetMinSize(wxSize(120, -1));
     
@@ -325,7 +324,6 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     m_renamePlaylistBtn = new wxButton(panel, ID_RENAME_PLAYLIST_BTN, wxString::FromUTF8("重命名"));
     m_renamePlaylistBtn->SetMinSize(wxSize(55, -1));
     
-    playlistSizer->Add(playlistLabel, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     playlistSizer->Add(m_playlistChoice, 1, wxALL | wxEXPAND, 2);
     playlistSizer->Add(m_addPlaylistBtn, 0, wxALL, 2);
     playlistSizer->Add(m_deletePlaylistBtn, 0, wxALL, 2);
