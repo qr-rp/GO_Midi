@@ -969,9 +969,7 @@ void MainFrame::PlayIndex(int viewIndex, bool autoPlay) {
     if (path != m_current_path) {
          try {
             LOG("Loading file from path...");
-            // Use c_str() to be safer or verify string first? 
-            // path.ToStdString() usually safe.
-            LOG("Path to load: " + path.ToStdString());
+            LOG("Path to load: " + std::string(path.ToUTF8()));
             
             m_current_path = path;
             
@@ -1294,7 +1292,7 @@ void MainFrame::OnLoadKeymap(wxCommandEvent& event) {
                                 wxString::FromUTF8("键位配置文件 (*.txt)|*.txt"), wxFD_OPEN | wxFD_FILE_MUST_EXIST);
     if (openFileDialog.ShowModal() == wxID_CANCEL) return;
     
-    bool ok = m_engine.get_key_manager().load_config(openFileDialog.GetPath().ToStdString());
+    bool ok = m_engine.get_key_manager().load_config(openFileDialog.GetPath().ToUTF8().data());
     if (ok) UpdateStatusText(wxString::FromUTF8("键位已加载"));
     else UpdateStatusText(wxString::FromUTF8("键位加载失败"));
     if (ok) {
@@ -1308,7 +1306,7 @@ void MainFrame::OnSaveKeymap(wxCommandEvent& event) {
                                 wxString::FromUTF8("键位配置文件 (*.txt)|*.txt"), wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
     if (saveFileDialog.ShowModal() == wxID_CANCEL) return;
     
-    bool ok = m_engine.get_key_manager().save_config(saveFileDialog.GetPath().ToStdString());
+    bool ok = m_engine.get_key_manager().save_config(saveFileDialog.GetPath().ToUTF8().data());
     if (ok) UpdateStatusText(wxString::FromUTF8("键位已保存"));
     else UpdateStatusText(wxString::FromUTF8("键位保存失败"));
     if (ok) SaveKeymapConfig();
@@ -2005,13 +2003,13 @@ bool MainFrame::CompareWindowTitleAndProcess(const wxString& configTitle, const 
     
     // 同时比较标题和进程名
     bool titleMatch = (cleanConfigTitle == cleanWindowTitle);
-    bool processMatch = (configProcess.ToStdString() == windowInfo.process_name);
+    bool processMatch = (std::string(configProcess.ToUTF8()) == windowInfo.process_name);
     
     return titleMatch && processMatch;
 }
 
 void MainFrame::LoadFileConfig(const wxString& filename) {
-    LOG("LoadFileConfig start: " + filename.ToStdString());
+    LOG("LoadFileConfig start: " + std::string(filename.ToUTF8()));
     wxString safeName = filename;
     safeName.Replace("/", "_");
     safeName.Replace("\\", "_");
@@ -2027,7 +2025,7 @@ void MainFrame::LoadFileConfig(const wxString& filename) {
     m_config->SetPath("/");
     
     if (m_config->HasGroup(groupName)) {
-        LOG("Loading existing config group: " + groupName.ToStdString());
+        LOG("Loading existing config group: " + std::string(groupName.ToUTF8()));
         m_config->SetPath(groupName);
     } else {
         LOG("No existing config, using defaults.");
@@ -2084,8 +2082,8 @@ void MainFrame::LoadFileConfig(const wxString& filename) {
                     if (CompareWindowTitleAndProcess(windowTitle, windowProcess, m_windowList[winIdx])) {
                          c.windowChoice->SetSelection(i);
                          found = true;
-                         LOG("Recovered window by Title and Process: " + windowTitle.ToStdString() + 
-                             " / " + windowProcess.ToStdString());
+                         LOG("Recovered window by Title and Process: " + std::string(windowTitle.ToUTF8()) + 
+                             " / " + std::string(windowProcess.ToUTF8()));
                          break;
                     }
                 }
@@ -2098,10 +2096,10 @@ void MainFrame::LoadFileConfig(const wxString& filename) {
                 
                 size_t winIdx = i - 1;
                 if (winIdx < m_windowList.size()) {
-                    if (m_windowList[winIdx].process_name == windowProcess.ToStdString()) {
+                    if (m_windowList[winIdx].process_name == std::string(windowProcess.ToUTF8())) {
                          c.windowChoice->SetSelection(i);
                          found = true;
-                         LOG("Recovered window by Process Name: " + windowProcess.ToStdString());
+                         LOG("Recovered window by Process Name: " + std::string(windowProcess.ToUTF8()));
                          break;
                     }
                 }
