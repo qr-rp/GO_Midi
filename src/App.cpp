@@ -27,12 +27,13 @@ static void LoadLogConfigFromConfig(LogLevel& level, bool& enabled)
     wxFileName exePath(wxStandardPaths::Get().GetExecutablePath());
     wxString configPath = wxFileName(exePath.GetPath(), "config.ini").GetFullPath();
 
-    // 使用 wxFileConfig 读取配置
+    // 使用 wxFileConfig 读写配置
     wxFileConfig config("wx_GO_MIDI", "wx_GO_MIDI", configPath, "", wxCONFIG_USE_LOCAL_FILE);
 
-    // 读取日志级别
+    // 读取日志级别，不存在则写入默认值
+    config.SetPath("/Global");
     wxString levelStr;
-    if (config.Read("/Global/LogLevel", &levelStr))
+    if (config.Read("LogLevel", &levelStr))
     {
         if (!Logger::ParseLevel(std::string(levelStr.ToUTF8()), level))
         {
@@ -40,11 +41,26 @@ static void LoadLogConfigFromConfig(LogLevel& level, bool& enabled)
             level = LogLevel::Info;
         }
     }
+    else
+    {
+        // 配置不存在，写入默认值
+        config.Write("LogLevel", "info");
+    }
 
-    // 读取日志开关（默认关闭）
+    // 读取日志开关，不存在则写入默认值
     long enabledValue = 0;
-    config.Read("/Global/LogEnabled", &enabledValue, 0L);
-    enabled = (enabledValue != 0);
+    if (config.Read("LogEnabled", &enabledValue))
+    {
+        enabled = (enabledValue != 0);
+    }
+    else
+    {
+        // 配置不存在，写入默认值（关闭）
+        config.Write("LogEnabled", 0L);
+    }
+
+    // 刷新配置到文件
+    config.Flush();
 }
 
 bool App::OnInit()
