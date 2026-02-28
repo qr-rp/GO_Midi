@@ -1360,6 +1360,19 @@ void MainFrame::OnABPointSetB(wxCommandEvent& event) {
     m_abPointA_ms = minAB;
     m_abPointB_ms = maxAB;
 
+    // 同步更新 slider 中的 AB 点值
+    m_progressSlider->SetABPoints(static_cast<int>(m_abPointA_ms), static_cast<int>(m_abPointB_ms));
+
+    // 立即跳转到A点开始播放
+    if (m_engine.is_playing() || m_engine.is_paused()) {
+        m_engine.seek(m_abPointA_ms / 1000.0);
+        // 更新进度条显示
+        m_progressSlider->SetValue(static_cast<int>(m_abPointA_ms));
+        m_currentTimeLabel->SetLabel(wxString::Format("%02d:%02d",
+            static_cast<int>(m_abPointA_ms / 1000) / 60,
+            static_cast<int>(m_abPointA_ms / 1000) % 60));
+    }
+
     UpdateStatusText(wxString::Format(wxString::FromUTF8("AB点循环: %02d:%02d - %02d:%02d"),
         static_cast<int>(m_abPointA_ms / 1000) / 60,
         static_cast<int>(m_abPointA_ms / 1000) % 60,
