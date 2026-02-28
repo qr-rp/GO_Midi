@@ -8,6 +8,7 @@
 #include <wx/tglbtn.h>
 #include <wx/statline.h>
 #include <wx/confbase.h>
+#include <wx/dnd.h>
 #include <memory>
 #include <vector>
 #include <chrono>
@@ -22,6 +23,18 @@
 #include "Widgets.h"
 #include "PlaybackState.h"
 #include "../util/PlaylistManager.h"
+
+// Forward declaration
+class MainFrame;
+
+// File drop target for drag & drop support
+class MidiFileDropTarget : public wxFileDropTarget {
+public:
+    MidiFileDropTarget(MainFrame* frame);
+    virtual bool OnDropFiles(wxCoord x, wxCoord y, const wxArrayString& filenames) override;
+private:
+    MainFrame* m_frame;
+};
 
 // Define Control IDs
 enum {
@@ -76,6 +89,9 @@ class MainFrame : public wxFrame {
 public:
     MainFrame();
     ~MainFrame();
+    
+    // 添加拖放的文件到播放列表
+    void AddDroppedFiles(const wxArrayString& files);
 
 private:
     // UI Initialization

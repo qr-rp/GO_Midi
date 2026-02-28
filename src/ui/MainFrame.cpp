@@ -66,6 +66,22 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_TIMER(ID_STATUS_TIMER, MainFrame::OnStatusTimer)
 wxEND_EVENT_TABLE()
 
+// MidiFileDropTarget implementation
+MidiFileDropTarget::MidiFileDropTarget(MainFrame* frame)
+    : m_frame(frame)
+{
+}
+
+bool MidiFileDropTarget::OnDropFiles(wxCoord x, wxCoord y, const wxArrayString& filenames)
+{
+    if (m_frame && filenames.GetCount() > 0)
+    {
+        m_frame->AddDroppedFiles(filenames);
+        return true;
+    }
+    return false;
+}
+
 MainFrame::MainFrame()
     : wxFrame(nullptr, wxID_ANY, "GO_Midi!", wxDefaultPosition, wxSize(500, 700), wxDEFAULT_FRAME_STYLE & ~(wxRESIZE_BORDER | wxMAXIMIZE_BOX))
 {
@@ -86,6 +102,9 @@ MainFrame::MainFrame()
     SetFont(font);
 
     InitUI();
+    
+    // 设置文件拖放目标
+    SetDropTarget(new MidiFileDropTarget(this));
 
     LoadGlobalConfig();
     LoadPlaylistConfig();
@@ -699,6 +718,47 @@ void MainFrame::OnImportFile(wxCommandEvent& event) {
     if (added) {
         // No full refresh needed
         SavePlaylistConfig();
+    }
+}
+
+void MainFrame::AddDroppedFiles(const wxArrayString& files) {
+    if (!m_playlistCtrl) return;
+    
+    wxString keyword = m_searchCtrl->GetValue().Lower();
+    bool hasSearch = !keyword.IsEmpty();
+    int addedCount = 0;
+    
+    m_playlistCtrl->Freeze();
+    
+    for (const auto& path : files) {
+        // 只处理 MIDI 文件
+        wxString ext = path.AfterLast('.').Lower();
+        if (ext != "mid" && ext != "midi") {
+            continue;
+        }
+        
+        // 使用 PlaylistManager 添加文件
+        if (m_playlistManager.AddFile(path)) {
+            // 同步更新本地缓存
+            m_playlist_files.push_back(path);
+            long newModelIndex = static_cast<long>(m_playlist_files.size() - 1);
+            
+            // Incremental Update: Add to view if matches search (or no search)
+            wxString name = path.AfterLast('\\');
+            if (!hasSearch || name.Lower().Contains(keyword)) {
+                long viewIdx = m_playlistCtrl->GetItemCount();
+                m_playlistCtrl->InsertItem(viewIdx, name);
+                m_playlistCtrl->SetItemData(viewIdx, newModelIndex);
+            }
+            addedCount++;
+        }
+    }
+    
+    m_playlistCtrl->Thaw();
+    
+    if (addedCount > 0) {
+        SavePlaylistConfig();
+        UpdateStatusText(wxString::Format(wxString::FromUTF8("已添加 %d 个MIDI文件"), addedCount));
     }
 }
 
