@@ -1171,11 +1171,7 @@ void MainFrame::OnStop(wxCommandEvent& event) {
     m_progressSlider->SetValue(0);
     m_currentTimeLabel->SetLabel("00:00");
 
-    // 清除 AB 点循环
-    m_abLoopEnabled = false;
-    m_abPointA_ms = -1.0;
-    m_abPointB_ms = -1.0;
-    m_progressSlider->ClearABPoints();
+    // 注意：不清除 AB 点，保留设置供下次播放使用
 
     // Fix: If selection changed while playing/paused, load the new file now
     if (wasActive && m_current_play_index != -1 && m_playlistCtrl) {
@@ -1363,9 +1359,12 @@ void MainFrame::OnABPointSetB(wxCommandEvent& event) {
     // 同步更新 slider 中的 AB 点值
     m_progressSlider->SetABPoints(static_cast<int>(m_abPointA_ms), static_cast<int>(m_abPointB_ms));
 
-    // 立即跳转到A点开始播放
-    if (m_engine.is_playing() || m_engine.is_paused()) {
+    // 如果有加载的 MIDI 文件，跳转到 A 点并播放
+    if (m_current_midi && m_current_midi->length > 0) {
         m_engine.seek(m_abPointA_ms / 1000.0);
+        if (!m_engine.is_playing()) {
+            m_engine.play();
+        }
         // 更新进度条显示
         m_progressSlider->SetValue(static_cast<int>(m_abPointA_ms));
         m_currentTimeLabel->SetLabel(wxString::Format("%02d:%02d",
