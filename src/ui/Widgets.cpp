@@ -23,7 +23,6 @@ wxBEGIN_EVENT_TABLE(ModernSlider, wxControl)
     EVT_ERASE_BACKGROUND(ModernSlider::OnEraseBackground)
     EVT_RIGHT_DOWN(ModernSlider::OnRightDown)
     EVT_RIGHT_UP(ModernSlider::OnRightUp)
-    EVT_CONTEXT_MENU(ModernSlider::OnContextMenu)
 wxEND_EVENT_TABLE()
 
 ModernSlider::ModernSlider(wxWindow* parent, wxWindowID id, int value, int minValue, int maxValue,
@@ -382,7 +381,7 @@ void ModernSlider::OnEraseBackground(wxEraseEvent& event) {
 void ModernSlider::OnRightDown(wxMouseEvent& event) {
     int x = event.GetX();
 
-    // 如果AB点都已设置，检查是否在A或B点附近
+    // 如果AB点都已设置，检查是否在A或B点附近开始拖动
     if (m_abState == 2) {
         if (IsNearAPoint(x)) {
             CaptureMouse();
@@ -396,6 +395,9 @@ void ModernSlider::OnRightDown(wxMouseEvent& event) {
             return;
         }
     }
+
+    // 不跳过事件，让 OnRightUp 处理
+    event.Skip();
 }
 
 void ModernSlider::OnRightUp(wxMouseEvent& event) {
@@ -411,20 +413,8 @@ void ModernSlider::OnRightUp(wxMouseEvent& event) {
         return;
     }
 
-    // 不是拖动，处理点击
-    // (由 OnContextMenu 处理)
-}
-
-void ModernSlider::OnContextMenu(wxContextMenuEvent& event) {
-    // 如果正在进行拖动，忽略此事件
-    if (m_isDraggingA || m_isDraggingB) {
-        return;
-    }
-
-    // 获取鼠标位置（屏幕坐标转客户端坐标）
-    wxPoint screenPos = event.GetPosition();
-    wxPoint clientPos = ScreenToClient(screenPos);
-    int x = clientPos.x;
+    // 不是拖动，处理点击设置AB点
+    int x = event.GetX();
 
     // 状态机处理
     if (m_abState == 0) {
@@ -450,7 +440,6 @@ void ModernSlider::OnContextMenu(wxContextMenuEvent& event) {
         GetEventHandler()->ProcessEvent(evt);
     }
     else if (m_abState == 2) {
-        // 检查是否点击在A或B点附近（用于拖动），由OnRightDown处理
         // 如果不是在A或B点附近，则清除AB点
         if (!IsNearAPoint(x) && !IsNearBPoint(x)) {
             m_aPoint = -1;

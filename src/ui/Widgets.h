@@ -64,7 +64,6 @@ private:
     void OnEraseBackground(wxEraseEvent& event);
     void OnRightDown(wxMouseEvent& event);
     void OnRightUp(wxMouseEvent& event);
-    void OnContextMenu(wxContextMenuEvent& event);
 
     int ValueFromPos(int x);
     int PosFromValue(int value);
