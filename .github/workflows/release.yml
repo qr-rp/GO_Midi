@@ -104,5 +104,6 @@ jobs:
       with:
         files: GO_MIDI-Windows.zip
         generate_release_notes: true
+        prerelease: ${{ startsWith(github.ref, 'refs/tags/dev-') }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
