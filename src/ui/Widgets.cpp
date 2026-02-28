@@ -5,6 +5,10 @@
 wxDEFINE_EVENT(wxEVT_MODERN_SLIDER_CHANGE, wxCommandEvent);
 wxDEFINE_EVENT(wxEVT_MODERN_SLIDER_THUMBTRACK, wxCommandEvent);
 wxDEFINE_EVENT(wxEVT_MODERN_SLIDER_THUMBRELEASE, wxCommandEvent);
+wxDEFINE_EVENT(wxEVT_AB_POINT_SET_A, wxCommandEvent);
+wxDEFINE_EVENT(wxEVT_AB_POINT_SET_B, wxCommandEvent);
+wxDEFINE_EVENT(wxEVT_AB_POINT_CLEAR, wxCommandEvent);
+wxDEFINE_EVENT(wxEVT_AB_POINT_DRAG, wxCommandEvent);
 
 // ================= ModernSlider =================
 
@@ -17,19 +21,29 @@ wxBEGIN_EVENT_TABLE(ModernSlider, wxControl)
     EVT_ENTER_WINDOW(ModernSlider::OnEnter)
     EVT_LEAVE_WINDOW(ModernSlider::OnLeave)
     EVT_ERASE_BACKGROUND(ModernSlider::OnEraseBackground)
+    EVT_RIGHT_DOWN(ModernSlider::OnRightDown)
+    EVT_RIGHT_UP(ModernSlider::OnRightUp)
+    EVT_CONTEXT_MENU(ModernSlider::OnContextMenu)
 wxEND_EVENT_TABLE()
 
 ModernSlider::ModernSlider(wxWindow* parent, wxWindowID id, int value, int minValue, int maxValue,
                            const wxPoint& pos, const wxSize& size, long style)
     : wxControl(parent, id, pos, size, style | wxBORDER_NONE | wxFULL_REPAINT_ON_RESIZE),
       m_value(value), m_minValue(minValue), m_maxValue(maxValue),
-      m_isDragging(false), m_isHovering(false)
+      m_isDragging(false), m_isHovering(false),
+      m_aPoint(-1), m_bPoint(-1), m_abState(0),
+      m_isDraggingA(false), m_isDraggingB(false)
 {
     // Style configuration (matching Python version)
     m_trackColor = wxColour(200, 200, 200);
     m_progressColor = wxColour(0, 120, 215); // Windows Blue
     m_thumbColor = wxColour(255, 255, 255);
     m_thumbBorderColor = wxColour(180, 180, 180);
+
+    // AB Point colors
+    m_aPointColor = wxColour(255, 100, 100);    // 红色
+    m_bPointColor = wxColour(100, 255, 100);    // 绿色
+    m_abRangeColor = wxColour(255, 200, 100, 80); // 半透明橙色
 
     m_trackHeight = 4.0;
     m_thumbRadius = 6.0;
@@ -59,6 +73,53 @@ void ModernSlider::SetRange(int minValue, int maxValue) {
     m_minValue = minValue;
     m_maxValue = maxValue;
     SetValue(m_value); // Re-clamp
+}
+
+// AB Point methods
+void ModernSlider::SetABPoints(int aPoint, int bPoint) {
+    m_aPoint = aPoint;
+    m_bPoint = bPoint;
+    m_abState = (aPoint >= 0 && bPoint >= 0) ? 2 : (aPoint >= 0 ? 1 : 0);
+    Refresh();
+}
+
+void ModernSlider::ClearABPoints() {
+    m_aPoint = -1;
+    m_bPoint = -1;
+    m_abState = 0;
+    m_isDraggingA = false;
+    m_isDraggingB = false;
+    Refresh();
+}
+
+bool ModernSlider::HasABPoints() const {
+    return m_aPoint >= 0 && m_bPoint >= 0;
+}
+
+int ModernSlider::PosFromValue(int value) {
+    int width, height;
+    GetClientSize(&width, &height);
+
+    double padding = m_thumbRadiusHover + 2;
+    double trackWidth = width - 2 * padding;
+    double rangeVal = m_maxValue - m_minValue;
+
+    if (rangeVal <= 0) return (int)padding;
+
+    double pct = (double)(value - m_minValue) / rangeVal;
+    return (int)(padding + pct * trackWidth);
+}
+
+bool ModernSlider::IsNearAPoint(int x) {
+    if (m_aPoint < 0) return false;
+    int aPos = PosFromValue(m_aPoint);
+    return std::abs(x - aPos) < 10;
+}
+
+bool ModernSlider::IsNearBPoint(int x) {
+    if (m_bPoint < 0) return false;
+    int bPos = PosFromValue(m_bPoint);
+    return std::abs(x - bPos) < 10;
 }
 
 void ModernSlider::OnPaint(wxPaintEvent& event) {
@@ -102,11 +163,78 @@ void ModernSlider::OnPaint(wxPaintEvent& event) {
         gc->DrawRoundedRectangle(padding, trackY - m_trackHeight / 2.0, progressWidth, m_trackHeight, m_trackHeight / 2.0);
     }
 
+    // Draw AB Range (between A and B points)
+    if (m_aPoint >= 0 && m_bPoint >= 0) {
+        int minAB = std::min(m_aPoint, m_bPoint);
+        int maxAB = std::max(m_aPoint, m_bPoint);
+        double aPct = (double)(minAB - m_minValue) / rangeVal;
+        double bPct = (double)(maxAB - m_minValue) / rangeVal;
+        double aX = padding + trackWidth * aPct;
+        double bX = padding + trackWidth * bPct;
+        double rangeWidth = bX - aX;
+
+        if (rangeWidth > 0) {
+            gc->SetBrush(wxBrush(m_abRangeColor));
+            gc->SetPen(*wxTRANSPARENT_PEN);
+            gc->DrawRoundedRectangle(aX, trackY - m_trackHeight, rangeWidth, m_trackHeight * 2, m_trackHeight / 2.0);
+        }
+    }
+
+    // Draw A Point marker
+    if (m_aPoint >= 0) {
+        double aPct = (double)(m_aPoint - m_minValue) / rangeVal;
+        double aX = std::round(padding + trackWidth * aPct);
+        double markerRadius = 5.0;
+
+        // A point triangle marker (pointing down)
+        gc->SetBrush(wxBrush(m_aPointColor));
+        gc->SetPen(wxPen(*wxWHITE, 1));
+        wxGraphicsPath path = gc->CreatePath();
+        path.MoveToPoint(aX, trackY - m_trackHeight - 2);
+        path.AddLineToPoint(aX - markerRadius, trackY - m_trackHeight - 2 - markerRadius * 1.5);
+        path.AddLineToPoint(aX + markerRadius, trackY - m_trackHeight - 2 - markerRadius * 1.5);
+        path.CloseSubpath();
+        gc->FillPath(path);
+        gc->StrokePath(path);
+
+        // Draw "A" label
+        wxFont font(8, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD);
+        gc->SetFont(font, *wxWHITE);
+        double textW, textH;
+        gc->GetTextExtent("A", &textW, &textH);
+        gc->DrawText("A", aX - textW / 2, trackY - m_trackHeight - 2 - markerRadius * 1.5 - textH - 2);
+    }
+
+    // Draw B Point marker
+    if (m_bPoint >= 0) {
+        double bPct = (double)(m_bPoint - m_minValue) / rangeVal;
+        double bX = std::round(padding + trackWidth * bPct);
+        double markerRadius = 5.0;
+
+        // B point triangle marker (pointing down)
+        gc->SetBrush(wxBrush(m_bPointColor));
+        gc->SetPen(wxPen(*wxWHITE, 1));
+        wxGraphicsPath path = gc->CreatePath();
+        path.MoveToPoint(bX, trackY - m_trackHeight - 2);
+        path.AddLineToPoint(bX - markerRadius, trackY - m_trackHeight - 2 - markerRadius * 1.5);
+        path.AddLineToPoint(bX + markerRadius, trackY - m_trackHeight - 2 - markerRadius * 1.5);
+        path.CloseSubpath();
+        gc->FillPath(path);
+        gc->StrokePath(path);
+
+        // Draw "B" label
+        wxFont font(8, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD);
+        gc->SetFont(font, *wxWHITE);
+        double textW, textH;
+        gc->GetTextExtent("B", &textW, &textH);
+        gc->DrawText("B", bX - textW / 2, trackY - m_trackHeight - 2 - markerRadius * 1.5 - textH - 2);
+    }
+
     // Draw Thumb
     // Snap to pixel grid for crisp rendering
-    double thumbX = std::round(padding + progressWidth); 
+    double thumbX = std::round(padding + progressWidth);
     double rawRadius = (m_isHovering || m_isDragging) ? m_thumbRadiusHover : m_thumbRadius;
-    
+
     // Use x.5 radius for sharp 1px borders on integer coordinates
     // This ensures the 1px border is drawn exactly within a pixel, preventing blur
     double drawRadius = std::floor(rawRadius) + 0.5;
@@ -197,8 +325,42 @@ void ModernSlider::OnMotion(wxMouseEvent& event) {
             evtChange.SetInt(m_value);
             GetEventHandler()->ProcessEvent(evtChange);
         }
+    } else if (m_isDraggingA && event.Dragging() && event.RightIsDown()) {
+        // 拖动A点
+        int val = ValueFromPos(event.GetX());
+        if (val != m_aPoint) {
+            m_aPoint = val;
+            Refresh();
+
+            // Send AB Point drag event
+            wxCommandEvent evt(wxEVT_AB_POINT_DRAG, GetId());
+            evt.SetEventObject(this);
+            evt.SetInt(m_aPoint);
+            evt.SetClientData(reinterpret_cast<void*>(static_cast<intptr_t>(1))); // 1 = A point
+            GetEventHandler()->ProcessEvent(evt);
+        }
+    } else if (m_isDraggingB && event.Dragging() && event.RightIsDown()) {
+        // 拖动B点
+        int val = ValueFromPos(event.GetX());
+        if (val != m_bPoint) {
+            m_bPoint = val;
+            Refresh();
+
+            // Send AB Point drag event
+            wxCommandEvent evt(wxEVT_AB_POINT_DRAG, GetId());
+            evt.SetEventObject(this);
+            evt.SetInt(m_bPoint);
+            evt.SetClientData(reinterpret_cast<void*>(static_cast<intptr_t>(2))); // 2 = B point
+            GetEventHandler()->ProcessEvent(evt);
+        }
     } else if (!m_isDragging) {
         m_isHovering = true;
+        // 设置鼠标光标提示
+        if (IsNearAPoint(event.GetX()) || IsNearBPoint(event.GetX())) {
+            SetCursor(wxCursor(wxCURSOR_SIZEWE));
+        } else {
+            SetCursor(*wxSTANDARD_CURSOR);
+        }
         Refresh();
     }
 }
@@ -215,6 +377,92 @@ void ModernSlider::OnLeave(wxMouseEvent& event) {
 
 void ModernSlider::OnEraseBackground(wxEraseEvent& event) {
     // Do nothing to prevent flicker
+}
+
+void ModernSlider::OnRightDown(wxMouseEvent& event) {
+    int x = event.GetX();
+
+    // 如果AB点都已设置，检查是否在A或B点附近
+    if (m_abState == 2) {
+        if (IsNearAPoint(x)) {
+            CaptureMouse();
+            m_isDraggingA = true;
+            SetCursor(wxCursor(wxCURSOR_SIZEWE));
+            return;
+        } else if (IsNearBPoint(x)) {
+            CaptureMouse();
+            m_isDraggingB = true;
+            SetCursor(wxCursor(wxCURSOR_SIZEWE));
+            return;
+        }
+    }
+}
+
+void ModernSlider::OnRightUp(wxMouseEvent& event) {
+    if (m_isDraggingA || m_isDraggingB) {
+        // 结束拖动
+        if (HasCapture()) {
+            ReleaseMouse();
+        }
+        m_isDraggingA = false;
+        m_isDraggingB = false;
+        SetCursor(*wxSTANDARD_CURSOR);
+        Refresh();
+        return;
+    }
+
+    // 不是拖动，处理点击
+    // (由 OnContextMenu 处理)
+}
+
+void ModernSlider::OnContextMenu(wxContextMenuEvent& event) {
+    // 如果正在进行拖动，忽略此事件
+    if (m_isDraggingA || m_isDraggingB) {
+        return;
+    }
+
+    // 获取鼠标位置（屏幕坐标转客户端坐标）
+    wxPoint screenPos = event.GetPosition();
+    wxPoint clientPos = ScreenToClient(screenPos);
+    int x = clientPos.x;
+
+    // 状态机处理
+    if (m_abState == 0) {
+        // 设置A点
+        m_aPoint = ValueFromPos(x);
+        m_abState = 1;
+        Refresh();
+
+        wxCommandEvent evt(wxEVT_AB_POINT_SET_A, GetId());
+        evt.SetEventObject(this);
+        evt.SetInt(m_aPoint);
+        GetEventHandler()->ProcessEvent(evt);
+    }
+    else if (m_abState == 1) {
+        // 设置B点
+        m_bPoint = ValueFromPos(x);
+        m_abState = 2;
+        Refresh();
+
+        wxCommandEvent evt(wxEVT_AB_POINT_SET_B, GetId());
+        evt.SetEventObject(this);
+        evt.SetInt(m_bPoint);
+        GetEventHandler()->ProcessEvent(evt);
+    }
+    else if (m_abState == 2) {
+        // 检查是否点击在A或B点附近（用于拖动），由OnRightDown处理
+        // 如果不是在A或B点附近，则清除AB点
+        if (!IsNearAPoint(x) && !IsNearBPoint(x)) {
+            m_aPoint = -1;
+            m_bPoint = -1;
+            m_abState = 0;
+            Refresh();
+
+            wxCommandEvent evt(wxEVT_AB_POINT_CLEAR, GetId());
+            evt.SetEventObject(this);
+            GetEventHandler()->ProcessEvent(evt);
+        }
+    }
 }
 
 

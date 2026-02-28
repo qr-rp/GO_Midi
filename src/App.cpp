@@ -54,9 +54,8 @@ bool App::OnInit()
     bool logEnabled;
     LoadLogConfigFromConfig(logLevel, logEnabled);
     
-    // 初始化日志系统
-    Logger::Instance().Initialize(logLevel);
-    Logger::Instance().SetFileOutput(logEnabled);
+    // 初始化日志系统（传入 fileOutput 参数）
+    Logger::Instance().Initialize(logLevel, "./logs/", logEnabled);
     
     LOG_INFO("GO_MIDI! 启动中...");
 

@@ -15,7 +15,7 @@ namespace GO_MIDI
         return instance;
     }
 
-    bool Logger::Initialize(LogLevel level, const std::string &logDir)
+    bool Logger::Initialize(LogLevel level, const std::string &logDir, bool fileOutput)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
 
@@ -25,34 +25,46 @@ namespace GO_MIDI
         }
 
         m_level.store(level);
+        m_fileOutput.store(fileOutput);
 
-        // 创建日志目录
-        try
+        // 只有启用文件输出时才创建日志目录和文件
+        if (fileOutput)
         {
-            std::filesystem::path logPath(logDir);
-            if (!std::filesystem::exists(logPath))
+            // 创建日志目录
+            try
             {
-                std::filesystem::create_directories(logPath);
+                std::filesystem::path logPath(logDir);
+                if (!std::filesystem::exists(logPath))
+                {
+                    std::filesystem::create_directories(logPath);
+                }
             }
-        }
-        catch (const std::exception &e)
-        {
-            std::cerr << "[Logger] Failed to create log directory: " << e.what() << std::endl;
-            return false;
-        }
+            catch (const std::exception &e)
+            {
+                std::cerr << "[Logger] Failed to create log directory: " << e.what() << std::endl;
+                return false;
+            }
 
-        // 清理旧日志并创建新日志文件
-        if (!CreateLogFile(logDir))
-        {
-            return false;
+            // 清理旧日志并创建新日志文件
+            if (!CreateLogFile(logDir))
+            {
+                return false;
+            }
         }
 
         m_initialized = true;
 
         // 记录初始化信息
         std::ostringstream oss;
-        oss << "Logger initialized. Level: " << LevelToString(level)
-            << ", Log file: " << m_currentLogFile;
+        oss << "Logger initialized. Level: " << LevelToString(level);
+        if (fileOutput)
+        {
+            oss << ", Log file: " << m_currentLogFile;
+        }
+        else
+        {
+            oss << ", File output: disabled";
+        }
 
         // 直接输出到控制台和文件（此时已初始化）
         std::cout << "[Logger] " << oss.str() << std::endl;

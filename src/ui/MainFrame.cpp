@@ -48,6 +48,12 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_MODERN_SLIDER_THUMBTRACK(ID_PROGRESS_SLIDER, MainFrame::OnSliderTrack)
     EVT_MODERN_SLIDER_THUMBRELEASE(ID_PROGRESS_SLIDER, MainFrame::OnSliderRelease)
     EVT_MODERN_SLIDER_CHANGE(ID_PROGRESS_SLIDER, MainFrame::OnSliderChange)
+
+    // AB Point events
+    EVT_AB_POINT_SET_A(ID_PROGRESS_SLIDER, MainFrame::OnABPointSetA)
+    EVT_AB_POINT_SET_B(ID_PROGRESS_SLIDER, MainFrame::OnABPointSetB)
+    EVT_AB_POINT_CLEAR(ID_PROGRESS_SLIDER, MainFrame::OnABPointClear)
+    EVT_AB_POINT_DRAG(ID_PROGRESS_SLIDER, MainFrame::OnABPointDrag)
     
     EVT_SPINCTRLDOUBLE(ID_SPEED_CTRL, MainFrame::OnSpeedChange)
     EVT_SPINCTRL(ID_MIN_PITCH_CTRL, MainFrame::OnPitchRangeChange)
@@ -1037,6 +1043,11 @@ void MainFrame::PlayIndex(int viewIndex, bool autoPlay) {
             LOG("Stopping engine...");
             m_engine.stop();
             LOG("Engine stopped.");
+
+            // 清除 AB 点循环
+            m_abLoopEnabled = false;
+            m_abPointA_ms = -1.0;
+            m_abPointB_ms = -1.0;
             
 #ifdef _WIN32
             LOG("Creating MidiFile (Win32)...");
@@ -1159,6 +1170,12 @@ void MainFrame::OnStop(wxCommandEvent& event) {
     m_stateMachine.TransitionTo(UI::PlaybackStatus::Stopped);
     m_progressSlider->SetValue(0);
     m_currentTimeLabel->SetLabel("00:00");
+
+    // 清除 AB 点循环
+    m_abLoopEnabled = false;
+    m_abPointA_ms = -1.0;
+    m_abPointB_ms = -1.0;
+    m_progressSlider->ClearABPoints();
 
     // Fix: If selection changed while playing/paused, load the new file now
     if (wasActive && m_current_play_index != -1 && m_playlistCtrl) {
@@ -1323,6 +1340,58 @@ void MainFrame::OnSliderChange(wxCommandEvent& event) {
         double current_time = static_cast<double>(val) / 1000.0;
         int currentSec = static_cast<int>(current_time);
         m_currentTimeLabel->SetLabel(wxString::Format("%02d:%02d", currentSec / 60, currentSec % 60));
+    }
+}
+
+void MainFrame::OnABPointSetA(wxCommandEvent& event) {
+    m_abPointA_ms = static_cast<double>(event.GetInt());
+    UpdateStatusText(wxString::Format(wxString::FromUTF8("A点: %02d:%02d"),
+        static_cast<int>(m_abPointA_ms / 1000) / 60,
+        static_cast<int>(m_abPointA_ms / 1000) % 60));
+}
+
+void MainFrame::OnABPointSetB(wxCommandEvent& event) {
+    m_abPointB_ms = static_cast<double>(event.GetInt());
+    m_abLoopEnabled = true;
+
+    // 确保 A < B
+    double minAB = std::min(m_abPointA_ms, m_abPointB_ms);
+    double maxAB = std::max(m_abPointA_ms, m_abPointB_ms);
+    m_abPointA_ms = minAB;
+    m_abPointB_ms = maxAB;
+
+    UpdateStatusText(wxString::Format(wxString::FromUTF8("AB点循环: %02d:%02d - %02d:%02d"),
+        static_cast<int>(m_abPointA_ms / 1000) / 60,
+        static_cast<int>(m_abPointA_ms / 1000) % 60,
+        static_cast<int>(m_abPointB_ms / 1000) / 60,
+        static_cast<int>(m_abPointB_ms / 1000) % 60));
+}
+
+void MainFrame::OnABPointClear(wxCommandEvent& event) {
+    m_abPointA_ms = -1.0;
+    m_abPointB_ms = -1.0;
+    m_abLoopEnabled = false;
+    UpdateStatusText(wxString::FromUTF8("已清除AB点"));
+}
+
+void MainFrame::OnABPointDrag(wxCommandEvent& event) {
+    int pointType = reinterpret_cast<intptr_t>(event.GetClientData());
+    double newValue = static_cast<double>(event.GetInt());
+
+    if (pointType == 1) {
+        // A点被拖动
+        m_abPointA_ms = newValue;
+    } else if (pointType == 2) {
+        // B点被拖动
+        m_abPointB_ms = newValue;
+    }
+
+    // 确保 A < B
+    if (m_abPointA_ms >= 0 && m_abPointB_ms >= 0) {
+        double minAB = std::min(m_abPointA_ms, m_abPointB_ms);
+        double maxAB = std::max(m_abPointA_ms, m_abPointB_ms);
+        m_abPointA_ms = minAB;
+        m_abPointB_ms = maxAB;
     }
 }
 
@@ -1675,31 +1744,39 @@ void MainFrame::OnTimer(wxTimerEvent& event) {
 
     if (m_engine.is_playing()) {
         double t = m_engine.get_current_time();
-        
+
+        // AB Point Loop: 如果到达B点，跳回A点
+        if (m_abLoopEnabled && m_abPointA_ms >= 0 && m_abPointB_ms > m_abPointA_ms) {
+            double currentTime_ms = t * 1000.0;
+            if (currentTime_ms >= m_abPointB_ms) {
+                m_engine.seek(m_abPointA_ms / 1000.0);
+            }
+        }
+
         // 优化：减少UI更新频率
         static int updateCounter = 0;
         static double lastUpdateTime = -1.0;
         bool shouldUpdateUI = (updateCounter++ % 3 == 0); // 每50ms更新一次
-        
+
         if (!m_is_dragging_slider && m_current_midi && m_current_midi->length > 0) {
              // Slider value is in milliseconds
              int newSliderVal = static_cast<int>(t * 1000);
              if (shouldUpdateUI && std::abs(m_progressSlider->GetValue() - newSliderVal) > 100) {
                  m_progressSlider->SetValue(newSliderVal);
              }
-             
+
              // 仅在秒数变化时更新时间标签
              if (std::abs(t - lastUpdateTime) >= 1.0 || lastUpdateTime < 0) {
                  m_stateUpdater->UpdateTimeLabels(t, m_current_midi->length);
                  lastUpdateTime = t;
              }
         }
-        
+
         // Ensure state is Playing (not Paused)
         if (!m_engine.is_paused() && !m_stateMachine.IsPlaying()) {
             m_stateMachine.TransitionTo(UI::PlaybackStatus::Playing);
         }
-        
+
         // Check if finished
         if (m_current_midi && t >= m_current_midi->length && m_current_midi->length > 0) {
             if (m_play_mode == wxString::FromUTF8("单曲循环")) {

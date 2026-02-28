@@ -73,10 +73,11 @@ namespace GO_MIDI
          * @brief 初始化日志系统
          * @param level 最低输出级别
          * @param logDir 日志目录，默认为 "./logs/"
+         * @param fileOutput 是否启用文件输出，默认为 true
          * @return true 初始化成功
          * @return false 初始化失败
          */
-        bool Initialize(LogLevel level = LogLevel::Info, const std::string &logDir = "./logs/");
+        bool Initialize(LogLevel level = LogLevel::Info, const std::string &logDir = "./logs/", bool fileOutput = true);
 
         /**
          * @brief 关闭日志系统

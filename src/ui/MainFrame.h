@@ -129,6 +129,12 @@ private:
     void OnSliderTrack(wxCommandEvent& event);
     void OnSliderRelease(wxCommandEvent& event);
     void OnSliderChange(wxCommandEvent& event);
+
+    // AB Point Event Handlers
+    void OnABPointSetA(wxCommandEvent& event);
+    void OnABPointSetB(wxCommandEvent& event);
+    void OnABPointClear(wxCommandEvent& event);
+    void OnABPointDrag(wxCommandEvent& event);
     
     void OnSpeedChange(wxSpinDoubleEvent& event);
     void OnPitchRangeChange(wxSpinEvent& event);
@@ -278,6 +284,11 @@ private:
     bool m_is_dragging_slider = false;
     bool m_is_programmatic_selection = false;
     bool m_is_dragging_playlist = false;
+
+    // AB Point Loop State
+    double m_abPointA_ms = -1.0;       // A点位置（毫秒），-1表示未设置
+    double m_abPointB_ms = -1.0;       // B点位置（毫秒），-1表示未设置
+    bool m_abLoopEnabled = false;      // AB点循环是否启用
     long m_drag_source_view = -1;
     std::vector<wxString> m_playlist_files; // Stores full paths
     int m_current_play_index = -1;
