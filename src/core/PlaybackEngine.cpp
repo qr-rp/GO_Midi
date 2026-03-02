@@ -126,55 +126,54 @@ namespace Core
     void PlaybackEngine::pause()
     {
         LOG_ENTRY();
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_paused = true;
-        release_all_active_keys();
-        m_active_keys.clear();
+
+        std::vector<std::pair<int, void *>> keys_to_release;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_paused = true;
+            // 将活动按键转移到临时变量，准备释放
+            keys_to_release.swap(m_active_keys);
+        }
+
+        // 在锁外释放按键，避免长时间持有锁
+        for (const auto &key : keys_to_release)
+        {
+            m_simulator.send_key_up(key.first, 0, key.second);
+        }
+
         LOG_INFO("播放暂停，当前时间=" << m_current_time << "s");
     }
 
     void PlaybackEngine::stop()
     {
         LOG_ENTRY();
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_playing = false;
-        m_paused = false;
-        m_current_time = 0.0;
 
-        // Release all active keys with enhanced cleanup
-        release_all_active_keys();
-
-        // Clear active keys list
-        m_active_keys.clear();
-        m_active_keys.shrink_to_fit(); // Free memory
-
-        // 优化：停止后缩容释放多余内存
-        m_all_notes.ShrinkIfNeeded();
-        m_events.ShrinkIfNeeded();
-        m_temp_notes.ShrinkIfNeeded();
-
-        LOG_INFO("播放停止");
-    }
-
-    // Helper method to release all active keys
-    void PlaybackEngine::release_all_active_keys()
-    {
-        // Copy keys to release to minimize lock holding time
         std::vector<std::pair<int, void *>> keys_to_release;
-        keys_to_release.swap(m_active_keys);
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_playing = false;
+            m_paused = false;
+            m_current_time = 0.0;
 
-        // Release keys without holding lock
+            // 将活动按键转移到临时变量，准备释放
+            keys_to_release.swap(m_active_keys);
+
+            // 优化：停止后缩容释放多余内存
+            m_all_notes.ShrinkIfNeeded();
+            m_events.ShrinkIfNeeded();
+            m_temp_notes.ShrinkIfNeeded();
+        }
+
+        // 在锁外释放按键，避免阻塞其他线程
         for (const auto &key : keys_to_release)
         {
             m_simulator.send_key_up(key.first, 0, key.second);
         }
 
-        // Second pass: safety release common modifier keys in case they got stuck
-        // This handles edge cases where modifiers might have been left pressed
+        // 额外的安全释放：释放常见修饰键以防卡住
         HWND foreground = GetForegroundWindow();
         if (foreground)
         {
-            // Release common modifier keys as safety measure
             INPUT safety_inputs[4] = {};
             safety_inputs[0].type = INPUT_KEYBOARD;
             safety_inputs[0].ki.wVk = VK_SHIFT;
@@ -185,34 +184,57 @@ namespace Core
             safety_inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
 
             safety_inputs[2].type = INPUT_KEYBOARD;
-            safety_inputs[2].ki.wVk = VK_MENU; // Alt key
+            safety_inputs[2].ki.wVk = VK_MENU;
             safety_inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
 
             safety_inputs[3].type = INPUT_KEYBOARD;
-            safety_inputs[3].ki.wVk = VK_LWIN; // Windows key
+            safety_inputs[3].ki.wVk = VK_LWIN;
             safety_inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
 
             SendInput(4, safety_inputs, sizeof(INPUT));
+        }
+
+        LOG_INFO("播放停止");
+    }
+
+    // Helper method to release all active keys
+    // 注意：调用者必须已经持有 m_mutex 锁
+    void PlaybackEngine::release_all_active_keys()
+    {
+        // 此函数现在仅在持有锁的上下文中使用
+        // 它只负责转移数据，实际的释放操作由调用者在锁外完成
+        std::vector<std::pair<int, void *>> keys_to_release;
+        keys_to_release.swap(m_active_keys);
+
+        // 在锁外释放按键
+        for (const auto &key : keys_to_release)
+        {
+            m_simulator.send_key_up(key.first, 0, key.second);
         }
     }
     void PlaybackEngine::seek(double time_s)
     {
         LOG_DEBUG("跳转播放位置: " << time_s << "s");
 
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_current_time = time_s;
-        m_seek_triggered = true;
-        if (m_current_time < 0)
-            m_current_time = 0;
-        if (m_current_time > m_total_duration)
-            m_current_time = m_total_duration;
+        std::vector<std::pair<int, void *>> keys_to_release;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_current_time = time_s;
+            m_seek_triggered = true;
+            if (m_current_time < 0)
+                m_current_time = 0;
+            if (m_current_time > m_total_duration)
+                m_current_time = m_total_duration;
 
-        // Clear active keys on seek
-        for (const auto &key : m_active_keys)
+            // Clear active keys on seek - 先复制到临时变量，减少锁持有时间
+            keys_to_release.swap(m_active_keys);
+        }
+
+        // 在锁外释放按键，避免长时间持有锁
+        for (const auto &key : keys_to_release)
         {
             m_simulator.send_key_up(key.first, 0, key.second);
         }
-        m_active_keys.clear();
 
         LOG_DEBUG("跳转完成，当前位置=" << m_current_time << "s");
     }
@@ -810,6 +832,16 @@ namespace Core
 
             m_current_time = m_current_time.load() + (dt.count() * m_playback_speed);
 
+            // 收集需要处理的事件，在锁外执行以提高响应性
+            struct KeyEvent {
+                bool is_note_on;
+                int vk_code;
+                int modifier;
+                void* window_handle;
+            };
+            std::vector<KeyEvent> events_to_fire;
+            events_to_fire.reserve(16); // 预分配小缓冲区
+
             while (next_event_idx < m_events.Size())
             {
                 const auto &evt = m_events[next_event_idx];
@@ -817,23 +849,17 @@ namespace Core
                 if (evt.time > m_current_time)
                     break;
 
-                // Fire event
+                // 收集事件
+                events_to_fire.push_back({evt.is_note_on, evt.vk_code, evt.modifier, evt.window_handle});
+
+                // 更新 active_keys
                 if (evt.is_note_on)
                 {
-                    m_simulator.send_key_down(evt.vk_code, evt.modifier, evt.window_handle);
-
-                    // Track active keys properly - include modifier in tracking
                     auto pair = std::make_pair(evt.vk_code, evt.window_handle);
-
-                    // Always add to active keys (don't check for duplicates)
-                    // This ensures every NoteOn has a corresponding cleanup
                     m_active_keys.push_back(pair);
                 }
                 else
                 {
-                    m_simulator.send_key_up(evt.vk_code, evt.modifier, evt.window_handle);
-
-                    // 优化：从后向前搜索（LIFO），swap-and-pop O(1) 删除
                     auto pair = std::make_pair(evt.vk_code, evt.window_handle);
                     for (int k = static_cast<int>(m_active_keys.size()) - 1; k >= 0; --k)
                     {
@@ -850,6 +876,21 @@ namespace Core
                 }
 
                 next_event_idx++;
+            }
+
+            // 在锁外执行按键发送，减少锁持有时间
+            lock.unlock();
+
+            for (const auto& evt : events_to_fire)
+            {
+                if (evt.is_note_on)
+                {
+                    m_simulator.send_key_down(evt.vk_code, evt.modifier, evt.window_handle);
+                }
+                else
+                {
+                    m_simulator.send_key_up(evt.vk_code, evt.modifier, evt.window_handle);
+                }
             }
 
             // Calculate dynamic sleep time
@@ -876,7 +917,7 @@ namespace Core
             // Ensure minimum sleep to yield CPU, but allow 0 if we are behind
             // if (sleep_ms < 1.0 && sleep_ms > 0.001) sleep_ms = 1.0;
 
-            lock.unlock(); // Unlock before sleep
+            // 注意：锁已经在上面的事件处理部分释放了
 
             if (sleep_ms >= 2.0)
             {
