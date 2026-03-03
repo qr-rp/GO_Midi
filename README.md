@@ -167,7 +167,7 @@ cd GO_Midi
 # 解压后路径应为：GO_Midi/wxWidgets-3.3.1
 
 # 2. 修改 CMakeLists.txt 中的 wxWidgets 路径
-# 取消第32行的注释并修改路径：
+# 编辑第32行，改为你实际的路径：
 # set(wxWidgets_ROOT_DIR "E:/path/to/wxWidgets-3.3.1")
 
 # 3. 修改 build_mingw.bat 中的 wxWidgets 路径

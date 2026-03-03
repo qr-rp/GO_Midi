@@ -20,20 +20,50 @@ if(MINGW)
     endif()
 endif()
 
-# Set wxWidgets root path hint (User should set this if not found)
-# set(wxWidgets_ROOT_DIR "E:/path/to/wxWidgets-3.3.1")
+# Set wxWidgets root path (REQUIRED for MinGW)
+# 请修改为你实际的 wxWidgets 路径
+set(wxWidgets_ROOT_DIR "E:/workspace/GO_Midi/wxWidgets-3.3.1")
 
-# MinGW specific: Set wxWidgets library directory
+# MinGW specific: Directly configure wxWidgets paths
 if(MINGW)
-    if(DEFINED wxWidgets_ROOT_DIR)
-        set(wxWidgets_LIB_DIR "${wxWidgets_ROOT_DIR}/lib/gcc_lib")
-        set(wxWidgets_CONFIGURATION mswu)
-    endif()
+    set(wxWidgets_INCLUDE_DIRS "${wxWidgets_ROOT_DIR}/include;${wxWidgets_ROOT_DIR}/lib/gcc_lib/mswu")
+    set(wxWidgets_LIB_DIR "${wxWidgets_ROOT_DIR}/lib/gcc_lib")
+    
+    # Manually set wxWidgets libraries for MinGW static linking
+    set(wxWidgets_LIBRARIES
+        ${wxWidgets_LIB_DIR}/libwxmsw33u_core.a
+        ${wxWidgets_LIB_DIR}/libwxbase33u.a
+        ${wxWidgets_LIB_DIR}/libwxpng.a
+        ${wxWidgets_LIB_DIR}/libwxjpeg.a
+        ${wxWidgets_LIB_DIR}/libwxtiff.a
+        ${wxWidgets_LIB_DIR}/libwxzlib.a
+        ${wxWidgets_LIB_DIR}/libwxregexu.a
+        ${wxWidgets_LIB_DIR}/libwxexpat.a
+        comctl32
+        rpcrt4
+        winmm
+        ws2_32
+        wininet
+        winhttp
+        uuid
+        ole32
+        oleaut32
+        comdlg32
+        gdi32
+        user32
+        kernel32
+        advapi32
+        shell32
+        imm32
+    )
+else()
+    # Find wxWidgets for MSVC or other compilers
+    find_package(wxWidgets REQUIRED COMPONENTS core base)
+    include(${wxWidgets_USE_FILE})
 endif()
 
-# Find wxWidgets
-find_package(wxWidgets REQUIRED COMPONENTS core base)
-include(${wxWidgets_USE_FILE})
+# Include wxWidgets headers
+include_directories(${wxWidgets_INCLUDE_DIRS})
 
 # Include directories
 include_directories(src)
@@ -55,4 +85,8 @@ add_executable(wx_GO_MIDI_CPP WIN32 ${SOURCES})
 set_target_properties(wx_GO_MIDI_CPP PROPERTIES OUTPUT_NAME "GO_MIDI!")
 
 # Link libraries
-target_link_libraries(wx_GO_MIDI_CPP ${wxWidgets_LIBRARIES} winmm ws2_32 psapi winhttp)
+if(MINGW)
+    target_link_libraries(wx_GO_MIDI_CPP ${wxWidgets_LIBRARIES} psapi)
+else()
+    target_link_libraries(wx_GO_MIDI_CPP ${wxWidgets_LIBRARIES} winmm ws2_32 psapi winhttp)
+endif()
