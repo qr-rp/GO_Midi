@@ -23,6 +23,14 @@ endif()
 # Set wxWidgets root path hint (User should set this if not found)
 # set(wxWidgets_ROOT_DIR "E:/path/to/wxWidgets-3.3.1")
 
+# MinGW specific: Set wxWidgets library directory
+if(MINGW)
+    if(DEFINED wxWidgets_ROOT_DIR)
+        set(wxWidgets_LIB_DIR "${wxWidgets_ROOT_DIR}/lib/gcc_lib")
+        set(wxWidgets_CONFIGURATION mswu)
+    endif()
+endif()
+
 # Find wxWidgets
 find_package(wxWidgets REQUIRED COMPONENTS core base)
 include(${wxWidgets_USE_FILE})
