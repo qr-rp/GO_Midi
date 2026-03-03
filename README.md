@@ -163,7 +163,7 @@ git clone https://github.com/qr-rp/GO_Midi.git
 cd GO_Midi
 
 # 1. 下载 wxWidgets 3.3.1
-# 从 https://github.com/wxWidgets/wxWidgets/releases 下载源码并解压到项目目录
+# 从 https://wxwidgets.org/downloads 下载源码并解压到项目目录
 # 解压后路径应为：GO_Midi/wxWidgets-3.3.1
 
 # 2. 修改 CMakeLists.txt 中的 wxWidgets 路径
