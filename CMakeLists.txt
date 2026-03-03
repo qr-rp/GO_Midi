@@ -32,6 +32,7 @@ if(MINGW)
     set(wxWidgets_LIB_DIR "${wxWidgets_ROOT_DIR}/lib/gcc_lib")
     
     # Manually set wxWidgets libraries for MinGW static linking
+    # Order matters for static linking!
     set(wxWidgets_LIBRARIES
         ${wxWidgets_LIB_DIR}/libwxmsw33u_core.a
         ${wxWidgets_LIB_DIR}/libwxbase33u.a
@@ -41,6 +42,12 @@ if(MINGW)
         ${wxWidgets_LIB_DIR}/libwxzlib.a
         ${wxWidgets_LIB_DIR}/libwxregexu.a
         ${wxWidgets_LIB_DIR}/libwxexpat.a
+        # Windows system libraries
+        gdiplus
+        msimg32
+        oleacc
+        uxtheme
+        gdi32
         comctl32
         rpcrt4
         winmm
@@ -51,12 +58,13 @@ if(MINGW)
         ole32
         oleaut32
         comdlg32
-        gdi32
         user32
         kernel32
         advapi32
         shell32
         imm32
+        version
+        shlwapi
     )
 else()
     # Find wxWidgets for MSVC or other compilers
