@@ -21,8 +21,10 @@ if(MINGW)
 endif()
 
 # Set wxWidgets root path (REQUIRED for MinGW)
-# 请修改为你实际的 wxWidgets 路径
-set(wxWidgets_ROOT_DIR "E:/workspace/GO_Midi/wxWidgets-3.3.1")
+# 请修改为你实际的 wxWidgets 路径，或通过 -DwxWidgets_ROOT_DIR=... 传递
+if(NOT DEFINED wxWidgets_ROOT_DIR)
+    set(wxWidgets_ROOT_DIR "E:/workspace/GO_Midi/wxWidgets-3.3.1")
+endif()
 
 # MinGW specific: Directly configure wxWidgets paths
 if(MINGW)
