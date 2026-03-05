@@ -44,8 +44,10 @@ jobs:
     - name: Prepare wxWidgets directory
       shell: pwsh
       run: |
-        if (-not (Test-Path "wxWidgets-3.3.1")) {
-          New-Item -ItemType Junction -Path "wxWidgets-3.3.1" -Target "wxWidgets-src" | Out-Null
+        $wxSrcPath = Join-Path $PWD "wxWidgets-src"
+        $wxLinkPath = Join-Path $PWD "wxWidgets-3.3.1"
+        if (-not (Test-Path $wxLinkPath)) {
+          New-Item -ItemType Junction -Path $wxLinkPath -Target $wxSrcPath | Out-Null
         }
 
     - name: Cache CMake build
