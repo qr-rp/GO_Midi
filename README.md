@@ -151,45 +151,30 @@ C5: k
 
 - CMake 3.10+
 - MinGW-w64 或 Visual Studio 2022
-- wxWidgets 3.3.1+
 
 ### MinGW 构建（推荐）
 
-使用 `build_mingw.bat` 脚本一键构建：
+项目已集成 wxWidgets 源码编译，无需手动配置依赖：
 
 ```bash
-# 克隆仓库
+# 1. 克隆仓库
 git clone https://github.com/qr-rp/GO_Midi.git
 cd GO_Midi
 
-# 1. 下载 wxWidgets 3.3.1
-# 从 https://wxwidgets.org/downloads 下载源码并解压到项目目录
-# 解压后路径应为：GO_Midi/wxWidgets-3.3.1
+# 2. 下载 wxWidgets 3.3.1 源码
+# 从 https://github.com/wxWidgets/wxWidgets/releases/download/v3.3.1/wxWidgets-3.3.1.tar.bz2 下载
+# 解压到项目目录，确保路径为：GO_Midi/wxWidgets-3.3.1
 
-# 2. 修改 CMakeLists.txt 中的 wxWidgets 路径
-# 编辑第32行，改为你实际的路径：
-# set(wxWidgets_ROOT_DIR "E:/path/to/wxWidgets-3.3.1")
-
-# 3. 修改 build_mingw.bat 中的 wxWidgets 路径
-# 编辑第24行：set WX_ROOT=E:\workspace\GO_Midi\wxWidgets-3.3.1
-# 改为你实际的路径
-
-# 4. 运行构建脚本（首次会自动编译 wxWidgets，约10-30分钟）
+# 3. 运行构建脚本
 build_mingw.bat
 ```
 
-> **注意**：脚本会自动检测 wxWidgets 是否已编译，如未编译会自动执行编译。
+构建脚本会自动完成：
+- CMake 配置（集成 wxWidgets 源码编译）
+- 并行编译（使用所有 CPU 核心）
+- 输出可执行文件到 `build_mingw/GO_MIDI!.exe`
 
-### 手动 MinGW 构建
-
-如需手动构建：
-
-```bash
-# 确保 wxWidgets 已编译（lib/gcc_lib 目录存在）
-mkdir build && cd build
-cmake .. -G "MinGW Makefiles" -DwxWidgets_ROOT_DIR="path/to/wxWidgets-3.3.1"
-mingw32-make -j4
-```
+> **首次构建时间**：由于需要编译 wxWidgets，首次构建约需 10-30 分钟。后续构建会快很多。
 
 ### Visual Studio 构建
 
@@ -197,6 +182,8 @@ mingw32-make -j4
 # 克隆仓库
 git clone https://github.com/qr-rp/GO_Midi.git
 cd GO_Midi
+
+# 下载 wxWidgets 3.3.1 源码并解压到项目目录
 
 # 创建构建目录
 mkdir build && cd build
