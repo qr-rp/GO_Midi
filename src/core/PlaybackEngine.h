@@ -8,7 +8,6 @@
 #include <vector>
 #include <set>
 #include <memory>
-#include <unordered_map>
 
 #include "../midi/MidiParser.h"
 #include "KeyboardSimulator.h"
@@ -87,25 +86,15 @@ namespace Core {
             bool is_smart_transpose;
         };
 
-        // 哈希函数，用于 unordered_map
-        struct PairHash {
-            size_t operator()(const std::pair<void*, int>& p) const {
-                return std::hash<uintptr_t>()(reinterpret_cast<uintptr_t>(p.first)) ^
-                       (std::hash<int>()(p.second) << 16);
-            }
-        };
+
 
         void playback_thread();
         void rebuild_events();
         void release_all_active_keys();
 
-        // 优化：成员缓冲区，减少 rebuild_events 中的重复堆分配
-        Util::PreallocVector<TempNote> m_temp_notes;
+        // 核心数据：持久化持有
         Util::PreallocVector<Midi::RawNote> m_all_notes;
         Util::PreallocVector<ProcessedEvent> m_events;
-        std::vector<ValidConfig> m_valid_configs;
-        std::vector<int> m_track_best_shifts;
-        std::unordered_map<std::pair<void*, int>, TempNote*, PairHash> m_active_notes_map;
         
         // Optimization: Cache pitch statistics per track (index = track_idx)
         // Using float for duration-weighted histogram

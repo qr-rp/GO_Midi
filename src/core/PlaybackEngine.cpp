@@ -161,10 +161,9 @@ namespace Core
             // 将活动按键转移到临时变量，准备释放
             keys_to_release.swap(m_active_keys);
 
-            // 优化：停止后缩容释放多余内存
+            // 停止后缩容释放多余内存
             m_all_notes.ShrinkIfNeeded();
             m_events.ShrinkIfNeeded();
-            m_temp_notes.ShrinkIfNeeded();
         }
 
         // 在锁外释放按键，避免阻塞其他线程
@@ -398,9 +397,10 @@ namespace Core
             return;
         }
 
-        m_temp_notes.Clear();
-        m_temp_notes.GetVector().reserve(m_all_notes.Size());
-        auto &notes = m_temp_notes.GetVector();
+        // 即用即走：临时音符列表作为局部变量
+        std::vector<TempNote> temp_notes;
+        temp_notes.reserve(m_all_notes.Size());
+        auto &notes = temp_notes;
 
         // 1. Filter and Map
         int total_added = 0;
@@ -423,9 +423,8 @@ namespace Core
             active_configs.push_back(&default_global);
         }
 
-        // Pre-filter valid configs to avoid repeated checks in the hot loop
-        // 优化：复用成员缓冲区，减少堆分配
-        m_valid_configs.clear();
+        // 即用即走：配置快照作为局部变量
+        std::vector<ValidConfig> valid_configs;
 
         for (auto *ch_config : active_configs)
         {
@@ -446,7 +445,7 @@ namespace Core
             vc.target_track = ch_config->track_index;
             vc.is_specific_track = (vc.target_track != -1);
             vc.is_smart_transpose = (ch_config->transpose == 0);
-            m_valid_configs.push_back(vc);
+            valid_configs.push_back(vc);
         }
 
         // 优化：使用栈数组替代 vector，消除堆分配
@@ -498,18 +497,18 @@ namespace Core
             return (best_oct_idx - 4) * 12;
         };
 
-        // 优化：复用成员缓冲区
-        m_track_best_shifts.assign(m_track_pitch_histograms.size(), 0);
+        // 即用即走：最佳移调值作为局部变量
+        std::vector<int> track_best_shifts(m_track_pitch_histograms.size(), 0);
         for (size_t i = 0; i < m_track_pitch_histograms.size(); ++i)
         {
-            m_track_best_shifts[i] = compute_best_shift(m_track_pitch_histograms[i]);
+            track_best_shifts[i] = compute_best_shift(m_track_pitch_histograms[i]);
         }
 
         // Optimization: Iterate m_all_notes ONCE (Cache Locality)
         // m_all_notes is already sorted by start time, so we iterate in time order.
         for (const auto &raw : m_all_notes.GetVector())
         {
-            for (const auto &vc : m_valid_configs)
+            for (const auto &vc : valid_configs)
             {
                 // Track Filter logic
                 if (vc.is_specific_track)
@@ -529,9 +528,9 @@ namespace Core
                 // improved smart transpose logic
                 if (vc.is_smart_transpose)
                 {
-                    if (raw.track_index >= 0 && raw.track_index < static_cast<int>(m_track_best_shifts.size()))
+                    if (raw.track_index >= 0 && raw.track_index < static_cast<int>(track_best_shifts.size()))
                     {
-                        transpose += m_track_best_shifts[raw.track_index];
+                        transpose += track_best_shifts[raw.track_index];
                     }
                 }
 
@@ -594,22 +593,28 @@ namespace Core
                 }
             };
 
-            // 优化：使用 unordered_map 替代 map，O(1) 查找
-            m_active_notes_map.clear();
+            // 即用即走：使用局部 unordered_map，O(1) 查找
+            struct PairHash {
+                size_t operator()(const std::pair<void*, int>& p) const {
+                    return std::hash<uintptr_t>()(reinterpret_cast<uintptr_t>(p.first)) ^
+                           (std::hash<int>()(p.second) << 16);
+                }
+            };
+            std::unordered_map<std::pair<void*, int>, TempNote*, PairHash> active_notes_map;
 
             for (auto &curr : notes)
             {
                 auto key = std::make_pair(curr.hwnd, curr.pitch);
-                auto it = m_active_notes_map.find(key);
+                auto it = active_notes_map.find(key);
 
-                if (it != m_active_notes_map.end())
+                if (it != active_notes_map.end())
                 {
                     resolve(it->second, &curr);
                 }
 
                 if (curr.end > curr.start)
                 {
-                    m_active_notes_map[key] = &curr;
+                    active_notes_map[key] = &curr;
                 }
             }
         }
@@ -732,8 +737,7 @@ namespace Core
                                            << ", 过滤后音符=" << notes.size()
                                            << ", 事件数=" << m_events.Size());
 
-        // 清理临时缓冲区以释放内存（如果太大）
-        m_temp_notes.ShrinkIfNeeded();
+        // 缩容释放多余内存
         m_events.ShrinkIfNeeded();
     }
 
