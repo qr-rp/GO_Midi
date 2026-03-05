@@ -22,11 +22,19 @@ namespace Core {
     /// 哈希函数，用于 ActiveKeySet
     struct ActiveKeyHash {
         size_t operator()(const std::pair<int, void*>& p) const {
-            // 使用简单位运算，避免 std::hash 依赖
+            // 采用 boost::hash_combine 风格的混合，减少冲突
             size_t h1 = static_cast<size_t>(p.first);
             size_t h2 = reinterpret_cast<size_t>(p.second);
-            return h1 ^ (h2 << 16) ^ (h2 >> 16);
+            return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
         }
+    };
+
+    /// 按键事件结构（用于播放线程）
+    struct KeyEvent {
+        bool is_note_on;
+        int vk_code;
+        int modifier;
+        void* window_handle;
     };
 
     using ActiveKeySet = std::unordered_set<std::pair<int, void*>, ActiveKeyHash>;
@@ -132,6 +140,9 @@ namespace Core {
         /// 活跃按键集合（防止卡键）
         /// 使用 unordered_set 实现 O(1) 查找/插入/删除
         ActiveKeySet m_active_keys;
+        
+        /// 事件缓冲区（复用避免重复分配）
+        std::vector<KeyEvent> m_key_event_buffer;
         
         /// 同步原语
         std::mutex m_mutex;

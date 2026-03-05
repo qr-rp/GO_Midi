@@ -848,15 +848,8 @@ namespace Core
 
             m_current_time = m_current_time.load() + (dt.count() * m_playback_speed);
 
-            // 收集需要处理的事件，在锁外执行以提高响应性
-            struct KeyEvent {
-                bool is_note_on;
-                int vk_code;
-                int modifier;
-                void* window_handle;
-            };
-            std::vector<KeyEvent> events_to_fire;
-            events_to_fire.reserve(16); // 预分配小缓冲区
+            // 使用成员变量缓冲区避免重复分配
+            m_key_event_buffer.clear();
 
             while (next_event_idx < m_events.Size())
             {
@@ -866,7 +859,7 @@ namespace Core
                     break;
 
                 // 收集事件
-                events_to_fire.push_back({evt.is_note_on, evt.vk_code, evt.modifier, evt.window_handle});
+                m_key_event_buffer.push_back({evt.is_note_on, evt.vk_code, evt.modifier, evt.window_handle});
 
                 // 更新 active_keys：使用 unordered_set O(1) 操作
                 if (evt.is_note_on)
@@ -884,7 +877,7 @@ namespace Core
             // 在锁外执行按键发送，减少锁持有时间
             lock.unlock();
 
-            for (const auto& evt : events_to_fire)
+            for (const auto& evt : m_key_event_buffer)
             {
                 if (evt.is_note_on)
                 {
