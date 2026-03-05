@@ -4,16 +4,13 @@
 #include <map>
 #include <cmath>
 #include <iostream>
+#include <windows.h>
+#include <mmsystem.h>
 #include "../util/Logger.h"
 
 // 辅助宏：记录函数入口
 #define LOG_ENTRY() LOG_DEBUG("[" << __func__ << "] 进入")
 #define LOG_EXIT() LOG_DEBUG("[" << __func__ << "] 退出")
-
-#ifdef _WIN32
-#include <windows.h>
-#include <mmsystem.h>
-#endif
 
 namespace Core
 {
@@ -746,19 +743,18 @@ namespace Core
 
     void PlaybackEngine::playback_thread()
     {
-#ifdef _WIN32
-        // Increase timer resolution for accurate sleep
+        // 提高定时器精度以获得准确的 sleep
         timeBeginPeriod(1);
-        // Increase thread priority
+        // 提高线程优先级
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
 
-        // Set Thread Affinity to the last logical processor to avoid game contention
+        // 设置线程亲和性到最后一个逻辑处理器，避免与游戏争抢 CPU
         SYSTEM_INFO sysInfo;
         GetSystemInfo(&sysInfo);
         int numProcessors = sysInfo.dwNumberOfProcessors;
         if (numProcessors > 0)
         {
-            // Cap at 64 (or 32 on 32-bit systems) to match DWORD_PTR size
+            // 限制在 64 位（或 32 位系统的 32 位）以匹配 DWORD_PTR 大小
             int maxBits = sizeof(DWORD_PTR) * 8;
             int cpuIdx = numProcessors - 1;
             if (cpuIdx >= maxBits)
@@ -775,7 +771,6 @@ namespace Core
                 LOG_DEBUG("播放线程亲和性设置为逻辑处理器 " << cpuIdx);
             }
         }
-#endif
         size_t next_event_idx = 0;
         auto last_loop_time = std::chrono::high_resolution_clock::now();
 
@@ -938,9 +933,7 @@ namespace Core
             }
         }
 
-#ifdef _WIN32
         timeEndPeriod(1);
-#endif
     }
 
 }

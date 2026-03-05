@@ -1049,13 +1049,8 @@ void MainFrame::PlayIndex(int viewIndex, bool autoPlay) {
             m_abPointA_ms = -1.0;
             m_abPointB_ms = -1.0;
             
-#ifdef _WIN32
-            LOG("Creating MidiFile (Win32)...");
-            m_current_midi = std::make_unique<Midi::MidiFile>(path.ToStdWstring());
-#else
             LOG("Creating MidiFile...");
-            m_current_midi = std::make_unique<Midi::MidiFile>(path.ToStdString());
-#endif
+            m_current_midi = std::make_unique<Midi::MidiFile>(path.ToStdWstring());
             if (!m_current_midi) {
                 LOG("ERROR: Failed to create MidiFile object (null)");
                 throw std::runtime_error("Failed to create MidiFile object");

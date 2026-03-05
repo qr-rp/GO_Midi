@@ -30,10 +30,7 @@ namespace Midi {
 
     class MidiFile {
     public:
-#ifdef _WIN32
         MidiFile(const std::wstring& filepath);
-#endif
-        MidiFile(const std::string& filepath);
         
         std::vector<MidiTrack> tracks;
         float length{0.0f};

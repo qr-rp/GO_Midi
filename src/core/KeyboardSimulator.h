@@ -1,12 +1,6 @@
 #pragma once
 
-#ifdef _WIN32
 #include <windows.h>
-#else
-// 非 Windows 平台的兼容定义（此项目仅支持 Windows）
-typedef unsigned short WORD;
-typedef void* HWND;
-#endif
 
 // 标准库
 #include <vector>

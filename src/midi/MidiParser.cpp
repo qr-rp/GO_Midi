@@ -11,33 +11,6 @@ namespace Midi
 // 辅助宏：记录函数入口
 #define LOG_ENTRY() LOG_DEBUG("[" << __func__ << "] 进入")
 
-    MidiFile::MidiFile(const std::string &filepath)
-    {
-        LOG_ENTRY();
-        LOG_DEBUG("加载 MIDI 文件: " << filepath);
-
-        std::ifstream file(filepath, std::ios::binary | std::ios::ate);
-        if (!file.is_open())
-        {
-            LOG_ERROR("无法打开文件: " << filepath);
-            throw std::runtime_error("Failed to open file: " + filepath);
-        }
-
-        std::streamsize size = file.tellg();
-        file.seekg(0, std::ios::beg);
-
-        m_data.resize(size);
-        if (!file.read(reinterpret_cast<char *>(m_data.data()), size))
-        {
-            LOG_ERROR("无法读取文件: " << filepath);
-            throw std::runtime_error("Failed to read file: " + filepath);
-        }
-
-        LOG_DEBUG("文件大小: " << size << " 字节");
-        parse();
-    }
-
-#ifdef _WIN32
     MidiFile::MidiFile(const std::wstring &filepath)
     {
         LOG_ENTRY();
@@ -63,7 +36,6 @@ namespace Midi
         LOG_DEBUG("文件大小: " << size << " 字节");
         parse();
     }
-#endif
 
     uint16_t MidiFile::readU16(size_t offset)
     {

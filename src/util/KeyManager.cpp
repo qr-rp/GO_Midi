@@ -211,8 +211,7 @@ namespace
     {
         LOG_DEBUG("[read_file_with_encoding] 尝试打开文件: " << path);
         std::ifstream file;
-#ifdef _WIN32
-        // On Windows, convert narrow string path to wide string to support non-ASCII characters
+        // 转换为宽字符路径以支持非 ASCII 字符
         int wide_len = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), static_cast<int>(path.size()), nullptr, 0);
         if (wide_len > 0)
         {
@@ -224,9 +223,6 @@ namespace
         {
             file.open(path, std::ios::binary);
         }
-#else
-        file.open(path, std::ios::binary);
-#endif
         if (!file.is_open())
         {
             LOG_ERROR("[read_file_with_encoding] 无法打开文件: " << path);
@@ -565,8 +561,7 @@ namespace Util
 
         std::string content = out.str();
         std::ofstream file;
-#ifdef _WIN32
-        // On Windows, convert narrow string path to wide string to support non-ASCII characters
+        // 转换为宽字符路径以支持非 ASCII 字符
         int wide_len = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), static_cast<int>(path.size()), nullptr, 0);
         if (wide_len > 0)
         {
@@ -578,9 +573,6 @@ namespace Util
         {
             file.open(path, std::ios::binary);
         }
-#else
-        file.open(path, std::ios::binary);
-#endif
         if (!file.is_open())
         {
             LOG_ERROR("无法创建键位配置文件: " << path);

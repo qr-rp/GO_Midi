@@ -7,10 +7,8 @@
 #include <wx/filename.h>
 #include <wx/stdpaths.h>
 
-#ifdef _WIN32
 #include <windows.h>
 #include <mmsystem.h>
-#endif
 
 wxIMPLEMENT_APP(App);
 
@@ -75,12 +73,10 @@ bool App::OnInit()
     
     LOG_INFO("GO_MIDI! 启动中...");
 
-    // Set up high precision timer (Windows specific)
-#ifdef _WIN32
+    // 设置高精度定时器
     timeBeginPeriod(1);
-#endif
 
-    // Initialize random seed for better randomness
+    // 初始化随机种子
     srand(static_cast<unsigned int>(time(nullptr)));
 
     MainFrame *frame = new MainFrame();
@@ -97,8 +93,6 @@ int App::OnExit()
     // 关闭日志系统
     Logger::Instance().Shutdown();
 
-#ifdef _WIN32
     timeEndPeriod(1);
-#endif
     return 0;
 }

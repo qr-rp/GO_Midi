@@ -1,5 +1,6 @@
 #include "KeyboardSimulator.h"
 #include "../util/Logger.h"
+#include <psapi.h>
 #include <iostream>
 
 namespace Core
@@ -34,12 +35,11 @@ namespace Core
 
     void KeyboardSimulator::send_input(int vk_code, int modifier, bool key_up)
     {
-#ifdef _WIN32
-        // Optimization: Use stack array to avoid heap allocation
+        // 优化：使用栈数组避免堆分配
         INPUT inputs[8] = {};
         int count = 0;
 
-        // Helper lambda to fill INPUT structure
+        // 辅助 lambda 填充 INPUT 结构
         auto add_input = [&](int vk, bool up)
         {
             if (count >= 8)
@@ -49,7 +49,7 @@ namespace Core
             input.type = INPUT_KEYBOARD;
             input.ki.wVk = static_cast<WORD>(vk);
 
-            // Try to map to scan code for better compatibility
+            // 尝试映射扫描码以提高兼容性
             UINT scanCode = GetCachedScanCode(vk);
             if (scanCode > 0)
             {
@@ -57,7 +57,7 @@ namespace Core
                 input.ki.dwFlags = KEYEVENTF_SCANCODE;
             }
 
-            // Handle extended keys
+            // 处理扩展键
             if ((vk >= VK_PRIOR && vk <= VK_DOWN) || vk == VK_INSERT || vk == VK_DELETE)
             {
                 input.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
@@ -71,18 +71,18 @@ namespace Core
 
         if (!key_up)
         {
-            // Key Down Sequence
+            // 按键按下序列
 
-            // 1. Press Modifiers
+            // 1. 按下修饰键
             if (modifier == 1)
                 add_input(VK_SHIFT, false);
             if (modifier == 2)
                 add_input(VK_CONTROL, false);
 
-            // 2. Press Main Key
+            // 2. 按下主键
             add_input(vk_code, false);
 
-            // 3. Release Modifiers (Transient Strategy)
+            // 3. 释放修饰键（瞬时策略）
             if (modifier == 1)
                 add_input(VK_SHIFT, true);
             if (modifier == 2)
@@ -90,11 +90,11 @@ namespace Core
         }
         else
         {
-            // Key Up Sequence
-            // Just release main key
+            // 按键释放序列
+            // 只释放主键
             add_input(vk_code, true);
 
-            // Also release modifiers if they were pressed (safety measure)
+            // 同时释放修饰键（安全措施）
             if (modifier == 1)
                 add_input(VK_SHIFT, true);
             if (modifier == 2)
@@ -105,7 +105,6 @@ namespace Core
         {
             SendInput(static_cast<UINT>(count), inputs, sizeof(INPUT));
         }
-#endif
     }
 
     void KeyboardSimulator::send_key_down(int vk_code, int modifier, void *hwnd)
@@ -114,7 +113,6 @@ namespace Core
                                     << ", 修饰符=" << modifier
                                     << ", 窗口=" << hwnd);
 
-#ifdef _WIN32
         if (hwnd)
         {
             HWND h = static_cast<HWND>(hwnd);
@@ -122,7 +120,7 @@ namespace Core
             auto send_msg = [&](int vk, bool up)
             {
                 UINT scanCode = GetCachedScanCode(vk);
-                LPARAM lParam = 1; // Repeat count 1
+                LPARAM lParam = 1; // 重复计数 1
                 lParam |= (scanCode << 16);
 
                 bool extended = ((vk >= VK_PRIOR && vk <= VK_DOWN) || vk == VK_INSERT || vk == VK_DELETE);
@@ -131,8 +129,8 @@ namespace Core
 
                 if (up)
                 {
-                    lParam |= ((LPARAM)1 << 30); // Previous key state
-                    lParam |= ((LPARAM)1 << 31); // Transition state
+                    lParam |= ((LPARAM)1 << 30); // 前一按键状态
+                    lParam |= ((LPARAM)1 << 31); // 转换状态
                     PostMessage(h, WM_KEYUP, vk, lParam);
                 }
                 else
@@ -141,16 +139,16 @@ namespace Core
                 }
             };
 
-            // 1. Press Modifiers
+            // 1. 按下修饰键
             if (modifier == 1)
                 send_msg(VK_SHIFT, false);
             if (modifier == 2)
                 send_msg(VK_CONTROL, false);
 
-            // 2. Press Main Key
+            // 2. 按下主键
             send_msg(vk_code, false);
 
-            // 3. Release Modifiers (Transient)
+            // 3. 释放修饰键（瞬时）
             if (modifier == 1)
                 send_msg(VK_SHIFT, true);
             if (modifier == 2)
@@ -160,7 +158,6 @@ namespace Core
         {
             send_input(vk_code, modifier, false);
         }
-#endif
     }
 
     void KeyboardSimulator::send_key_up(int vk_code, int modifier, void *hwnd)
@@ -169,7 +166,6 @@ namespace Core
                                     << ", 修饰符=" << modifier
                                     << ", 窗口=" << hwnd);
 
-#ifdef _WIN32
         if (hwnd)
         {
             HWND h = static_cast<HWND>(hwnd);
@@ -192,7 +188,6 @@ namespace Core
         {
             send_input(vk_code, modifier, true);
         }
-#endif
     }
 
     void KeyboardSimulator::send_key_press(int vk_code, int modifier, void *hwnd)
@@ -201,10 +196,7 @@ namespace Core
         send_key_up(vk_code, modifier, hwnd);
     }
 
-#ifdef _WIN32
-#include <psapi.h>
-
-    // Helper: Convert wide string to UTF-8
+    // 辅助函数：宽字符串转 UTF-8
     static std::string WideToUtf8(const wchar_t *wideStr)
     {
         if (!wideStr)
@@ -223,20 +215,20 @@ namespace Core
 
         if (IsWindowVisible(hwnd))
         {
-            // Use Unicode version to get window title
+            // 使用 Unicode 版本获取窗口标题
             wchar_t titleW[256];
             int len = GetWindowTextW(hwnd, titleW, sizeof(titleW) / sizeof(wchar_t));
 
-            // Only add windows with non-empty titles
+            // 只添加有非空标题的窗口
             if (len > 0)
             {
                 std::string title = WideToUtf8(titleW);
 
-                // Skip if conversion failed or title is empty/whitespace only
+                // 跳过转换失败或标题为空/只有空白的窗口
                 if (title.empty())
                     return TRUE;
 
-                // Check if title contains only whitespace
+                // 检查标题是否只包含空白
                 bool hasNonWhitespace = false;
                 for (char c : title)
                 {
@@ -249,7 +241,7 @@ namespace Core
                 if (!hasNonWhitespace)
                     return TRUE;
 
-                // Get Process Name
+                // 获取进程名
                 DWORD pid;
                 GetWindowThreadProcessId(hwnd, &pid);
                 std::string processName = "Unknown";
@@ -270,16 +262,13 @@ namespace Core
         }
         return TRUE;
     }
-#endif
 
     std::vector<KeyboardSimulator::WindowInfo> KeyboardSimulator::GetWindowList()
     {
         LOG_DEBUG("[KeyboardSimulator] 获取窗口列表");
 
         std::vector<WindowInfo> windows;
-#ifdef _WIN32
         EnumWindows(EnumWindowsProc, reinterpret_cast<LPARAM>(&windows));
-#endif
 
         LOG_DEBUG("找到 " << windows.size() << " 个可见窗口");
         return windows;
