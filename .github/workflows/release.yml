@@ -15,90 +15,90 @@ env:
 jobs:
   build:
     runs-on: windows-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
-    
-    - name: Cache wxWidgets
-      id: cache-wx
+
+    - name: Cache wxWidgets source
+      id: cache-wx-src
       uses: actions/cache@v4
       with:
-        path: D:\wxWidgets-install
-        key: wxwidgets-${{ env.WX_VERSION }}-msvc-v2
-    
-    - name: Download and Build wxWidgets
-      if: steps.cache-wx.outputs.cache-hit != 'true'
+        path: wxWidgets-src
+        key: wxwidgets-src-${{ env.WX_VERSION }}
+
+    - name: Download wxWidgets source
+      if: steps.cache-wx-src.outputs.cache-hit != 'true'
       shell: pwsh
       run: |
-        cd D:\
         Invoke-WebRequest -Uri "https://github.com/wxWidgets/wxWidgets/releases/download/v${{ env.WX_VERSION }}/wxWidgets-${{ env.WX_VERSION }}.tar.bz2" -OutFile "wxWidgets.tar.bz2"
-        
-        # Extract
         7z x "wxWidgets.tar.bz2" -y
-        7z x "wxWidgets.tar" -o"D:\wxWidgets-src" -y
-        
-        # Find and build wxWidgets
-        $wxDir = Get-ChildItem D:\wxWidgets-src -Directory | Where-Object { $_.Name -like "wxWidgets*" } | Select-Object -First 1
-        Write-Host "Found wxWidgets at: $($wxDir.FullName)"
-        
-        cd "$($wxDir.FullName)\build\msw"
-        msbuild wx_vc17.sln /m /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
-        
-        # Copy to install location
-        New-Item -ItemType Directory -Path "D:\wxWidgets-install" -Force
-        Copy-Item -Recurse "$($wxDir.FullName)\*" "D:\wxWidgets-install\" -Force
-    
+        7z x "wxWidgets.tar" -o"wxWidgets-src" -y
+        Move-Item "wxWidgets-src\wxWidgets-${{ env.WX_VERSION }}\*" "wxWidgets-src\" -Force
+        Remove-Item "wxWidgets-src\wxWidgets-${{ env.WX_VERSION }}" -ErrorAction SilentlyContinue
+        Remove-Item "wxWidgets.tar.bz2", "wxWidgets.tar" -ErrorAction SilentlyContinue
+
+    - name: Prepare wxWidgets directory
+      shell: pwsh
+      run: |
+        if (-not (Test-Path "wxWidgets-3.3.1")) {
+          New-Item -ItemType Junction -Path "wxWidgets-3.3.1" -Target "wxWidgets-src" | Out-Null
+        }
+
+    - name: Cache CMake build
+      id: cache-cmake
+      uses: actions/cache@v4
+      with:
+        path: |
+          build/_deps
+          build/wxWidgets
+        key: cmake-build-${{ env.WX_VERSION }}-${{ hashFiles('CMakeLists.txt') }}
+
     - name: Build Application
       shell: pwsh
       run: |
-        mkdir build
+        mkdir build -Force
         cd build
         cmake .. -G "Visual Studio 17 2022" -A x64 `
-          -DCMAKE_BUILD_TYPE=Release `
-          -DwxWidgets_ROOT_DIR="D:\wxWidgets-install" `
-          -DwxWidgets_LIB_DIR="D:\wxWidgets-install\lib\vc_x64_lib"
-        cmake --build . --config Release
-    
+          -DCMAKE_BUILD_TYPE=Release
+        cmake --build . --config Release -j
+
     - name: Verify Admin Manifest
       shell: pwsh
       run: |
-        # Check if manifest is embedded
         $exePath = "build\Release\GO_MIDI!.exe"
         $success = $false
-        
-        # Try mt.exe first
+
         try {
           mt.exe -inputresource:$exePath;#1 -out:$env:TEMP\extracted.manifest 2>&1 | Out-Null
           if (Test-Path "$env:TEMP\extracted.manifest") {
-            Write-Host "✓ Manifest found in executable"
+            Write-Host "Manifest found in executable"
             Get-Content "$env:TEMP\extracted.manifest" | Select-String "requestedExecutionLevel"
             Remove-Item "$env:TEMP\extracted.manifest" -ErrorAction SilentlyContinue
             $success = $true
           }
         } catch {
-          Write-Host "mt.exe not available or failed, skipping manifest extraction"
+          Write-Host "mt.exe not available, skipping manifest extraction"
         }
-        
+
         if (-not $success) {
-          Write-Host "Executable built successfully. Admin privileges will be requested on launch."
+          Write-Host "Executable built successfully."
         }
-        
-        # Always succeed this step
+
         exit 0
-        
+
     - name: Create archive
       shell: pwsh
       run: |
-        mkdir release
+        mkdir release -Force
         copy build\Release\GO_MIDI!.exe release\
         copy "keymaps\燕云十六声默认键位.txt" release\
         cd release
         7z a -tzip ..\GO_MIDI-Windows.zip .
-    
+
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
