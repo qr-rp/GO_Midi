@@ -135,7 +135,8 @@ namespace Core
             std::lock_guard<std::mutex> lock(m_mutex);
             m_paused = true;
             // 将活动按键转移到临时变量，准备释放
-            keys_to_release.swap(m_active_keys);
+            keys_to_release.assign(m_active_keys.begin(), m_active_keys.end());
+            m_active_keys.clear();
         }
 
         // 在锁外释放按键，避免长时间持有锁
@@ -159,7 +160,8 @@ namespace Core
             m_current_time = 0.0;
 
             // 将活动按键转移到临时变量，准备释放
-            keys_to_release.swap(m_active_keys);
+            keys_to_release.assign(m_active_keys.begin(), m_active_keys.end());
+            m_active_keys.clear();
 
             // 停止后缩容释放多余内存
             m_all_notes.ShrinkIfNeeded();
@@ -205,8 +207,8 @@ namespace Core
     {
         // 此函数现在仅在持有锁的上下文中使用
         // 它只负责转移数据，实际的释放操作由调用者在锁外完成
-        std::vector<std::pair<int, void *>> keys_to_release;
-        keys_to_release.swap(m_active_keys);
+        std::vector<std::pair<int, void *>> keys_to_release(m_active_keys.begin(), m_active_keys.end());
+        m_active_keys.clear();
 
         // 在锁外释放按键
         for (const auto &key : keys_to_release)
@@ -229,7 +231,8 @@ namespace Core
                 m_current_time = m_total_duration;
 
             // Clear active keys on seek - 先复制到临时变量，减少锁持有时间
-            keys_to_release.swap(m_active_keys);
+            keys_to_release.assign(m_active_keys.begin(), m_active_keys.end());
+            m_active_keys.clear();
         }
 
         // 在锁外释放按键，避免长时间持有锁
@@ -865,27 +868,14 @@ namespace Core
                 // 收集事件
                 events_to_fire.push_back({evt.is_note_on, evt.vk_code, evt.modifier, evt.window_handle});
 
-                // 更新 active_keys
+                // 更新 active_keys：使用 unordered_set O(1) 操作
                 if (evt.is_note_on)
                 {
-                    auto pair = std::make_pair(evt.vk_code, evt.window_handle);
-                    m_active_keys.push_back(pair);
+                    m_active_keys.insert(std::make_pair(evt.vk_code, evt.window_handle));
                 }
                 else
                 {
-                    auto pair = std::make_pair(evt.vk_code, evt.window_handle);
-                    for (int k = static_cast<int>(m_active_keys.size()) - 1; k >= 0; --k)
-                    {
-                        if (m_active_keys[k] == pair)
-                        {
-                            if (k != static_cast<int>(m_active_keys.size()) - 1)
-                            {
-                                m_active_keys[k] = m_active_keys.back();
-                            }
-                            m_active_keys.pop_back();
-                            break;
-                        }
-                    }
+                    m_active_keys.erase(std::make_pair(evt.vk_code, evt.window_handle));
                 }
 
                 next_event_idx++;
@@ -932,28 +922,25 @@ namespace Core
 
             // 注意：锁已经在上面的事件处理部分释放了
 
-            if (sleep_ms >= 2.0)
+            if (sleep_ms >= 1.0)
             {
-                // Hybrid: Sleep for most of the time, keeping 1ms buffer for precision
-                // Windows sleep resolution is ~1-2ms with timeBeginPeriod(1)
-                std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(sleep_ms - 1.5));
+                // 使用 sleep_for，Windows 在 timeBeginPeriod(1) 后精度约 1ms
+                // 减去 0.5ms 作为安全边界，避免过睡
+                double actual_sleep = sleep_ms - 0.5;
+                if (actual_sleep > 0)
+                {
+                    std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(actual_sleep));
+                }
             }
             else if (sleep_ms > 0)
             {
-                // Busy-wait / Yield for short durations (< 2ms) to avoid oversleeping
-                // This ensures high timing accuracy for dense MIDI sections
-                auto start_spin = std::chrono::high_resolution_clock::now();
-                while (true)
-                {
-                    auto now = std::chrono::high_resolution_clock::now();
-                    std::chrono::duration<double, std::milli> elapsed = now - start_spin;
-                    if (elapsed.count() >= sleep_ms)
-                        break;
-                    std::this_thread::yield();
-                }
+                // 极短等待（< 1ms）：使用 sleep_for 而非 busy-wait
+                // 虽然可能略有过睡，但避免 CPU 空转
+                std::this_thread::sleep_for(std::chrono::microseconds(500));
             }
             else
             {
+                // 无需等待：yield 让出 CPU
                 std::this_thread::yield();
             }
         }

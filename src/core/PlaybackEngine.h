@@ -8,6 +8,7 @@
 #include <vector>
 #include <set>
 #include <memory>
+#include <unordered_set>
 
 #include "../midi/MidiParser.h"
 #include "KeyboardSimulator.h"
@@ -15,6 +16,18 @@
 #include "../util/MemoryPool.h"
 
 namespace Core {
+
+    // 哈希函数，用于 ActiveKeySet
+    struct ActiveKeyHash {
+        size_t operator()(const std::pair<int, void*>& p) const {
+            // 使用简单位运算，避免 std::hash 依赖
+            size_t h1 = static_cast<size_t>(p.first);
+            size_t h2 = reinterpret_cast<size_t>(p.second);
+            return h1 ^ (h2 << 16) ^ (h2 >> 16);
+        }
+    };
+
+    using ActiveKeySet = std::unordered_set<std::pair<int, void*>, ActiveKeyHash>;
 
     class PlaybackEngine {
     public:
@@ -120,8 +133,8 @@ namespace Core {
         
         // Active keys for stuck note prevention
         // Pair of <vk_code, window_handle>
-        // Optimization: Use vector instead of set to avoid allocation
-        std::vector<std::pair<int, void*>> m_active_keys;
+        // 使用 unordered_set 实现 O(1) 查找/插入/删除
+        ActiveKeySet m_active_keys;
         
         // Synchronization
         std::mutex m_mutex;
