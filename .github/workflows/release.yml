@@ -5,6 +5,7 @@ on:
     tags:
       - 'v*'
       - 'dev-v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
