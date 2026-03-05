@@ -1,5 +1,6 @@
 #pragma once
 
+// 标准库
 #include <map>
 #include <cstring>
 #include <vector>
@@ -9,7 +10,7 @@ namespace Util {
 
     struct KeyMapping {
         int vk_code;
-        int modifier; // 0: None, 1: Shift, 2: Ctrl
+        int modifier;  ///< 0: 无, 1: Shift, 2: Ctrl
     };
 
     class KeyManager {
@@ -26,9 +27,10 @@ namespace Util {
 
     private:
         std::map<int, KeyMapping> m_note_map;
-        // 优化：O(1) 查找缓存数组（MIDI 音符范围 0-127）
+        /// 优化：O(1) 查找缓存数组（MIDI 音符范围 0-127）
         KeyMapping m_lookup_cache[128]{};
         bool m_lookup_valid[128]{};
+        
         void rebuild_lookup_cache();
         void init_default_map();
         std::string format_key_string(int vk, int modifier) const;

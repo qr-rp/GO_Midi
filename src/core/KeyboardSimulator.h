@@ -3,11 +3,12 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
-// Define dummy types for non-Windows (though this project is Windows only)
+// 非 Windows 平台的兼容定义（此项目仅支持 Windows）
 typedef unsigned short WORD;
 typedef void* HWND;
 #endif
 
+// 标准库
 #include <vector>
 #include <string>
 #include <utility>
@@ -23,10 +24,7 @@ namespace Core {
         void send_key_up(int vk_code, int modifier = 0, void* hwnd = nullptr);
         void send_key_press(int vk_code, int modifier = 0, void* hwnd = nullptr);
 
-        // Helper to map MIDI note to VK code if needed, but UI might handle mapping
-        // static int map_note_to_vk(int note);
-
-        // Window Management
+        /// 窗口信息结构
         struct WindowInfo {
             HWND hwnd;
             std::string title;

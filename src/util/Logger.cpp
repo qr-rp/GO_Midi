@@ -1,12 +1,16 @@
 #include "Logger.h"
+
+// 标准库
 #include <iostream>
 #include <filesystem>
 #include <algorithm>
 #include <vector>
 #include <cctype>
+
+// Windows
 #include <windows.h>
 
-namespace GO_MIDI
+namespace Util
 {
 
     Logger &Logger::Instance()
@@ -386,4 +390,4 @@ namespace GO_MIDI
         return name;
     }
 
-} // namespace GO_MIDI
+} // namespace Util
