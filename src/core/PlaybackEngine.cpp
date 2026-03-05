@@ -451,7 +451,7 @@ namespace Core
 
         // 优化：使用栈数组替代 vector，消除堆分配
         // 使用 float 支持时值加权直方图
-        // 尝试所有半音移调，而不仅仅是八度移调
+        // 八度移调（模12），保持和弦性质不变
         auto compute_best_shift = [&](const std::vector<float> &hist)
         {
             float prefix[129] = {};
@@ -460,41 +460,42 @@ namespace Core
                 prefix[p + 1] = prefix[p] + hist[p];
             }
             
-            // 尝试 -48 到 +48 半音的所有移调
-            constexpr int min_shift = -48;
-            constexpr int max_shift = 48;
-            constexpr int num_shifts = max_shift - min_shift + 1;
-            
-            float best_score = -1.0f;
-            int best_shift = 0;
-            
-            for (int shift = min_shift; shift <= max_shift; ++shift)
+            // 尝试 -4 到 +4 八度的移调（保持和弦性质）
+            float scores[9] = {};
+            for (int oct = -4; oct <= 4; ++oct)
             {
+                int shift = oct * 12;
                 int low = m_min_pitch - shift;
                 int high = m_max_pitch - shift;
                 if (low < 0)
                     low = 0;
                 if (high > 127)
                     high = 127;
-                if (low > high)
-                    continue;
-                    
-                float score = prefix[high + 1] - prefix[low];
-                if (score > best_score)
+                if (low <= high)
                 {
-                    best_score = score;
-                    best_shift = shift;
+                    scores[oct + 4] += prefix[high + 1] - prefix[low];
                 }
-                else if (score == best_score)
+            }
+            
+            float best_score = -1.0f;
+            int best_oct_idx = 4; // 默认不移调
+            for (int i = 0; i < 9; ++i)
+            {
+                if (scores[i] > best_score)
+                {
+                    best_score = scores[i];
+                    best_oct_idx = i;
+                }
+                else if (scores[i] == best_score)
                 {
                     // 相同分数时选择绝对值较小的移调
-                    if (std::abs(shift) < std::abs(best_shift))
+                    if (std::abs(i - 4) < std::abs(best_oct_idx - 4))
                     {
-                        best_shift = shift;
+                        best_oct_idx = i;
                     }
                 }
             }
-            return best_shift;
+            return (best_oct_idx - 4) * 12;
         };
 
         // 优化：复用成员缓冲区
