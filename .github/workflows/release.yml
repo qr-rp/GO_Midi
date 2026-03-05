@@ -3,14 +3,8 @@ name: Build and Release
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
-      - 'dev-v[0-9]+.[0-9]+.[0-9]+'
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag version (e.g., v1.0.6)'
-        required: false
-        default: ''
+      - 'v*'
+      - 'dev-v*'
 
 permissions:
   contents: write
