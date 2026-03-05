@@ -16,6 +16,7 @@ namespace Midi {
         float duration;
         int track_index;
         int channel;
+        int velocity; // MIDI velocity (0-127)
     };
 
     class MidiTrack {
@@ -62,7 +63,7 @@ namespace Midi {
         // Helper to parse a single track
         struct TrackParseResult {
             MidiTrack track;
-            std::vector<std::tuple<int, int, int, int>> notes; // start, end, pitch, ch
+            std::vector<std::tuple<int, int, int, int, int>> notes; // start, end, pitch, ch, velocity
             std::vector<std::pair<int, int>> tempo_events;
             std::vector<std::pair<int, std::pair<int, int>>> time_sig_events;
             int last_tick;

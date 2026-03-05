@@ -108,7 +108,8 @@ namespace Core {
         std::unordered_map<std::pair<void*, int>, TempNote*, PairHash> m_active_notes_map;
         
         // Optimization: Cache pitch statistics per track (index = track_idx)
-        std::vector<std::vector<int>> m_track_pitch_histograms;
+        // Using float for duration-weighted histogram
+        std::vector<std::vector<float>> m_track_pitch_histograms;
         
         std::atomic<int> m_config_version{0};   // To trigger rebuild
         int m_built_version{-1};                // Last built version

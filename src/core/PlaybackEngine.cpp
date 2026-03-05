@@ -88,9 +88,9 @@ namespace Core
                       return a.start_s < b.start_s;
                   });
 
-        // Optimization: Build pitch histograms
+        // Optimization: Build pitch histograms with duration and velocity weighting
         m_track_pitch_histograms.clear();
-        m_track_pitch_histograms.resize(midi_file.raw_notes_by_track.size(), std::vector<int>(128, 0));
+        m_track_pitch_histograms.resize(midi_file.raw_notes_by_track.size(), std::vector<float>(128, 0.0f));
 
         for (const auto &raw : m_all_notes.GetVector())
         {
@@ -98,7 +98,10 @@ namespace Core
             {
                 if (raw.track_index >= 0 && raw.track_index < m_track_pitch_histograms.size())
                 {
-                    m_track_pitch_histograms[raw.track_index][raw.pitch]++;
+                    // Duration * velocity weighted histogram: longer and louder notes have more influence
+                    // Normalize velocity from 0-127 to 0.0-1.0
+                    float vel_weight = raw.velocity / 127.0f;
+                    m_track_pitch_histograms[raw.track_index][raw.pitch] += raw.duration * vel_weight;
                 }
             }
         }
@@ -447,46 +450,51 @@ namespace Core
         }
 
         // 优化：使用栈数组替代 vector，消除堆分配
-        auto compute_best_shift = [&](const std::vector<int> &hist)
+        // 使用 float 支持时值加权直方图
+        // 尝试所有半音移调，而不仅仅是八度移调
+        auto compute_best_shift = [&](const std::vector<float> &hist)
         {
-            int prefix[129] = {};
+            float prefix[129] = {};
             for (int p = 0; p < 128; ++p)
             {
                 prefix[p + 1] = prefix[p] + hist[p];
             }
-            int scores[9] = {};
-            for (int oct = -4; oct <= 4; ++oct)
+            
+            // 尝试 -48 到 +48 半音的所有移调
+            constexpr int min_shift = -48;
+            constexpr int max_shift = 48;
+            constexpr int num_shifts = max_shift - min_shift + 1;
+            
+            float best_score = -1.0f;
+            int best_shift = 0;
+            
+            for (int shift = min_shift; shift <= max_shift; ++shift)
             {
-                int shift = oct * 12;
                 int low = m_min_pitch - shift;
                 int high = m_max_pitch - shift;
                 if (low < 0)
                     low = 0;
                 if (high > 127)
                     high = 127;
-                if (low <= high)
+                if (low > high)
+                    continue;
+                    
+                float score = prefix[high + 1] - prefix[low];
+                if (score > best_score)
                 {
-                    scores[oct + 4] += prefix[high + 1] - prefix[low];
+                    best_score = score;
+                    best_shift = shift;
                 }
-            }
-            int best_score = -1;
-            int best_oct_idx = 4;
-            for (int i = 0; i < 9; ++i)
-            {
-                if (scores[i] > best_score)
+                else if (score == best_score)
                 {
-                    best_score = scores[i];
-                    best_oct_idx = i;
-                }
-                else if (scores[i] == best_score)
-                {
-                    if (std::abs(i - 4) < std::abs(best_oct_idx - 4))
+                    // 相同分数时选择绝对值较小的移调
+                    if (std::abs(shift) < std::abs(best_shift))
                     {
-                        best_oct_idx = i;
+                        best_shift = shift;
                     }
                 }
             }
-            return (best_oct_idx - 4) * 12;
+            return best_shift;
         };
 
         // 优化：复用成员缓冲区
