@@ -1428,7 +1428,8 @@ void MainFrame::OnLoadKeymap(wxCommandEvent& event) {
                                 wxString::FromUTF8("键位配置文件 (*.txt)|*.txt"), wxFD_OPEN | wxFD_FILE_MUST_EXIST);
     if (openFileDialog.ShowModal() == wxID_CANCEL) return;
     
-    bool ok = m_engine.get_key_manager().load_config(openFileDialog.GetPath().ToUTF8().data());
+    // 直接使用宽字符路径，避免 UTF-8 转换问题
+    bool ok = m_engine.get_key_manager().load_config(openFileDialog.GetPath().ToStdWstring());
     if (ok) UpdateStatusText(wxString::FromUTF8("键位已加载"));
     else UpdateStatusText(wxString::FromUTF8("键位加载失败"));
     if (ok) {
@@ -1442,7 +1443,8 @@ void MainFrame::OnSaveKeymap(wxCommandEvent& event) {
                                 wxString::FromUTF8("键位配置文件 (*.txt)|*.txt"), wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
     if (saveFileDialog.ShowModal() == wxID_CANCEL) return;
     
-    bool ok = m_engine.get_key_manager().save_config(saveFileDialog.GetPath().ToUTF8().data());
+    // 直接使用宽字符路径，避免 UTF-8 转换问题
+    bool ok = m_engine.get_key_manager().save_config(saveFileDialog.GetPath().ToStdWstring());
     if (ok) UpdateStatusText(wxString::FromUTF8("键位已保存"));
     else UpdateStatusText(wxString::FromUTF8("键位保存失败"));
     if (ok) SaveKeymapConfig();
