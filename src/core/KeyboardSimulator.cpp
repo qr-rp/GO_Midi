@@ -170,19 +170,31 @@ namespace Core
         {
             HWND h = static_cast<HWND>(hwnd);
 
-            UINT scanCode = GetCachedScanCode(vk_code);
-            LPARAM lParam = 1;
-            lParam |= (scanCode << 16);
-
-            if ((vk_code >= VK_PRIOR && vk_code <= VK_DOWN) || vk_code == VK_INSERT || vk_code == VK_DELETE)
+            auto send_msg = [&](int vk)
             {
-                lParam |= ((LPARAM)1 << 24);
-            }
+                UINT scanCode = GetCachedScanCode(vk);
+                LPARAM lParam = 1;
+                lParam |= (scanCode << 16);
 
-            lParam |= ((LPARAM)1 << 30);
-            lParam |= ((LPARAM)1 << 31);
+                if ((vk >= VK_PRIOR && vk <= VK_DOWN) || vk == VK_INSERT || vk == VK_DELETE)
+                {
+                    lParam |= ((LPARAM)1 << 24);
+                }
 
-            PostMessage(h, WM_KEYUP, vk_code, lParam);
+                lParam |= ((LPARAM)1 << 30);
+                lParam |= ((LPARAM)1 << 31);
+
+                PostMessage(h, WM_KEYUP, vk, lParam);
+            };
+
+            // 释放主键
+            send_msg(vk_code);
+
+            // 同时释放修饰键（安全措施）
+            if (modifier == 1)
+                send_msg(VK_SHIFT);
+            if (modifier == 2)
+                send_msg(VK_CONTROL);
         }
         else
         {
