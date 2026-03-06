@@ -5,6 +5,7 @@
 #include <cctype>
 #include <chrono>
 #include <ctime>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <regex>
@@ -210,7 +211,7 @@ namespace
     std::string read_file_with_encoding(const std::wstring &path)
     {
         LOG_DEBUG("[read_file_with_encoding] 尝试打开文件 (宽字符路径)");
-        std::ifstream file(path, std::ios::binary);
+        std::ifstream file(std::filesystem::path(path), std::ios::binary);
         if (!file.is_open())
         {
             LOG_ERROR("[read_file_with_encoding] 无法打开文件");
@@ -598,7 +599,7 @@ namespace Util
         }
 
         std::string content = out.str();
-        std::ofstream file(path, std::ios::binary);
+        std::ofstream file(std::filesystem::path(path), std::ios::binary);
         if (!file.is_open())
         {
             LOG_ERROR("无法创建键位配置文件");
