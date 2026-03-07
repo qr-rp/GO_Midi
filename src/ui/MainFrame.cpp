@@ -1074,9 +1074,11 @@ void MainFrame::PlayIndex(int viewIndex, bool autoPlay) {
     OnPitchRangeChange(dummySpin);
     
     if (autoPlay) {
-        // LOG("Auto-play requested.");
-        wxCommandEvent dummy;
-        OnPlay(dummy);
+        // 切歌时总是从头开始播放，而不是使用 OnPlay 的播放/暂停切换逻辑
+        // 这样可以确保每次切歌都从头开始，不受当前播放状态影响
+        m_engine.seek(0);
+        m_engine.play();
+        m_stateMachine.TransitionTo(UI::PlaybackStatus::Playing);
     }
     // LOG("PlayIndex finished.");
 }
