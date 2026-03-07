@@ -1,9 +1,9 @@
-name: Build and Release
+name: Build (Dev)
 
 on:
   push:
     tags:
-      - 'v[0-9]+.*'
+      - 'dev-v*'
 
 permissions:
   contents: write
@@ -67,20 +67,29 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
         cmake --build . --config Release -j
 
-    - name: Create archive
+    - name: Prepare Release Asset
+      id: prepare
       shell: pwsh
       run: |
-        mkdir release -Force
-        copy build\Release\GO_MIDI!.exe release\
-        copy "keymaps\燕云十六声默认键位.txt" release\
-        cd release
-        7z a -tzip ..\GO_MIDI-Windows.zip .
+        # Extract version from tag (dev-v1.0.0 -> 1.0.0)
+        $tag = "${{ github.ref_name }}"
+        $version = $tag -replace '^dev-v', ''
+        $exeName = "GO_MIDI!_$version.exe"
+        
+        # Copy and rename exe
+        Copy-Item "build\Release\GO_MIDI!.exe" $exeName
+        
+        Write-Host "Version: $version"
+        Write-Host "Output: $exeName"
+        
+        # Set output for release step
+        Add-Content -Path $env:GITHUB_OUTPUT -Value "exe_name=$exeName"
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        files: GO_MIDI-Windows.zip
+        files: ${{ steps.prepare.outputs.exe_name }}
         generate_release_notes: true
-        prerelease: false
+        prerelease: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

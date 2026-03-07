@@ -85,10 +85,9 @@ MainFrame::MainFrame()
     wxString configPath = wxFileName(exePath.GetPath(), "config.ini").GetFullPath();
     m_config = std::make_unique<wxFileConfig>("wx_GO_MIDI", "wx_GO_MIDI", configPath, "", wxCONFIG_USE_LOCAL_FILE);
 
-    // Set system default font for modern look
+    // Use system default font for consistent cross-platform appearance
     wxFont font = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
     font.SetPointSize(9);
-    font.SetFaceName("Microsoft YaHei UI");
     SetFont(font);
 
     InitUI();

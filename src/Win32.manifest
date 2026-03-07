@@ -1,5 +1,21 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <!-- DPI 感知设置：Per Monitor V2 支持高 DPI 显示器 -->
+  <asmv3:application xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
+    <asmv3:windowsSettings xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">
+      <!-- 系统级别 DPI 感知 -->
+      <dpiAware>true/PM</dpiAware>
+    </asmv3:windowsSettings>
+    <asmv3:windowsSettings xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">
+      <!-- Per Monitor V2 DPI 感知（Windows 10 1703+） -->
+      <dpiAwareness>PerMonitorV2, PerMonitor</dpiAwareness>
+    </asmv3:windowsSettings>
+    <asmv3:windowsSettings xmlns="http://schemas.microsoft.com/SMI/2017/WindowsSettings">
+      <!-- 长路径支持 -->
+      <longPathAware>true</longPathAware>
+    </asmv3:windowsSettings>
+  </asmv3:application>
+  
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>
