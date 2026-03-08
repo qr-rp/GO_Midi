@@ -22,12 +22,21 @@ jobs:
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
 
-    - name: Cache wxWidgets
+    - name: Get CPU count
+      id: cpu
+      shell: pwsh
+      run: echo "count=$((Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors)" >> $env:GITHUB_OUTPUT
+
+    - name: Cache wxWidgets and build
       id: cache-wx
       uses: actions/cache@v4
       with:
-        path: wxWidgets-3.3.1
-        key: wxwidgets-${{ env.WX_VERSION }}-${{ hashFiles('CMakeLists.txt') }}
+        path: |
+          wxWidgets-3.3.1
+          build
+        key: wxwidgets-${{ env.WX_VERSION }}-build-${{ hashFiles('CMakeLists.txt', 'src/**/*.cpp', 'src/**/*.h') }}
+        restore-keys: |
+          wxwidgets-${{ env.WX_VERSION }}-build-
 
     - name: Download and extract wxWidgets source
       if: steps.cache-wx.outputs.cache-hit != 'true'
@@ -38,13 +47,13 @@ jobs:
         7z x "wxWidgets.tar" -y
         Remove-Item "wxWidgets.tar.bz2", "wxWidgets.tar" -ErrorAction SilentlyContinue
 
-    - name: Build Application
+    - name: Configure and Build
       shell: pwsh
       run: |
         mkdir build -Force
         cd build
         cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
-        cmake --build . --config Release -j
+        cmake --build . --config Release -j ${{ steps.cpu.outputs.count }}
 
     - name: Create archive
       shell: pwsh
