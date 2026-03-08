@@ -36,6 +36,14 @@ namespace Core {
         void* window_handle;
     };
 
+    /// 通道设置 (0-15)
+    struct ChannelSettings {
+        std::atomic<int> transpose{0};
+        std::atomic<bool> enabled{true};
+        std::atomic<void*> window_handle{nullptr};
+        std::atomic<int> track_index{-1};  ///< -1 表示所有轨道
+    };
+
     using ActiveKeySet = std::unordered_set<std::pair<int, void*>, ActiveKeyHash>;
 
     class PlaybackEngine {
@@ -89,14 +97,6 @@ namespace Core {
             void* hwnd;
             int pitch;
             int track;
-        };
-
-        /// 通道设置 (0-15)
-        struct ChannelSettings {
-            std::atomic<int> transpose{0};
-            std::atomic<bool> enabled{true};
-            std::atomic<void*> window_handle{nullptr};
-            std::atomic<int> track_index{-1};  ///< -1 表示所有轨道
         };
 
         void playback_thread();

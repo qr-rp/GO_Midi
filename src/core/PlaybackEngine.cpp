@@ -16,7 +16,7 @@ namespace Core
 {
     /// 用于 rebuild_events 的配置快照（局部定义）
     struct ValidConfig {
-        PlaybackEngine::ChannelSettings* settings;
+        ChannelSettings* settings;
         bool is_specific_track;
         int target_track;
         bool is_smart_transpose;
