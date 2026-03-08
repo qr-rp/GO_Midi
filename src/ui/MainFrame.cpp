@@ -4,6 +4,11 @@
 #include "../util/Logger.h"
 #include "../util/NtpClient.h"
 
+#ifdef __WXMSW__
+#include <windows.h>
+#include <commctrl.h>
+#endif
+
 #include <wx/filedlg.h>
 #include <wx/aboutdlg.h>
 #include <thread>
@@ -357,15 +362,21 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     // Hide header and allow auto-resize
     m_playlistCtrl = new wxListView(panel, ID_PLAYLIST_CTRL, wxDefaultPosition, wxDefaultSize, wxLC_REPORT | wxLC_SINGLE_SEL | wxLC_NO_HEADER);
     m_playlistCtrl->InsertColumn(0, wxString::FromUTF8("文件名"), wxLIST_FORMAT_LEFT);
-    
+
+#ifdef __WXMSW__
+    // Hide horizontal scrollbar
+    ShowScrollBar((HWND)m_playlistCtrl->GetHandle(), SB_HORZ, FALSE);
+#endif
+
     // Bind size event to auto-resize column
     m_playlistCtrl->Bind(wxEVT_SIZE, [this](wxSizeEvent& event) {
         if (m_playlistCtrl && m_playlistCtrl->GetColumnCount() > 0) {
-            // Use GetClientSize to account for borders and scrollbars correctly
             int width = m_playlistCtrl->GetClientSize().GetWidth();
-            // Subtract a small padding to ensure no horizontal scrollbar appears
-            // This forces the column to be slightly smaller than the view, triggering native ellipsis
-            m_playlistCtrl->SetColumnWidth(0, width - 2);
+            m_playlistCtrl->SetColumnWidth(0, width);
+#ifdef __WXMSW__
+            // Re-hide horizontal scrollbar after size change
+            ShowScrollBar((HWND)m_playlistCtrl->GetHandle(), SB_HORZ, FALSE);
+#endif
         }
         event.Skip();
     });
