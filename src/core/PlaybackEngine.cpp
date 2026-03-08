@@ -590,14 +590,73 @@ namespace Core
         {
             // 相对移调模式：构建全局直方图，计算统一移调值
             // 保持各音轨的相对音高关系，避免所有乐器被压缩到同一音域
+            // 注意：剔除打击乐（channel 10），因为其 pitch 代表鼓声而非音高
             std::vector<float> global_histogram(128, 0.0f);
-            for (size_t i = 0; i < m_track_pitch_histograms.size(); ++i)
+            for (const auto &raw : m_all_notes.GetVector())
             {
-                for (int p = 0; p < 128; ++p)
+                // 跳过打击乐（channel 10）
+                if (raw.channel == 10)
+                    continue;
+                
+                if (raw.pitch >= 0 && raw.pitch < 128)
                 {
-                    global_histogram[p] += m_track_pitch_histograms[i][p];
+                    float vel_weight = raw.velocity / 127.0f;
+                    global_histogram[raw.pitch] += raw.duration * vel_weight;
                 }
             }
+
+            // 应用峰值和最高音权重
+            int peak_pitch = 60;
+            int highest_pitch = 60;
+            float peak_weight = 0.0f;
+            
+            for (int p = 0; p < 128; ++p)
+            {
+                if (global_histogram[p] > peak_weight)
+                {
+                    peak_weight = global_histogram[p];
+                    peak_pitch = p;
+                }
+            }
+            
+            for (int p = 127; p >= 0; --p)
+            {
+                if (global_histogram[p] > 0.0f)
+                {
+                    highest_pitch = p;
+                    break;
+                }
+            }
+
+            // Gaussian weighting
+            const float sigma = 6.0f;
+            const float sigma2 = sigma * sigma;
+            for (int p = 0; p < 128; ++p)
+            {
+                if (global_histogram[p] > 0.0f)
+                {
+                    float distance = static_cast<float>(p - peak_pitch);
+                    float gaussian_weight = std::exp(-(distance * distance) / (2.0f * sigma2));
+                    global_histogram[p] *= (0.7f + 0.6f * gaussian_weight);
+                }
+            }
+
+            // Highest pitch boost
+            if (highest_pitch != peak_pitch)
+            {
+                int start_pitch = highest_pitch - 3;
+                if (start_pitch < 0) start_pitch = 0;
+                for (int p = start_pitch; p <= highest_pitch; ++p)
+                {
+                    if (global_histogram[p] > 0.0f)
+                    {
+                        float distance = static_cast<float>(highest_pitch - p);
+                        float boost = 1.2f - 0.1f * distance;
+                        global_histogram[p] *= boost;
+                    }
+                }
+            }
+
             global_shift = compute_best_shift(global_histogram);
         }
 
