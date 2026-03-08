@@ -96,9 +96,7 @@ namespace Core
                 if (raw.track_index >= 0 && raw.track_index < m_track_pitch_histograms.size())
                 {
                     // Duration * velocity weighted histogram: longer and louder notes have more influence
-                    // Normalize velocity from 0-127 to 0.0-1.0
-                    float vel_weight = raw.velocity / 127.0f;
-                    m_track_pitch_histograms[raw.track_index][raw.pitch] += raw.duration * vel_weight;
+                    m_track_pitch_histograms[raw.track_index][raw.pitch] += raw.duration * raw.velocity;
                 }
             }
         }
@@ -600,8 +598,7 @@ namespace Core
                 
                 if (raw.pitch >= 0 && raw.pitch < 128)
                 {
-                    float vel_weight = raw.velocity / 127.0f;
-                    global_histogram[raw.pitch] += raw.duration * vel_weight;
+                    global_histogram[raw.pitch] += raw.duration * raw.velocity;
                 }
             }
 
