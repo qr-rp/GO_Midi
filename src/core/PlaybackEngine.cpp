@@ -103,21 +103,34 @@ namespace Core
             }
         }
 
-        // Apply peak pitch weighting: emphasize pitches near the histogram peak
-        // This helps the transpose algorithm focus on the core pitch range
+        // Apply peak pitch and highest pitch weighting
+        // This helps the transpose algorithm focus on the core pitch range and protect melody high points
         for (size_t t = 0; t < m_track_pitch_histograms.size(); ++t)
         {
             auto &hist = m_track_pitch_histograms[t];
 
-            // Find peak pitch (highest weight)
-            int peak_pitch = 60; // Default to middle C
+            // Find peak pitch (highest weight) and highest pitch (top of range)
+            int peak_pitch = 60;     // Default to middle C
+            int highest_pitch = 60;  // Default to middle C
             float peak_weight = 0.0f;
+            
+            // Find peak weight
             for (int p = 0; p < 128; ++p)
             {
                 if (hist[p] > peak_weight)
                 {
                     peak_weight = hist[p];
                     peak_pitch = p;
+                }
+            }
+            
+            // Find highest pitch (topmost non-zero weight)
+            for (int p = 127; p >= 0; --p)
+            {
+                if (hist[p] > 0.0f)
+                {
+                    highest_pitch = p;
+                    break;
                 }
             }
 
@@ -133,6 +146,25 @@ namespace Core
                     float gaussian_weight = std::exp(-(distance * distance) / (2.0f * sigma2));
                     // Boost weights near peak, reduce weights far from peak
                     hist[p] *= (0.7f + 0.6f * gaussian_weight); // Range: 0.7x to 1.3x
+                }
+            }
+
+            // Apply highest pitch boost: protect melody high points from being transposed out of range
+            // Only boost if highest pitch differs from peak (avoid double-boosting)
+            if (highest_pitch != peak_pitch)
+            {
+                // Small boost to highest pitch and its vicinity (within 3 semitones)
+                // This helps ensure high melody points stay in playable range after transpose
+                int start_pitch = highest_pitch - 3;
+                if (start_pitch < 0) start_pitch = 0;
+                for (int p = start_pitch; p <= highest_pitch; ++p)
+                {
+                    if (hist[p] > 0.0f)
+                    {
+                        float distance = static_cast<float>(highest_pitch - p);
+                        float boost = 1.2f - 0.1f * distance; // 1.2x at highest, decreasing to 0.9x at -3
+                        hist[p] *= boost;
+                    }
                 }
             }
         }
