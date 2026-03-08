@@ -103,6 +103,40 @@ namespace Core
             }
         }
 
+        // Apply peak pitch weighting: emphasize pitches near the histogram peak
+        // This helps the transpose algorithm focus on the core pitch range
+        for (size_t t = 0; t < m_track_pitch_histograms.size(); ++t)
+        {
+            auto &hist = m_track_pitch_histograms[t];
+
+            // Find peak pitch (highest weight)
+            int peak_pitch = 60; // Default to middle C
+            float peak_weight = 0.0f;
+            for (int p = 0; p < 128; ++p)
+            {
+                if (hist[p] > peak_weight)
+                {
+                    peak_weight = hist[p];
+                    peak_pitch = p;
+                }
+            }
+
+            // Apply Gaussian weighting centered on peak
+            // Standard deviation of 6 semitones (half octave)
+            const float sigma = 6.0f;
+            const float sigma2 = sigma * sigma;
+            for (int p = 0; p < 128; ++p)
+            {
+                if (hist[p] > 0.0f)
+                {
+                    float distance = static_cast<float>(p - peak_pitch);
+                    float gaussian_weight = std::exp(-(distance * distance) / (2.0f * sigma2));
+                    // Boost weights near peak, reduce weights far from peak
+                    hist[p] *= (0.7f + 0.6f * gaussian_weight); // Range: 0.7x to 1.3x
+                }
+            }
+        }
+
         LOG_INFO("MIDI 文件已加载: 音符数=" << m_all_notes.Size()
                                             << ", 时长=" << m_total_duration << "s"
                                             << ", 音轨数=" << midi_file.raw_notes_by_track.size());
