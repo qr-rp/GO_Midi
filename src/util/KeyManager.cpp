@@ -370,30 +370,6 @@ namespace
         return std::string(buffer.begin(), buffer.end());
     }
 
-    // 窄字符路径版本（转换为宽字符后调用宽字符版本）
-    std::string read_file_with_encoding(const std::string &path)
-    {
-        LOG_DEBUG("[read_file_with_encoding] 窄字符路径，转换为宽字符: " << path);
-        // 将 UTF-8 窄字符路径转换为宽字符路径
-        int wide_len = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), static_cast<int>(path.size()), nullptr, 0);
-        if (wide_len <= 0)
-        {
-            LOG_ERROR("[read_file_with_encoding] 路径转换失败，GetLastError: " << GetLastError());
-            // 尝试作为本地编码（ANSI）转换
-            wide_len = MultiByteToWideChar(CP_ACP, 0, path.c_str(), static_cast<int>(path.size()), nullptr, 0);
-            if (wide_len <= 0)
-            {
-                LOG_ERROR("[read_file_with_encoding] ANSI 路径转换也失败");
-                return "";
-            }
-        }
-        
-        std::vector<wchar_t> wide_path(wide_len);
-        MultiByteToWideChar(CP_UTF8, 0, path.c_str(), static_cast<int>(path.size()), wide_path.data(), wide_len);
-        
-        return read_file_with_encoding(std::wstring(wide_path.data(), wide_path.size()));
-    }
-
     const std::map<std::string, int> &get_vk_map()
     {
         static std::map<std::string, int> map = {
@@ -435,7 +411,7 @@ namespace Util
         return {0, 0};
     }
 
-    /// 宽字符路径版本（推荐用于 Windows）
+    /// 加载键位配置
     bool KeyManager::load_config(const std::wstring &path)
     {
         LOG_DEBUG("[KeyManager] 加载键位配置 (宽字符路径)");
@@ -514,32 +490,7 @@ namespace Util
         return false;
     }
 
-    /// 窄字符路径版本（转换为宽字符后调用宽字符版本）
-    bool KeyManager::load_config(const std::string &path)
-    {
-        LOG_DEBUG("[KeyManager] 加载键位配置 (窄字符路径): " << path);
-        
-        // 将 UTF-8 窄字符路径转换为宽字符路径
-        int wide_len = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), static_cast<int>(path.size()), nullptr, 0);
-        if (wide_len <= 0)
-        {
-            LOG_ERROR("[KeyManager] 路径转换失败，尝试 ANSI 编码");
-            // 尝试作为本地编码（ANSI）转换
-            wide_len = MultiByteToWideChar(CP_ACP, 0, path.c_str(), static_cast<int>(path.size()), nullptr, 0);
-            if (wide_len <= 0)
-            {
-                LOG_ERROR("[KeyManager] 路径转换完全失败");
-                return false;
-            }
-        }
-        
-        std::vector<wchar_t> wide_path(wide_len);
-        MultiByteToWideChar(CP_UTF8, 0, path.c_str(), static_cast<int>(path.size()), wide_path.data(), wide_len);
-        
-        return load_config(std::wstring(wide_path.data(), wide_path.size()));
-    }
-
-    /// 宽字符路径版本（推荐用于 Windows）
+    /// 保存键位配置
     bool KeyManager::save_config(const std::wstring &path) const
     {
         LOG_DEBUG("[KeyManager] 保存键位配置 (宽字符路径)");
@@ -615,31 +566,6 @@ namespace Util
 
         LOG_INFO("键位配置保存成功: " << entries.size() << " 个映射");
         return true;
-    }
-
-    /// 窄字符路径版本（转换为宽字符后调用宽字符版本）
-    bool KeyManager::save_config(const std::string &path) const
-    {
-        LOG_DEBUG("[KeyManager] 保存键位配置 (窄字符路径): " << path);
-        
-        // 将 UTF-8 窄字符路径转换为宽字符路径
-        int wide_len = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), static_cast<int>(path.size()), nullptr, 0);
-        if (wide_len <= 0)
-        {
-            LOG_ERROR("[KeyManager] 路径转换失败，尝试 ANSI 编码");
-            // 尝试作为本地编码（ANSI）转换
-            wide_len = MultiByteToWideChar(CP_ACP, 0, path.c_str(), static_cast<int>(path.size()), nullptr, 0);
-            if (wide_len <= 0)
-            {
-                LOG_ERROR("[KeyManager] 路径转换完全失败");
-                return false;
-            }
-        }
-        
-        std::vector<wchar_t> wide_path(wide_len);
-        MultiByteToWideChar(CP_UTF8, 0, path.c_str(), static_cast<int>(path.size()), wide_path.data(), wide_len);
-        
-        return save_config(std::wstring(wide_path.data(), wide_path.size()));
     }
 
     void KeyManager::set_map(const std::map<int, KeyMapping> &map)

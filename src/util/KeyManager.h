@@ -19,15 +19,11 @@ namespace Util {
         
         KeyMapping get_mapping(int note);
         
-        /// 加载键位配置（宽字符路径，推荐用于 Windows）
+        /// 加载键位配置（宽字符路径）
         bool load_config(const std::wstring& path);
-        /// 加载键位配置（窄字符路径，仅支持 ASCII 路径）
-        bool load_config(const std::string& path);
         
-        /// 保存键位配置（宽字符路径，推荐用于 Windows）
+        /// 保存键位配置（宽字符路径）
         bool save_config(const std::wstring& path) const;
-        /// 保存键位配置（窄字符路径，仅支持 ASCII 路径）
-        bool save_config(const std::string& path) const;
 
         void set_map(const std::map<int, KeyMapping>& map);
         const std::map<int, KeyMapping>& get_map() const;
