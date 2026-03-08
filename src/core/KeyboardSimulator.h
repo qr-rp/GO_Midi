@@ -16,7 +16,6 @@ namespace Core {
 
         void send_key_down(int vk_code, int modifier = 0, void* hwnd = nullptr);
         void send_key_up(int vk_code, int modifier = 0, void* hwnd = nullptr);
-        void send_key_press(int vk_code, int modifier = 0, void* hwnd = nullptr);
 
         /// 窗口信息结构
         struct WindowInfo {

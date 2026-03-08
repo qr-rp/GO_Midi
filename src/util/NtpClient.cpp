@@ -397,16 +397,6 @@ namespace Util
         return s_synced;
     }
 
-    long long NtpClient::GetLastDelayMs()
-    {
-        return s_last_delay_ms.load();
-    }
-
-    long long NtpClient::GetLastOffsetMs()
-    {
-        return s_last_offset_ms.load();
-    }
-
     void NtpClient::StartAutoSync()
     {
         bool expected = false;

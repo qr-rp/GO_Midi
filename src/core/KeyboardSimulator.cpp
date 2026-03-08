@@ -202,12 +202,6 @@ namespace Core
         }
     }
 
-    void KeyboardSimulator::send_key_press(int vk_code, int modifier, void *hwnd)
-    {
-        send_key_down(vk_code, modifier, hwnd);
-        send_key_up(vk_code, modifier, hwnd);
-    }
-
     // 辅助函数：宽字符串转 UTF-8
     static std::string WideToUtf8(const wchar_t *wideStr)
     {

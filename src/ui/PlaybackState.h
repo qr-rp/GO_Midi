@@ -9,7 +9,6 @@ namespace UI {
 // 播放状态枚举
 enum class PlaybackStatus {
     Idle,           // 空闲
-    Loading,        // 加载中
     Playing,        // 播放中
     Paused,         // 暂停
     Stopped,        // 停止

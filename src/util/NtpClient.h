@@ -23,9 +23,6 @@ namespace Util {
         // Check if synced
         static bool IsSynced();
 
-        static long long GetLastDelayMs();
-        static long long GetLastOffsetMs();
-
     private:
         static void AutoSyncThread();
         static bool SyncOnceMs(const char* server_name, int timeout_ms, double& offset_ms, double& delay_ms);

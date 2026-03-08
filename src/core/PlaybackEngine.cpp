@@ -14,6 +14,13 @@
 
 namespace Core
 {
+    /// 用于 rebuild_events 的配置快照（局部定义）
+    struct ValidConfig {
+        ChannelSettings* settings;
+        bool is_specific_track;
+        int target_track;
+        bool is_smart_transpose;
+    };
 
     PlaybackEngine::PlaybackEngine()
         : m_running(false), m_playing(false), m_paused(false),
@@ -61,8 +68,7 @@ namespace Core
         m_current_time = 0.0;
         m_total_duration = midi_file.length;
 
-        // 优化：使用 PreallocVector 减少分配
-        m_all_notes.Clear();
+        m_all_notes.clear();
 
         // 预估大小以减少重分配
         size_t totalNotes = 0;
@@ -70,16 +76,21 @@ namespace Core
         {
             totalNotes += track_notes.size();
         }
-        m_all_notes.GetVector().reserve(totalNotes);
+
+        // 内存管理：如果当前容量远大于新文件所需，释放多余内存
+        if (m_all_notes.capacity() > totalNotes * 4) {
+            m_all_notes.shrink_to_fit();
+        }
+        m_all_notes.reserve(totalNotes);
 
         for (const auto &track_notes : midi_file.raw_notes_by_track)
         {
-            m_all_notes.GetVector().insert(m_all_notes.GetVector().end(),
-                                           track_notes.begin(), track_notes.end());
+            m_all_notes.insert(m_all_notes.end(),
+                               track_notes.begin(), track_notes.end());
         }
 
         // Sort raw notes by start time globally
-        std::sort(m_all_notes.GetVector().begin(), m_all_notes.GetVector().end(),
+        std::sort(m_all_notes.begin(), m_all_notes.end(),
                   [](const Midi::RawNote &a, const Midi::RawNote &b)
                   {
                       return a.start_s < b.start_s;
@@ -88,41 +99,33 @@ namespace Core
         // Optimization: Build pitch histograms with duration and velocity weighting
         m_track_pitch_histograms.clear();
         m_track_pitch_histograms.resize(midi_file.raw_notes_by_track.size(), std::vector<float>(128, 0.0f));
+        m_global_histogram.clear();
+        m_global_histogram.resize(128, 0.0f);
 
-        for (const auto &raw : m_all_notes.GetVector())
+        for (const auto &raw : m_all_notes)
         {
             if (raw.pitch >= 0 && raw.pitch < 128)
             {
                 if (raw.track_index >= 0 && raw.track_index < m_track_pitch_histograms.size())
                 {
-                    // Duration * velocity weighted histogram: longer and louder notes have more influence
-                    m_track_pitch_histograms[raw.track_index][raw.pitch] += raw.duration * raw.velocity;
+                    // sqrt(duration) * velocity: compress extreme duration values while preserving relative importance
+                    m_track_pitch_histograms[raw.track_index][raw.pitch] += std::sqrt(raw.duration) * raw.velocity;
+                }
+                // 全局直方图：排除打击乐（channel 10）
+                if (raw.channel != 10)
+                {
+                    m_global_histogram[raw.pitch] += std::sqrt(raw.duration) * raw.velocity;
                 }
             }
         }
 
-        // Apply peak pitch and highest pitch weighting
-        // This helps the transpose algorithm focus on the core pitch range and protect melody high points
+        // Apply highest pitch weighting to protect melody high points from being transposed out of range
         for (size_t t = 0; t < m_track_pitch_histograms.size(); ++t)
         {
             auto &hist = m_track_pitch_histograms[t];
 
-            // Find peak pitch (highest weight) and highest pitch (top of range)
-            int peak_pitch = 60;     // Default to middle C
-            int highest_pitch = 60;  // Default to middle C
-            float peak_weight = 0.0f;
-            
-            // Find peak weight
-            for (int p = 0; p < 128; ++p)
-            {
-                if (hist[p] > peak_weight)
-                {
-                    peak_weight = hist[p];
-                    peak_pitch = p;
-                }
-            }
-            
             // Find highest pitch (topmost non-zero weight)
+            int highest_pitch = 60;  // Default to middle C
             for (int p = 127; p >= 0; --p)
             {
                 if (hist[p] > 0.0f)
@@ -132,42 +135,46 @@ namespace Core
                 }
             }
 
-            // Apply Gaussian weighting centered on peak
-            // Standard deviation of 6 semitones (half octave)
-            const float sigma = 6.0f;
-            const float sigma2 = sigma * sigma;
-            for (int p = 0; p < 128; ++p)
+            // Apply highest pitch boost: protect melody high points from being transposed out of range
+            int start_pitch = highest_pitch - 3;
+            if (start_pitch < 0) start_pitch = 0;
+            for (int p = start_pitch; p <= highest_pitch; ++p)
             {
                 if (hist[p] > 0.0f)
                 {
-                    float distance = static_cast<float>(p - peak_pitch);
-                    float gaussian_weight = std::exp(-(distance * distance) / (2.0f * sigma2));
-                    // Boost weights near peak, reduce weights far from peak
-                    hist[p] *= (0.7f + 0.6f * gaussian_weight); // Range: 0.7x to 1.3x
-                }
-            }
-
-            // Apply highest pitch boost: protect melody high points from being transposed out of range
-            // Only boost if highest pitch differs from peak (avoid double-boosting)
-            if (highest_pitch != peak_pitch)
-            {
-                // Small boost to highest pitch and its vicinity (within 3 semitones)
-                // This helps ensure high melody points stay in playable range after transpose
-                int start_pitch = highest_pitch - 3;
-                if (start_pitch < 0) start_pitch = 0;
-                for (int p = start_pitch; p <= highest_pitch; ++p)
-                {
-                    if (hist[p] > 0.0f)
-                    {
-                        float distance = static_cast<float>(highest_pitch - p);
-                        float boost = 1.2f - 0.1f * distance; // 1.2x at highest, decreasing to 0.9x at -3
-                        hist[p] *= boost;
-                    }
+                    float distance = static_cast<float>(highest_pitch - p);
+                    float boost = 1.2f - 0.1f * distance;
+                    hist[p] *= boost;
                 }
             }
         }
 
-        LOG_INFO("MIDI 文件已加载: 音符数=" << m_all_notes.Size()
+        // Apply highest pitch weighting to global histogram
+        {
+            int highest_pitch = 60;
+            for (int p = 127; p >= 0; --p)
+            {
+                if (m_global_histogram[p] > 0.0f)
+                {
+                    highest_pitch = p;
+                    break;
+                }
+            }
+
+            int start_pitch = highest_pitch - 3;
+            if (start_pitch < 0) start_pitch = 0;
+            for (int p = start_pitch; p <= highest_pitch; ++p)
+            {
+                if (m_global_histogram[p] > 0.0f)
+                {
+                    float distance = static_cast<float>(highest_pitch - p);
+                    float boost = 1.2f - 0.1f * distance;
+                    m_global_histogram[p] *= boost;
+                }
+            }
+        }
+
+        LOG_INFO("MIDI 文件已加载: 音符数=" << m_all_notes.size()
                                             << ", 时长=" << m_total_duration << "s"
                                             << ", 音轨数=" << midi_file.raw_notes_by_track.size());
 
@@ -223,10 +230,6 @@ namespace Core
             // 将活动按键转移到临时变量，准备释放
             keys_to_release.assign(m_active_keys.begin(), m_active_keys.end());
             m_active_keys.clear();
-
-            // 停止后缩容释放多余内存
-            m_all_notes.ShrinkIfNeeded();
-            m_events.ShrinkIfNeeded();
         }
 
         // 在锁外释放按键，避免阻塞其他线程
@@ -262,21 +265,6 @@ namespace Core
         LOG_INFO("播放停止");
     }
 
-    // Helper method to release all active keys
-    // 注意：调用者必须已经持有 m_mutex 锁
-    void PlaybackEngine::release_all_active_keys()
-    {
-        // 此函数现在仅在持有锁的上下文中使用
-        // 它只负责转移数据，实际的释放操作由调用者在锁外完成
-        std::vector<std::pair<int, void *>> keys_to_release(m_active_keys.begin(), m_active_keys.end());
-        m_active_keys.clear();
-
-        // 在锁外释放按键
-        for (const auto &key : keys_to_release)
-        {
-            m_simulator.send_key_up(key.first, 0, key.second);
-        }
-    }
     void PlaybackEngine::seek(double time_s)
     {
         LOG_DEBUG("跳转播放位置: " << time_s << "s");
@@ -454,8 +442,15 @@ namespace Core
     {
         LOG_DEBUG("重建事件列表");
 
-        m_events.Clear();
-        if (m_all_notes.Empty())
+        m_events.clear();
+
+        // 内存管理：如果容量远大于可能需要的最大值，释放多余内存
+        size_t max_events = m_all_notes.size() * 2;
+        if (m_events.capacity() > max_events * 4) {
+            m_events.shrink_to_fit();
+        }
+
+        if (m_all_notes.empty())
         {
             LOG_DEBUG("音符列表为空，跳过重建");
             return;
@@ -463,7 +458,7 @@ namespace Core
 
         // 即用即走：临时音符列表作为局部变量
         std::vector<TempNote> temp_notes;
-        temp_notes.reserve(m_all_notes.Size());
+        temp_notes.reserve(m_all_notes.size());
         auto &notes = temp_notes;
 
         // 1. Filter and Map
@@ -567,99 +562,35 @@ namespace Core
         std::vector<int> track_best_shifts(m_track_pitch_histograms.size(), 0);
         int global_shift = 0;
 
-        // 步骤1：为所有音轨计算独立移调值（特定音轨配置使用）
-        for (size_t i = 0; i < m_track_pitch_histograms.size(); ++i)
-        {
-            track_best_shifts[i] = compute_best_shift(m_track_pitch_histograms[i]);
-        }
-
-        // 步骤2：检查是否有全局配置（全部音轨模式），计算统一移调值
+        // 先检查配置类型，按需计算
         bool has_global_config = false;
+        bool has_specific_track_config = false;
         for (const auto &vc : valid_configs)
         {
-            if (!vc.is_specific_track)
-            {
+            if (vc.is_specific_track)
+                has_specific_track_config = true;
+            else
                 has_global_config = true;
-                break;
+        }
+
+        // 仅在有特定音轨配置时才计算独立移调值
+        if (has_specific_track_config)
+        {
+            for (size_t i = 0; i < m_track_pitch_histograms.size(); ++i)
+            {
+                track_best_shifts[i] = compute_best_shift(m_track_pitch_histograms[i]);
             }
         }
 
+        // 全局配置：使用预计算的全局直方图计算统一移调值
         if (has_global_config)
         {
-            // 相对移调模式：构建全局直方图，计算统一移调值
-            // 保持各音轨的相对音高关系，避免所有乐器被压缩到同一音域
-            // 注意：剔除打击乐（channel 10），因为其 pitch 代表鼓声而非音高
-            std::vector<float> global_histogram(128, 0.0f);
-            for (const auto &raw : m_all_notes.GetVector())
-            {
-                // 跳过打击乐（channel 10）
-                if (raw.channel == 10)
-                    continue;
-                
-                if (raw.pitch >= 0 && raw.pitch < 128)
-                {
-                    global_histogram[raw.pitch] += raw.duration * raw.velocity;
-                }
-            }
-
-            // 应用峰值和最高音权重
-            int peak_pitch = 60;
-            int highest_pitch = 60;
-            float peak_weight = 0.0f;
-            
-            for (int p = 0; p < 128; ++p)
-            {
-                if (global_histogram[p] > peak_weight)
-                {
-                    peak_weight = global_histogram[p];
-                    peak_pitch = p;
-                }
-            }
-            
-            for (int p = 127; p >= 0; --p)
-            {
-                if (global_histogram[p] > 0.0f)
-                {
-                    highest_pitch = p;
-                    break;
-                }
-            }
-
-            // Gaussian weighting
-            const float sigma = 6.0f;
-            const float sigma2 = sigma * sigma;
-            for (int p = 0; p < 128; ++p)
-            {
-                if (global_histogram[p] > 0.0f)
-                {
-                    float distance = static_cast<float>(p - peak_pitch);
-                    float gaussian_weight = std::exp(-(distance * distance) / (2.0f * sigma2));
-                    global_histogram[p] *= (0.7f + 0.6f * gaussian_weight);
-                }
-            }
-
-            // Highest pitch boost
-            if (highest_pitch != peak_pitch)
-            {
-                int start_pitch = highest_pitch - 3;
-                if (start_pitch < 0) start_pitch = 0;
-                for (int p = start_pitch; p <= highest_pitch; ++p)
-                {
-                    if (global_histogram[p] > 0.0f)
-                    {
-                        float distance = static_cast<float>(highest_pitch - p);
-                        float boost = 1.2f - 0.1f * distance;
-                        global_histogram[p] *= boost;
-                    }
-                }
-            }
-
-            global_shift = compute_best_shift(global_histogram);
+            global_shift = compute_best_shift(m_global_histogram);
         }
 
         // Optimization: Iterate m_all_notes ONCE (Cache Locality)
         // m_all_notes is already sorted by start time, so we iterate in time order.
-        for (const auto &raw : m_all_notes.GetVector())
+        for (const auto &raw : m_all_notes)
         {
             for (const auto &vc : valid_configs)
             {
@@ -717,7 +648,7 @@ namespace Core
             return;
 
         // Pre-allocate for On + Off events
-        m_events.GetVector().reserve(notes.size() * 2);
+        m_events.reserve(notes.size() * 2);
         {
             // Removed MIN_GAP to allow perfect legato (NoteOff at t, NoteOn at t)
             // Sorting ensures NoteOff comes before NoteOn at same timestamp.
@@ -880,27 +811,24 @@ namespace Core
         }
 
         // 6. Generate Events
-        m_events.GetVector().reserve(notes.size() * 2);
+        m_events.reserve(notes.size() * 2);
         for (const auto &note : notes)
         {
             if (note.end > note.start)
             {
                 // Note On 事件
-                m_events.GetVector().push_back({note.start, true, note.vk, note.modifier, note.hwnd});
+                m_events.push_back({note.start, true, note.vk, note.modifier, note.hwnd});
                 // Note Off 事件
-                m_events.GetVector().push_back({note.end, false, note.vk, note.modifier, note.hwnd});
+                m_events.push_back({note.end, false, note.vk, note.modifier, note.hwnd});
             }
         }
 
         // 7. Final Sort
-        std::sort(m_events.GetVector().begin(), m_events.GetVector().end());
+        std::sort(m_events.begin(), m_events.end());
 
-        LOG_INFO("事件重建完成: 原始音符=" << m_all_notes.Size()
+        LOG_INFO("事件重建完成: 原始音符=" << m_all_notes.size()
                                            << ", 过滤后音符=" << notes.size()
-                                           << ", 事件数=" << m_events.Size());
-
-        // 缩容释放多余内存
-        m_events.ShrinkIfNeeded();
+                                           << ", 事件数=" << m_events.size());
     }
 
     void PlaybackEngine::playback_thread()
@@ -1008,7 +936,7 @@ namespace Core
             // 使用成员变量缓冲区避免重复分配
             m_key_event_buffer.clear();
 
-            while (next_event_idx < m_events.Size())
+            while (next_event_idx < m_events.size())
             {
                 const auto &evt = m_events[next_event_idx];
 
@@ -1049,7 +977,7 @@ namespace Core
             // Calculate dynamic sleep time
             double sleep_ms = 15.0; // Default max sleep for UI responsiveness
 
-            if (next_event_idx < m_events.Size())
+            if (next_event_idx < m_events.size())
             {
                 double time_to_next = m_events[next_event_idx].time - m_current_time;
                 if (time_to_next > 0)

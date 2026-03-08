@@ -632,8 +632,8 @@ void MainFrame::InitKeymapPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     wxPanel* panel = new wxPanel(parent);
     wxBoxSizer* sizer = new wxBoxSizer(wxHORIZONTAL);
     
-    m_loadKeymapBtn = new wxButton(panel, ID_LOAD_KEYMAP_BTN, wxString::FromUTF8("加载键位"));
-    m_saveKeymapBtn = new wxButton(panel, ID_SAVE_KEYMAP_BTN, wxString::FromUTF8("保存键位"));
+    m_loadKeymapBtn = new wxButton(panel, ID_LOAD_KEYMAP_BTN, wxString::FromUTF8("导入键位"));
+    m_saveKeymapBtn = new wxButton(panel, ID_SAVE_KEYMAP_BTN, wxString::FromUTF8("导出键位"));
     m_resetKeymapBtn = new wxButton(panel, ID_RESET_KEYMAP_BTN, wxString::FromUTF8("重置键位"));
     
     sizer->Add(m_loadKeymapBtn, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
@@ -1376,14 +1376,14 @@ void MainFrame::OnPitchRangeChange(wxSpinEvent& event) {
 }
 
 void MainFrame::OnLoadKeymap(wxCommandEvent& event) {
-    wxFileDialog openFileDialog(this, wxString::FromUTF8("加载键位配置"), "", "",
+    wxFileDialog openFileDialog(this, wxString::FromUTF8("导入键位配置"), "", "",
                                 wxString::FromUTF8("键位配置文件 (*.txt)|*.txt"), wxFD_OPEN | wxFD_FILE_MUST_EXIST);
     if (openFileDialog.ShowModal() == wxID_CANCEL) return;
     
     // 直接使用宽字符路径，避免 UTF-8 转换问题
     bool ok = m_engine.get_key_manager().load_config(openFileDialog.GetPath().ToStdWstring());
-    if (ok) UpdateStatusText(wxString::FromUTF8("键位已加载"));
-    else UpdateStatusText(wxString::FromUTF8("键位加载失败"));
+    if (ok) UpdateStatusText(wxString::FromUTF8("键位已导入"));
+    else UpdateStatusText(wxString::FromUTF8("键位导入失败"));
     if (ok) {
         m_engine.notify_keymap_changed();
         SaveKeymapConfig();
@@ -1391,14 +1391,14 @@ void MainFrame::OnLoadKeymap(wxCommandEvent& event) {
 }
 
 void MainFrame::OnSaveKeymap(wxCommandEvent& event) {
-    wxFileDialog saveFileDialog(this, wxString::FromUTF8("保存键位配置"), "", "",
+    wxFileDialog saveFileDialog(this, wxString::FromUTF8("导出键位配置"), "", "",
                                 wxString::FromUTF8("键位配置文件 (*.txt)|*.txt"), wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
     if (saveFileDialog.ShowModal() == wxID_CANCEL) return;
     
     // 直接使用宽字符路径，避免 UTF-8 转换问题
     bool ok = m_engine.get_key_manager().save_config(saveFileDialog.GetPath().ToStdWstring());
-    if (ok) UpdateStatusText(wxString::FromUTF8("键位已保存"));
-    else UpdateStatusText(wxString::FromUTF8("键位保存失败"));
+    if (ok) UpdateStatusText(wxString::FromUTF8("键位已导出"));
+    else UpdateStatusText(wxString::FromUTF8("键位导出失败"));
     if (ok) SaveKeymapConfig();
 }
 

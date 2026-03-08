@@ -37,9 +37,6 @@ wxString PlaybackStateMachine::GetStateText() const {
         case PlaybackStatus::Stopped:
             m_cachedStateText = wxString::FromUTF8("By:最终幻想14水晶世界_黄金谷_吸溜");
             break;
-        case PlaybackStatus::Loading:
-            m_cachedStateText = wxString::FromUTF8("加载中...");
-            break;
         case PlaybackStatus::Paused:
             m_cachedStateText = wxString::FromUTF8("已暂停");
             break;

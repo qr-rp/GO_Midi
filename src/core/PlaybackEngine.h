@@ -15,7 +15,6 @@
 #include "../midi/MidiParser.h"
 #include "KeyboardSimulator.h"
 #include "../util/KeyManager.h"
-#include "../util/MemoryPool.h"
 
 namespace Core {
 
@@ -100,24 +99,18 @@ namespace Core {
             std::atomic<int> track_index{-1};  ///< -1 表示所有轨道
         };
 
-        /// 用于 rebuild_events 的配置快照
-        struct ValidConfig {
-            ChannelSettings* settings;
-            bool is_specific_track;
-            int target_track;
-            bool is_smart_transpose;
-        };
-
         void playback_thread();
         void rebuild_events();
-        void release_all_active_keys();
 
         /// 核心数据：持久化持有
-        Util::PreallocVector<Midi::RawNote> m_all_notes;
-        Util::PreallocVector<ProcessedEvent> m_events;
+        std::vector<Midi::RawNote> m_all_notes;
+        std::vector<ProcessedEvent> m_events;
         
         /// 每轨道的音高统计缓存（用于智能移调）
         std::vector<std::vector<float>> m_track_pitch_histograms;
+        
+        /// 全局音高直方图（排除打击乐 channel 10，预计算）
+        std::vector<float> m_global_histogram;
         
         std::atomic<int> m_config_version{0};   ///< 触发重建的版本号
         int m_built_version{-1};                ///< 最后构建的版本
