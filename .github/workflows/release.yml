@@ -36,7 +36,6 @@ jobs:
         Invoke-WebRequest -Uri "https://github.com/wxWidgets/wxWidgets/releases/download/v${{ env.WX_VERSION }}/wxWidgets-${{ env.WX_VERSION }}.tar.bz2" -OutFile "wxWidgets.tar.bz2"
         7z x "wxWidgets.tar.bz2" -y
         7z x "wxWidgets.tar" -y
-        Rename-Item "wxWidgets-${{ env.WX_VERSION }}" "wxWidgets-3.3.1"
         Remove-Item "wxWidgets.tar.bz2", "wxWidgets.tar" -ErrorAction SilentlyContinue
 
     - name: Build Application
