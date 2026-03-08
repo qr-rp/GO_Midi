@@ -531,11 +531,42 @@ namespace Core
             return (best_oct_idx - 4) * 12;
         };
 
-        // 即用即走：最佳移调值作为局部变量
+        // 计算移调值：支持混合模式
+        // - 特定音轨配置：使用该音轨独立计算的移调值
+        // - 全部音轨配置：使用全局直方图计算的统一移调值（相对移调，保持音轨音高关系）
         std::vector<int> track_best_shifts(m_track_pitch_histograms.size(), 0);
+        int global_shift = 0;
+
+        // 步骤1：为所有音轨计算独立移调值（特定音轨配置使用）
         for (size_t i = 0; i < m_track_pitch_histograms.size(); ++i)
         {
             track_best_shifts[i] = compute_best_shift(m_track_pitch_histograms[i]);
+        }
+
+        // 步骤2：检查是否有全局配置（全部音轨模式），计算统一移调值
+        bool has_global_config = false;
+        for (const auto &vc : valid_configs)
+        {
+            if (!vc.is_specific_track)
+            {
+                has_global_config = true;
+                break;
+            }
+        }
+
+        if (has_global_config)
+        {
+            // 相对移调模式：构建全局直方图，计算统一移调值
+            // 保持各音轨的相对音高关系，避免所有乐器被压缩到同一音域
+            std::vector<float> global_histogram(128, 0.0f);
+            for (size_t i = 0; i < m_track_pitch_histograms.size(); ++i)
+            {
+                for (int p = 0; p < 128; ++p)
+                {
+                    global_histogram[p] += m_track_pitch_histograms[i][p];
+                }
+            }
+            global_shift = compute_best_shift(global_histogram);
         }
 
         // Optimization: Iterate m_all_notes ONCE (Cache Locality)
@@ -559,12 +590,21 @@ namespace Core
 
                 int transpose = vc.settings->transpose;
 
-                // improved smart transpose logic
+                // 智能移调：特定音轨用独立移调，全部音轨用统一移调
                 if (vc.is_smart_transpose)
                 {
-                    if (raw.track_index >= 0 && raw.track_index < static_cast<int>(track_best_shifts.size()))
+                    if (vc.is_specific_track)
                     {
-                        transpose += track_best_shifts[raw.track_index];
+                        // 特定音轨：使用该音轨独立计算的移调值
+                        if (raw.track_index >= 0 && raw.track_index < static_cast<int>(track_best_shifts.size()))
+                        {
+                            transpose += track_best_shifts[raw.track_index];
+                        }
+                    }
+                    else
+                    {
+                        // 全部音轨：使用全局统一移调值（相对移调，保持音轨音高关系）
+                        transpose += global_shift;
                     }
                 }
 
