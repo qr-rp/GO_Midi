@@ -22,49 +22,29 @@ jobs:
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
 
-    - name: Cache wxWidgets source
-      id: cache-wx-src
+    - name: Cache wxWidgets
+      id: cache-wx
       uses: actions/cache@v4
       with:
-        path: wxWidgets-src
-        key: wxwidgets-src-${{ env.WX_VERSION }}
+        path: wxWidgets-3.3.1
+        key: wxwidgets-${{ env.WX_VERSION }}-${{ hashFiles('CMakeLists.txt') }}
 
-    - name: Download wxWidgets source
-      if: steps.cache-wx-src.outputs.cache-hit != 'true'
+    - name: Download and extract wxWidgets source
+      if: steps.cache-wx.outputs.cache-hit != 'true'
       shell: pwsh
       run: |
         Invoke-WebRequest -Uri "https://github.com/wxWidgets/wxWidgets/releases/download/v${{ env.WX_VERSION }}/wxWidgets-${{ env.WX_VERSION }}.tar.bz2" -OutFile "wxWidgets.tar.bz2"
         7z x "wxWidgets.tar.bz2" -y
-        7z x "wxWidgets.tar" -o"wxWidgets-src" -y
-        Move-Item "wxWidgets-src\wxWidgets-${{ env.WX_VERSION }}\*" "wxWidgets-src\" -Force
-        Remove-Item "wxWidgets-src\wxWidgets-${{ env.WX_VERSION }}" -ErrorAction SilentlyContinue
+        7z x "wxWidgets.tar" -y
+        Rename-Item "wxWidgets-${{ env.WX_VERSION }}" "wxWidgets-3.3.1"
         Remove-Item "wxWidgets.tar.bz2", "wxWidgets.tar" -ErrorAction SilentlyContinue
-
-    - name: Prepare wxWidgets directory
-      shell: pwsh
-      run: |
-        $wxSrcPath = Join-Path $PWD "wxWidgets-src"
-        $wxLinkPath = Join-Path $PWD "wxWidgets-3.3.1"
-        if (-not (Test-Path $wxLinkPath)) {
-          New-Item -ItemType Junction -Path $wxLinkPath -Target $wxSrcPath | Out-Null
-        }
-
-    - name: Cache CMake build
-      id: cache-cmake
-      uses: actions/cache@v4
-      with:
-        path: |
-          build/_deps
-          build/wxWidgets
-        key: cmake-build-${{ env.WX_VERSION }}-${{ hashFiles('CMakeLists.txt') }}
 
     - name: Build Application
       shell: pwsh
       run: |
         mkdir build -Force
         cd build
-        cmake .. -G "Visual Studio 17 2022" -A x64 `
-          -DCMAKE_BUILD_TYPE=Release
+        cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
         cmake --build . --config Release -j
 
     - name: Create archive
