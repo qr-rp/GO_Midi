@@ -111,8 +111,8 @@ namespace Core
                     // sqrt(duration) * velocity: compress extreme duration values while preserving relative importance
                     m_track_pitch_histograms[raw.track_index][raw.pitch] += std::sqrt(raw.duration) * raw.velocity;
                 }
-                // 全局直方图：排除打击乐（channel 10）
-                if (raw.channel != 10)
+                // 全局直方图：排除打击乐（channel 10）和 Bass 乐器（program 33-40）
+                if (raw.channel != 10 && (raw.program < 33 || raw.program > 40))
                 {
                     m_global_histogram[raw.pitch] += std::sqrt(raw.duration) * raw.velocity;
                 }

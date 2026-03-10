@@ -148,7 +148,7 @@ namespace Midi
 
         std::vector<std::pair<int, int>> all_tempo_events;
         std::vector<std::pair<int, std::pair<int, int>>> all_time_sig_events;
-        std::vector<std::vector<std::tuple<int, int, int, int, int>>> parsed_notes_by_track; // start, end, pitch, ch, velocity
+        std::vector<std::vector<std::tuple<int, int, int, int, int, int>>> parsed_notes_by_track; // start, end, pitch, ch, velocity, program
         int last_tick_global = 0;
 
         for (int i = 0; i < track_count; ++i)
@@ -204,6 +204,7 @@ namespace Midi
                 int pitch = std::get<2>(note);
                 int ch = std::get<3>(note);
                 int vel = std::get<4>(note);
+                int prog = std::get<5>(note);
 
                 double start_s = tick_to_seconds(start_tick);
                 double end_s = tick_to_seconds(end_tick);
@@ -220,6 +221,7 @@ namespace Midi
                 rn.track_index = static_cast<int>(i);
                 rn.channel = ch;
                 rn.velocity = vel;
+                rn.program = prog;
                 track_raw_notes.push_back(rn);
             }
             raw_notes_by_track.push_back(std::move(track_raw_notes));
@@ -271,14 +273,20 @@ namespace Midi
         int abs_tick = 0;
         uint8_t running_status = 0;
 
+        // Track program per channel (MIDI channels 1-16, indexed 0-15)
+        int channel_program[16];
+        for (int i = 0; i < 16; ++i) channel_program[i] = 0;  // Default to piano
+
         // 优化：使用扁平数组替代 vector<vector<int>>，减少小块堆分配
         // 大多数同一 pitch+channel 同时只有一个活跃音符
         int note_start_tick[2048];
         int8_t note_start_depth[2048]; // 0=无活跃, 1=使用 note_start_tick, >1=有溢出
         int note_velocity[2048]; // 存储 Note On 时的 velocity
+        int note_program[2048];  // 存储 Note On 时的 program
         std::memset(note_start_depth, 0, sizeof(note_start_depth));
         std::unordered_map<int, std::vector<int>> note_overflow; // 仅用于罕见的同音重叠
         std::unordered_map<int, std::vector<int>> note_velocity_overflow; // 存储溢出音符的 velocity
+        std::unordered_map<int, std::vector<int>> note_program_overflow;  // 存储溢出音符的 program
 
         while (pos < end_pos)
         {
@@ -373,21 +381,26 @@ namespace Midi
                     {
                         int start_tick = note_start_tick[key_idx];
                         int start_vel = note_velocity[key_idx];
+                        int start_prog = note_program[key_idx];
                         note_start_depth[key_idx]--;
                         if (note_start_depth[key_idx] > 0)
                         {
                             auto it = note_overflow.find(key_idx);
                             auto vit = note_velocity_overflow.find(key_idx);
+                            auto pit = note_program_overflow.find(key_idx);
                             if (it != note_overflow.end() && !it->second.empty() &&
-                                vit != note_velocity_overflow.end() && !vit->second.empty())
+                                vit != note_velocity_overflow.end() && !vit->second.empty() &&
+                                pit != note_program_overflow.end() && !pit->second.empty())
                             {
                                 note_start_tick[key_idx] = it->second.back();
                                 note_velocity[key_idx] = vit->second.back();
+                                note_program[key_idx] = pit->second.back();
                                 it->second.pop_back();
                                 vit->second.pop_back();
+                                pit->second.pop_back();
                             }
                         }
-                        res.notes.emplace_back(start_tick, abs_tick, pitch, channel, start_vel);
+                        res.notes.emplace_back(start_tick, abs_tick, pitch, channel, start_vel, start_prog);
                     }
                 }
                 else
@@ -396,9 +409,11 @@ namespace Midi
                     {
                         note_overflow[key_idx].push_back(note_start_tick[key_idx]);
                         note_velocity_overflow[key_idx].push_back(note_velocity[key_idx]);
+                        note_program_overflow[key_idx].push_back(note_program[key_idx]);
                     }
                     note_start_tick[key_idx] = abs_tick;
                     note_velocity[key_idx] = vel;
+                    note_program[key_idx] = channel_program[channel0];
                     note_start_depth[key_idx]++;
                     res.track.note_count++;
                 }
@@ -417,21 +432,26 @@ namespace Midi
                 {
                     int start_tick = note_start_tick[key_idx];
                     int start_vel = note_velocity[key_idx];
+                    int start_prog = note_program[key_idx];
                     note_start_depth[key_idx]--;
                     if (note_start_depth[key_idx] > 0)
                     {
                         auto it = note_overflow.find(key_idx);
                         auto vit = note_velocity_overflow.find(key_idx);
+                        auto pit = note_program_overflow.find(key_idx);
                         if (it != note_overflow.end() && !it->second.empty() &&
-                            vit != note_velocity_overflow.end() && !vit->second.empty())
+                            vit != note_velocity_overflow.end() && !vit->second.empty() &&
+                            pit != note_program_overflow.end() && !pit->second.empty())
                         {
                             note_start_tick[key_idx] = it->second.back();
                             note_velocity[key_idx] = vit->second.back();
+                            note_program[key_idx] = pit->second.back();
                             it->second.pop_back();
                             vit->second.pop_back();
+                            pit->second.pop_back();
                         }
                     }
-                    res.notes.emplace_back(start_tick, abs_tick, pitch, channel, start_vel);
+                    res.notes.emplace_back(start_tick, abs_tick, pitch, channel, start_vel, start_prog);
                 }
                 continue;
             }
@@ -442,8 +462,18 @@ namespace Midi
                 continue;
             }
 
-            if (event_type == 0xC0 || event_type == 0xD0)
-            {
+            if (event_type == 0xC0)
+            { // Program Change
+                if (pos + 1 > end_pos)
+                    break;
+                int program = m_data[pos];
+                pos += 1;
+                channel_program[channel0] = program;
+                continue;
+            }
+
+            if (event_type == 0xD0)
+            { // Channel Pressure
                 pos += 1;
                 continue;
             }
@@ -469,20 +499,24 @@ namespace Midi
             int ch = (i / 128) + 1; // 0-15 -> 1-16
             int pitch = i % 128;
             int vel = note_velocity[i] > 0 ? note_velocity[i] : 64; // 默认中等力度
+            int prog = note_program[i];
 
             // 关闭栈顶音符
-            res.notes.emplace_back(note_start_tick[i], abs_tick, pitch, ch, vel);
+            res.notes.emplace_back(note_start_tick[i], abs_tick, pitch, ch, vel, prog);
 
             // 关闭溢出栈中的音符
             auto it = note_overflow.find(i);
             auto vit = note_velocity_overflow.find(i);
+            auto pit = note_program_overflow.find(i);
             if (it != note_overflow.end())
             {
                 for (size_t j = 0; j < it->second.size(); ++j)
                 {
                     int v = (vit != note_velocity_overflow.end() && j < vit->second.size())
                             ? vit->second[j] : 64;
-                    res.notes.emplace_back(it->second[j], abs_tick, pitch, ch, v);
+                    int p = (pit != note_program_overflow.end() && j < pit->second.size())
+                            ? pit->second[j] : prog;
+                    res.notes.emplace_back(it->second[j], abs_tick, pitch, ch, v, p);
                 }
             }
         }

@@ -18,6 +18,7 @@ namespace Midi {
         int track_index;
         int channel;
         int velocity;  ///< MIDI 力度 (0-127)
+        int program;   ///< MIDI 乐器编号 (0-127), -1 表示未知
     };
 
     class MidiTrack {
@@ -61,7 +62,7 @@ namespace Midi {
         /// 解析单个轨道的辅助结构
         struct TrackParseResult {
             MidiTrack track;
-            std::vector<std::tuple<int, int, int, int, int>> notes;  ///< start, end, pitch, ch, velocity
+            std::vector<std::tuple<int, int, int, int, int, int>> notes;  ///< start, end, pitch, ch, velocity, program
             std::vector<std::pair<int, int>> tempo_events;
             std::vector<std::pair<int, std::pair<int, int>>> time_sig_events;
             int last_tick;
