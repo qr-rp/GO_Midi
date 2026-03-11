@@ -1,4 +1,5 @@
 #include <wx/tglbtn.h>
+#include <wx/arrstr.h>
 #include "MainFrame.h"
 #include "UIHelpers.h"
 #include "../util/Logger.h"
@@ -66,7 +67,6 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     
     EVT_BUTTON(ID_LOAD_KEYMAP_BTN, MainFrame::OnLoadKeymap)
     EVT_BUTTON(ID_SAVE_KEYMAP_BTN, MainFrame::OnSaveKeymap)
-    EVT_BUTTON(ID_RESET_KEYMAP_BTN, MainFrame::OnResetKeymap)
     EVT_BUTTON(ID_SCHEDULE_BTN, MainFrame::OnSchedule)
     
     // Custom events
@@ -631,15 +631,19 @@ void MainFrame::UpdateChannelUI(int index, bool enabled) {
 void MainFrame::InitKeymapPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     wxPanel* panel = new wxPanel(parent);
     wxBoxSizer* sizer = new wxBoxSizer(wxHORIZONTAL);
-    
+
     m_loadKeymapBtn = new wxButton(panel, ID_LOAD_KEYMAP_BTN, wxString::FromUTF8("导入键位"));
     m_saveKeymapBtn = new wxButton(panel, ID_SAVE_KEYMAP_BTN, wxString::FromUTF8("导出键位"));
-    m_resetKeymapBtn = new wxButton(panel, ID_RESET_KEYMAP_BTN, wxString::FromUTF8("重置键位"));
-    
+
+    // 键位配置选择器
+    m_keymapSelector = new KeymapSelector(panel, wxID_ANY);
+    m_keymapSelector->SetOnSelect([this](int index) { OnKeymapSelect(index); });
+    m_keymapSelector->SetOnDelete([this](int index) { OnKeymapDelete(index); });
+
     sizer->Add(m_loadKeymapBtn, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     sizer->Add(m_saveKeymapBtn, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
-    sizer->Add(m_resetKeymapBtn, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
-    
+    sizer->Add(m_keymapSelector, 1, wxALL | wxALIGN_CENTER_VERTICAL, 2);
+
     sizer->AddStretchSpacer();
     
     // NTP Area
@@ -1379,14 +1383,51 @@ void MainFrame::OnLoadKeymap(wxCommandEvent& event) {
     wxFileDialog openFileDialog(this, wxString::FromUTF8("导入键位配置"), "", "",
                                 wxString::FromUTF8("键位配置文件 (*.txt)|*.txt"), wxFD_OPEN | wxFD_FILE_MUST_EXIST);
     if (openFileDialog.ShowModal() == wxID_CANCEL) return;
-    
-    // 直接使用宽字符路径，避免 UTF-8 转换问题
-    bool ok = m_engine.get_key_manager().load_config(openFileDialog.GetPath().ToStdWstring());
-    if (ok) UpdateStatusText(wxString::FromUTF8("键位已导入"));
-    else UpdateStatusText(wxString::FromUTF8("键位导入失败"));
+
+    wxString filePath = openFileDialog.GetPath();
+    wxString fileName = wxFileName(filePath).GetName();
+
+    // 检查是否已存在同名配置
+    for (const auto& item : m_keymapItems) {
+        if (item.name == fileName) {
+            UpdateStatusText(wxString::FromUTF8("已存在同名配置"));
+            return;
+        }
+    }
+
+    // 加载键位映射
+    std::map<int, Util::KeyMapping> originalMap = m_engine.get_key_manager().get_map();
+    bool ok = m_engine.get_key_manager().load_config(filePath.ToStdWstring());
+
     if (ok) {
+        // 创建新的配置项
+        UI::KeymapItem newItem;
+        newItem.name = fileName;
+        newItem.path = filePath;
+        newItem.isDefault = false;
+
+        // 保存加载的映射
+        const auto& loadedMap = m_engine.get_key_manager().get_map();
+        for (const auto& pair : loadedMap) {
+            newItem.vkMap[pair.first] = pair.second.vk_code;
+            newItem.modMap[pair.first] = pair.second.modifier;
+        }
+
+        // 添加到列表
+        m_keymapItems.push_back(newItem);
+        RefreshKeymapSelector();
+
+        // 选中新导入的配置
+        int newIndex = static_cast<int>(m_keymapItems.size() - 1);
+        m_keymapSelector->SetSelection(newIndex);
+
+        UpdateStatusText(wxString::Format(wxString::FromUTF8("已导入: %s"), fileName));
         m_engine.notify_keymap_changed();
         SaveKeymapConfig();
+    } else {
+        // 恢复原来的映射
+        m_engine.get_key_manager().set_map(originalMap);
+        UpdateStatusText(wxString::FromUTF8("键位导入失败"));
     }
 }
 
@@ -1394,19 +1435,64 @@ void MainFrame::OnSaveKeymap(wxCommandEvent& event) {
     wxFileDialog saveFileDialog(this, wxString::FromUTF8("导出键位配置"), "", "",
                                 wxString::FromUTF8("键位配置文件 (*.txt)|*.txt"), wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
     if (saveFileDialog.ShowModal() == wxID_CANCEL) return;
-    
+
     // 直接使用宽字符路径，避免 UTF-8 转换问题
     bool ok = m_engine.get_key_manager().save_config(saveFileDialog.GetPath().ToStdWstring());
-    if (ok) UpdateStatusText(wxString::FromUTF8("键位已导出"));
-    else UpdateStatusText(wxString::FromUTF8("键位导出失败"));
-    if (ok) SaveKeymapConfig();
+    if (ok) {
+        UpdateStatusText(wxString::FromUTF8("键位已导出"));
+    } else {
+        UpdateStatusText(wxString::FromUTF8("键位导出失败"));
+    }
 }
 
-void MainFrame::OnResetKeymap(wxCommandEvent& event) {
-    m_engine.get_key_manager().reset_to_default();
-    UpdateStatusText(wxString::FromUTF8("键位已重置"));
+void MainFrame::OnKeymapSelect(int index) {
+    if (index < 0 || index >= static_cast<int>(m_keymapItems.size())) return;
+
+    const auto& item = m_keymapItems[index];
+
+    // 应用选中的键位配置
+    std::map<int, Util::KeyMapping> map;
+    for (const auto& pair : item.vkMap) {
+        int note = pair.first;
+        map[note] = {pair.second, item.modMap.count(note) ? item.modMap.at(note) : 0};
+    }
+
+    if (map.empty() && item.isDefault) {
+        m_engine.get_key_manager().reset_to_default();
+    } else {
+        m_engine.get_key_manager().set_map(map);
+    }
+
+    UpdateStatusText(wxString::Format(wxString::FromUTF8("已切换到: %s"), item.name));
     m_engine.notify_keymap_changed();
     SaveKeymapConfig();
+}
+
+void MainFrame::OnKeymapDelete(int index) {
+    if (index < 0 || index >= static_cast<int>(m_keymapItems.size())) return;
+
+    const auto& item = m_keymapItems[index];
+    if (item.isDefault) {
+        UpdateStatusText(wxString::FromUTF8("默认键位不可删除"));
+        return;
+    }
+
+    // 删除配置
+    m_keymapItems.erase(m_keymapItems.begin() + index);
+    m_keymapSelector->RemoveItem(index);
+
+    // 如果删除的是当前选中的配置，切换到默认
+    if (m_keymapSelector->GetSelection() < 0) {
+        m_keymapSelector->SetSelection(0);
+        OnKeymapSelect(0);
+    }
+
+    UpdateStatusText(wxString::Format(wxString::FromUTF8("已删除: %s"), item.name));
+    SaveKeymapConfig();
+}
+
+void MainFrame::RefreshKeymapSelector() {
+    m_keymapSelector->SetItems(m_keymapItems);
 }
 void MainFrame::OnSchedule(wxCommandEvent& event) {
     if (m_is_scheduled) {
@@ -1988,52 +2074,134 @@ void MainFrame::SavePlaylistConfig() {
 }
 
 void MainFrame::LoadKeymapConfig() {
-    if (!m_config->HasGroup("/Keymap")) {
-        return;
-    }
+    m_keymapItems.clear();
 
-    m_config->SetPath("/Keymap");
+    // 始终添加默认键位配置作为第一项
+    UI::KeymapItem defaultItem;
+    defaultItem.name = wxString::FromUTF8("默认键位");
+    defaultItem.isDefault = true;
+    m_keymapItems.push_back(defaultItem);
 
-    std::map<int, Util::KeyMapping> map;
-    wxString entry;
-    long idx = 0;
-    bool cont = m_config->GetFirstEntry(entry, idx);
-    while (cont) {
-        wxString value;
-        if (m_config->Read(entry, &value)) {
-            wxString vkStr = value.BeforeFirst(',');
-            wxString modStr = value.AfterFirst(',');
-
-            long pitch = 0;
-            long vk = 0;
-            long mod = 0;
-            if (entry.ToLong(&pitch) && vkStr.ToLong(&vk) && modStr.ToLong(&mod)) {
-                map[static_cast<int>(pitch)] = {static_cast<int>(vk), static_cast<int>(mod)};
-            }
-        }
-        cont = m_config->GetNextEntry(entry, idx);
-    }
-
+    // 加载保存的键位配置列表
+    m_config->SetPath("/KeymapConfigs");
+    long count = 0;
+    m_config->Read("Count", &count, 0L);
+    long currentIdx = 0;
+    m_config->Read("Current", &currentIdx, 0L);
     m_config->SetPath("/");
 
-    if (!map.empty()) {
-        m_engine.get_key_manager().set_map(map);
+    for (long i = 0; i < count; ++i) {
+        wxString groupPath = wxString::Format("/KeymapConfig_%ld", i);
+        if (!m_config->HasGroup(groupPath)) continue;
+
+        m_config->SetPath(groupPath);
+
+        UI::KeymapItem item;
+        item.isDefault = false;
+
+        wxString name;
+        m_config->Read("Name", &name, wxString::Format("Config %ld", i));
+        item.name = name;
+
+        wxString path;
+        m_config->Read("Path", &path);
+
+        if (!path.empty() && wxFileExists(path)) {
+            // 从文件加载键位映射
+            item.path = path;
+            std::map<int, Util::KeyMapping> map;
+            if (m_engine.get_key_manager().load_config(path.ToStdWstring())) {
+                map = m_engine.get_key_manager().get_map();
+            }
+            for (const auto& pair : map) {
+                item.vkMap[pair.first] = pair.second.vk_code;
+                item.modMap[pair.first] = pair.second.modifier;
+            }
+        } else {
+            // 从配置数据加载
+            wxString mapData;
+            m_config->Read("MapData", &mapData);
+            if (!mapData.empty()) {
+                // 解析 MapData: "pitch,vk,mod|pitch,vk,mod|..."
+                wxArrayString parts = wxSplit(mapData, '|');
+                for (const auto& part : parts) {
+                    if (part.empty()) continue;
+                    wxArrayString items = wxSplit(part, ',');
+                    if (items.size() >= 3) {
+                        long pitch = 0, vk = 0, mod = 0;
+                        if (items[0].ToLong(&pitch) && items[1].ToLong(&vk) && items[2].ToLong(&mod)) {
+                            item.vkMap[static_cast<int>(pitch)] = static_cast<int>(vk);
+                            item.modMap[static_cast<int>(pitch)] = static_cast<int>(mod);
+                        }
+                    }
+                }
+            }
+        }
+
+        m_config->SetPath("/");
+        m_keymapItems.push_back(item);
+    }
+
+    // 更新选择器
+    RefreshKeymapSelector();
+
+    // 恢复当前选中
+    if (currentIdx >= 0 && currentIdx < static_cast<long>(m_keymapItems.size())) {
+        m_keymapSelector->SetSelection(static_cast<int>(currentIdx));
+        OnKeymapSelect(static_cast<int>(currentIdx));
+    } else {
+        m_keymapSelector->SetSelection(0);
+        OnKeymapSelect(0);
     }
 }
 
 void MainFrame::SaveKeymapConfig() {
     m_config->SetPath("/");
-    m_config->DeleteGroup("Keymap");
-    m_config->SetPath("/Keymap");
-
-    const auto& map = m_engine.get_key_manager().get_map();
-    for (const auto& pair : map) {
-        wxString key = wxString::Format("%d", pair.first);
-        wxString value = wxString::Format("%d,%d", pair.second.vk_code, pair.second.modifier);
-        m_config->Write(key, value);
+    // 删除旧的配置组
+    m_config->DeleteGroup("KeymapConfigs");
+    for (long i = 0; i < 100; ++i) {
+        m_config->DeleteGroup(wxString::Format("/KeymapConfig_%ld", i));
     }
 
+    // 保存配置列表信息
+    m_config->SetPath("/KeymapConfigs");
+    // 只保存非默认配置的数量
+    long importCount = static_cast<long>(m_keymapItems.size() - 1);
+    m_config->Write("Count", importCount);
+
+    int currentIdx = m_keymapSelector->GetSelection();
+    m_config->Write("Current", static_cast<long>(currentIdx >= 0 ? currentIdx : 0));
+
     m_config->SetPath("/");
+
+    // 保存每个导入的配置（跳过默认配置）
+    int savedIndex = 0;
+    for (size_t i = 1; i < m_keymapItems.size(); ++i) {
+        const auto& item = m_keymapItems[i];
+
+        wxString groupPath = wxString::Format("/KeymapConfig_%d", savedIndex);
+        m_config->SetPath(groupPath);
+
+        m_config->Write("Name", item.name);
+        m_config->Write("IsDefault", item.isDefault);
+
+        if (!item.path.empty()) {
+            m_config->Write("Path", item.path);
+        } else {
+            // 保存键位映射数据
+            wxString mapData;
+            for (const auto& pair : item.vkMap) {
+                int mod = item.modMap.count(pair.first) ? item.modMap.at(pair.first) : 0;
+                if (!mapData.empty()) mapData += "|";
+                mapData += wxString::Format("%d,%d,%d", pair.first, pair.second, mod);
+            }
+            m_config->Write("MapData", mapData);
+        }
+
+        m_config->SetPath("/");
+        savedIndex++;
+    }
+
     m_config->Flush();
 }
 

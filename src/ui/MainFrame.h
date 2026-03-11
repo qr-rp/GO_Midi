@@ -22,6 +22,7 @@
 #include "../core/PlaybackEngine.h"
 #include "Widgets.h"
 #include "PlaybackState.h"
+#include "KeymapSelector.h"
 #include "../util/PlaylistManager.h"
 
 // Forward declaration
@@ -53,7 +54,6 @@ enum {
     
     ID_LOAD_KEYMAP_BTN,
     ID_SAVE_KEYMAP_BTN,
-    ID_RESET_KEYMAP_BTN,
     ID_SCHEDULE_BTN,
 
     
@@ -127,8 +127,12 @@ private:
     
     void OnLoadKeymap(wxCommandEvent& event);
     void OnSaveKeymap(wxCommandEvent& event);
-    void OnResetKeymap(wxCommandEvent& event);
     void OnSchedule(wxCommandEvent& event);
+
+    // 键位配置选择器回调
+    void OnKeymapSelect(int index);
+    void OnKeymapDelete(int index);
+    void RefreshKeymapSelector();
 
     
     /**
@@ -245,7 +249,8 @@ private:
     // UI Members - Keymap & NTP
     wxButton* m_loadKeymapBtn;
     wxButton* m_saveKeymapBtn;
-    wxButton* m_resetKeymapBtn;
+    KeymapSelector* m_keymapSelector;
+    std::vector<UI::KeymapItem> m_keymapItems;
     wxStaticText* m_ntpLabel;
     wxSpinCtrl* m_schedMin;
     wxSpinCtrl* m_schedSec;
