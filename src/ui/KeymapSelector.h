@@ -113,8 +113,6 @@ private:
     std::vector<KeymapItem> m_items;
 
     void UpdateLabelText();
-
-    wxDECLARE_EVENT_TABLE();
 };
 
 } // namespace UI
