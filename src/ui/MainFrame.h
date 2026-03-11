@@ -249,7 +249,7 @@ private:
     // UI Members - Keymap & NTP
     wxButton* m_loadKeymapBtn;
     wxButton* m_saveKeymapBtn;
-    KeymapSelector* m_keymapSelector;
+    UI::KeymapSelector* m_keymapSelector;
     std::vector<UI::KeymapItem> m_keymapItems;
     wxStaticText* m_ntpLabel;
     wxSpinCtrl* m_schedMin;

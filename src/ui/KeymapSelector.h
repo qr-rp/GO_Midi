@@ -3,6 +3,7 @@
 #include <wx/wx.h>
 #include <wx/combo.h>
 #include <vector>
+#include <map>
 #include <functional>
 
 namespace UI {
@@ -68,12 +69,8 @@ private:
     std::function<void(int)> m_onSelect;
     std::function<void(int)> m_onDelete;
 
-    void OnListSelect(wxCommandEvent& event);
-    void OnListDClick(wxCommandEvent& event);
     void OnMouseMove(wxMouseEvent& event);
     void OnMouseClick(wxMouseEvent& event);
-
-    wxDECLARE_EVENT_TABLE();
 };
 
 /**

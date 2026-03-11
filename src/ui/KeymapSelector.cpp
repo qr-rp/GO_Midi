@@ -4,11 +4,6 @@ namespace UI {
 
 // ================= KeymapPopup Implementation =================
 
-wxBEGIN_EVENT_TABLE(KeymapPopup, wxComboPopup)
-    EVT_LISTBOX(wxID_ANY, KeymapPopup::OnListSelect)
-    EVT_LISTBOX_DCLICK(wxID_ANY, KeymapPopup::OnListDClick)
-wxEND_EVENT_TABLE()
-
 bool KeymapPopup::Create(wxWindow* parent)
 {
     m_list = new wxListBox(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize,
@@ -83,23 +78,8 @@ void KeymapPopup::RemoveItem(int index)
     }
 }
 
-void KeymapPopup::OnListSelect(wxCommandEvent& event)
-{
-    m_selected = m_list->GetSelection();
-}
-
-void KeymapPopup::OnListDClick(wxCommandEvent& event)
-{
-    // 双击确认选择
-    Dismiss();
-    if (m_onSelect && m_selected >= 0) {
-        m_onSelect(m_selected);
-    }
-}
-
 void KeymapPopup::OnMouseMove(wxMouseEvent& event)
 {
-    // 可以在这里添加悬停效果
     event.Skip();
 }
 
@@ -115,9 +95,9 @@ void KeymapPopup::OnMouseClick(wxMouseEvent& event)
     if (item >= 0 && item < static_cast<int>(m_items.size())) {
         const auto& itemData = m_items[item];
         if (!itemData.isDefault) {
-            // 计算删除按钮区域
-            wxRect rect = m_list->GetItemRect(item);
-            int deleteZoneStart = rect.GetRight() - 30; // 右侧30像素为删除区域
+            // 获取列表的宽度作为删除区域的参考
+            int listWidth = m_list->GetClientSize().GetWidth();
+            int deleteZoneStart = listWidth - 40; // 右侧40像素为删除区域
 
             if (event.GetX() >= deleteZoneStart) {
                 // 点击了删除按钮
@@ -130,7 +110,6 @@ void KeymapPopup::OnMouseClick(wxMouseEvent& event)
     }
 
     // 否则正常选择
-    event.Skip();
     m_selected = item;
     Dismiss();
     if (m_onSelect && m_selected >= 0) {
@@ -139,9 +118,6 @@ void KeymapPopup::OnMouseClick(wxMouseEvent& event)
 }
 
 // ================= KeymapSelector Implementation =================
-
-wxBEGIN_EVENT_TABLE(KeymapSelector, wxComboCtrl)
-wxEND_EVENT_TABLE()
 
 KeymapSelector::KeymapSelector(wxWindow* parent, wxWindowID id)
     : wxComboCtrl(parent, id, wxString::FromUTF8("默认键位"),
