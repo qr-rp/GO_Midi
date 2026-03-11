@@ -2,6 +2,7 @@
 #include <wx/arrstr.h>
 #include "MainFrame.h"
 #include "UIHelpers.h"
+#include "KeymapSelector.h"
 #include "../util/Logger.h"
 #include "../util/NtpClient.h"
 
@@ -636,7 +637,7 @@ void MainFrame::InitKeymapPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     m_saveKeymapBtn = new wxButton(panel, ID_SAVE_KEYMAP_BTN, wxString::FromUTF8("导出键位"));
 
     // 键位配置选择器
-    m_keymapSelector = new KeymapSelector(panel, wxID_ANY);
+    m_keymapSelector = new UI::KeymapSelector(panel, wxID_ANY);
     m_keymapSelector->SetOnSelect([this](int index) { OnKeymapSelect(index); });
     m_keymapSelector->SetOnDelete([this](int index) { OnKeymapDelete(index); });
 
