@@ -51,9 +51,10 @@ enum {
     ID_MIN_PITCH_CTRL,
     ID_MAX_PITCH_CTRL,
     
+    ID_KEYMAP_CHOICE,
     ID_LOAD_KEYMAP_BTN,
     ID_SAVE_KEYMAP_BTN,
-    ID_RESET_KEYMAP_BTN,
+    ID_DELETE_KEYMAP_BTN,
     ID_SCHEDULE_BTN,
 
     
@@ -125,9 +126,10 @@ private:
     void OnSpeedChange(wxSpinDoubleEvent& event);
     void OnPitchRangeChange(wxSpinEvent& event);
     
+    void OnKeymapChoice(wxCommandEvent& event);
     void OnLoadKeymap(wxCommandEvent& event);
     void OnSaveKeymap(wxCommandEvent& event);
-    void OnResetKeymap(wxCommandEvent& event);
+    void OnDeleteKeymap(wxCommandEvent& event);
     void OnSchedule(wxCommandEvent& event);
 
     
@@ -202,6 +204,8 @@ private:
     void SavePlaylistConfig();
     void LoadKeymapConfig();
     void SaveKeymapConfig();
+    void UpdateKeymapChoice();
+    void LoadKeymapFile(const wxString& path);
     void LoadLastSelectedFile();
     void SaveLastSelectedFile();
     std::unique_ptr<wxConfigBase> m_config;
@@ -243,10 +247,15 @@ private:
     std::vector<ChannelControls> m_channelConfigs;
     
     // UI Members - Keymap & NTP
+    wxChoice* m_keymapChoice;
     wxButton* m_loadKeymapBtn;
     wxButton* m_saveKeymapBtn;
-    wxButton* m_resetKeymapBtn;
+    wxButton* m_deleteKeymapBtn;
     wxStaticText* m_ntpLabel;
+
+    // 键位映射管理
+    std::vector<wxString> m_keymapFiles;  // 存储导入的键位映射文件路径
+    wxString m_currentKeymapPath;          // 当前使用的键位映射文件路径（空表示使用内置 FF14）
     wxSpinCtrl* m_schedMin;
     wxSpinCtrl* m_schedSec;
     wxButton* m_scheduleBtn;

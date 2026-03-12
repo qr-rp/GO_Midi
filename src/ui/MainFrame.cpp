@@ -64,9 +64,10 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_SPINCTRL(ID_MIN_PITCH_CTRL, MainFrame::OnPitchRangeChange)
     EVT_SPINCTRL(ID_MAX_PITCH_CTRL, MainFrame::OnPitchRangeChange)
     
+    EVT_CHOICE(ID_KEYMAP_CHOICE, MainFrame::OnKeymapChoice)
     EVT_BUTTON(ID_LOAD_KEYMAP_BTN, MainFrame::OnLoadKeymap)
     EVT_BUTTON(ID_SAVE_KEYMAP_BTN, MainFrame::OnSaveKeymap)
-    EVT_BUTTON(ID_RESET_KEYMAP_BTN, MainFrame::OnResetKeymap)
+    EVT_BUTTON(ID_DELETE_KEYMAP_BTN, MainFrame::OnDeleteKeymap)
     EVT_BUTTON(ID_SCHEDULE_BTN, MainFrame::OnSchedule)
     
     // Custom events
@@ -320,25 +321,45 @@ void MainFrame::OnLatencyCompText(wxCommandEvent& event) {
 void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     wxPanel* panel = new wxPanel(parent);
     wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
-    
+
     // 播放列表选择器行
     wxBoxSizer* playlistSizer = new wxBoxSizer(wxHORIZONTAL);
-    
+
     m_playlistChoice = new wxChoice(panel, ID_PLAYLIST_CHOICE);
-    m_playlistChoice->SetMinSize(wxSize(120, -1));
-    
+    m_playlistChoice->SetMinSize(wxSize(100, -1));
+
     m_addPlaylistBtn = new wxButton(panel, ID_ADD_PLAYLIST_BTN, wxString::FromUTF8("新建"));
     m_addPlaylistBtn->SetMinSize(wxSize(45, -1));
     m_deletePlaylistBtn = new wxButton(panel, ID_DELETE_PLAYLIST_BTN, wxString::FromUTF8("删除"));
     m_deletePlaylistBtn->SetMinSize(wxSize(45, -1));
     m_renamePlaylistBtn = new wxButton(panel, ID_RENAME_PLAYLIST_BTN, wxString::FromUTF8("重命名"));
     m_renamePlaylistBtn->SetMinSize(wxSize(55, -1));
-    
+
     playlistSizer->Add(m_playlistChoice, 1, wxALL | wxEXPAND, 2);
     playlistSizer->Add(m_addPlaylistBtn, 0, wxALL, 2);
     playlistSizer->Add(m_deletePlaylistBtn, 0, wxALL, 2);
     playlistSizer->Add(m_renamePlaylistBtn, 0, wxALL, 2);
-    
+
+    // 分隔线
+    playlistSizer->Add(new wxStaticLine(panel, wxID_ANY, wxDefaultPosition, wxSize(2, 20), wxLI_VERTICAL), 0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 4);
+
+    // 键位映射选择器
+    m_keymapChoice = new wxChoice(panel, ID_KEYMAP_CHOICE);
+    m_keymapChoice->SetMinSize(wxSize(100, -1));
+    m_keymapChoice->Append(wxString::FromUTF8("最终幻想14"));  // 内置默认键位
+
+    m_loadKeymapBtn = new wxButton(panel, ID_LOAD_KEYMAP_BTN, wxString::FromUTF8("导入"));
+    m_loadKeymapBtn->SetMinSize(wxSize(45, -1));
+    m_saveKeymapBtn = new wxButton(panel, ID_SAVE_KEYMAP_BTN, wxString::FromUTF8("导出"));
+    m_saveKeymapBtn->SetMinSize(wxSize(45, -1));
+    m_deleteKeymapBtn = new wxButton(panel, ID_DELETE_KEYMAP_BTN, wxString::FromUTF8("删除"));
+    m_deleteKeymapBtn->SetMinSize(wxSize(45, -1));
+
+    playlistSizer->Add(m_keymapChoice, 1, wxALL | wxEXPAND, 2);
+    playlistSizer->Add(m_loadKeymapBtn, 0, wxALL, 2);
+    playlistSizer->Add(m_saveKeymapBtn, 0, wxALL, 2);
+    playlistSizer->Add(m_deleteKeymapBtn, 0, wxALL, 2);
+
     sizer->Add(playlistSizer, 0, wxEXPAND | wxALL, 2);
     
     // Toolbar
@@ -631,42 +652,32 @@ void MainFrame::UpdateChannelUI(int index, bool enabled) {
 void MainFrame::InitKeymapPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     wxPanel* panel = new wxPanel(parent);
     wxBoxSizer* sizer = new wxBoxSizer(wxHORIZONTAL);
-    
-    m_loadKeymapBtn = new wxButton(panel, ID_LOAD_KEYMAP_BTN, wxString::FromUTF8("导入键位"));
-    m_saveKeymapBtn = new wxButton(panel, ID_SAVE_KEYMAP_BTN, wxString::FromUTF8("导出键位"));
-    m_resetKeymapBtn = new wxButton(panel, ID_RESET_KEYMAP_BTN, wxString::FromUTF8("重置键位"));
-    
-    sizer->Add(m_loadKeymapBtn, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
-    sizer->Add(m_saveKeymapBtn, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
-    sizer->Add(m_resetKeymapBtn, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
-    
+
     sizer->AddStretchSpacer();
-    
+
     // NTP Area
     wxBoxSizer* ntpSizer = new wxBoxSizer(wxHORIZONTAL);
-    
-    ntpSizer->Add(new wxStaticLine(panel, wxID_ANY, wxDefaultPosition, wxSize(2, 20), wxLI_VERTICAL), 0, wxLEFT | wxALIGN_CENTER_VERTICAL, 2);
-    
+
     m_ntpLabel = new wxStaticText(panel, wxID_ANY, "--:--", wxDefaultPosition, wxSize(45, -1), wxALIGN_CENTER);
     ntpSizer->Add(m_ntpLabel, 0, wxALIGN_CENTER_VERTICAL, 0);
-    
-    ntpSizer->Add(new wxStaticLine(panel, wxID_ANY, wxDefaultPosition, wxSize(2, 20), wxLI_VERTICAL), 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, 2);
-    
+
+    ntpSizer->Add(new wxStaticLine(panel, wxID_ANY, wxDefaultPosition, wxSize(2, 20), wxLI_VERTICAL), 0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 4);
+
     ntpSizer->Add(new wxStaticText(panel, wxID_ANY, wxString::FromUTF8("定时:")), 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
-    
+
     m_schedMin = new wxSpinCtrl(panel, wxID_ANY, "0", wxDefaultPosition, wxSize(45, -1), wxSP_ARROW_KEYS | wxTE_CENTRE, 0, 59, 0);
     ntpSizer->Add(m_schedMin, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
-    
+
     ntpSizer->Add(new wxStaticText(panel, wxID_ANY, ":"), 0, wxALL | wxALIGN_CENTER_VERTICAL, 0);
-    
+
     m_schedSec = new wxSpinCtrl(panel, wxID_ANY, "0", wxDefaultPosition, wxSize(45, -1), wxSP_ARROW_KEYS | wxTE_CENTRE, 0, 59, 0);
     ntpSizer->Add(m_schedSec, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
-    
+
     m_scheduleBtn = new wxButton(panel, ID_SCHEDULE_BTN, wxString::FromUTF8("定时"));
     ntpSizer->Add(m_scheduleBtn, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
-    
+
     sizer->Add(ntpSizer, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
-    
+
     panel->SetSizer(sizer);
     mainSizer->Add(panel, 0, wxEXPAND | wxALL, 2);
 }
@@ -998,7 +1009,8 @@ void MainFrame::PlayIndex(int viewIndex, bool autoPlay) {
             m_abLoopEnabled = false;
             m_abPointA_ms = -1.0;
             m_abPointB_ms = -1.0;
-            
+            m_progressSlider->ClearABPoints();
+
             LOG("Creating MidiFile...");
             m_current_midi = std::make_unique<Midi::MidiFile>(path.ToStdWstring());
             if (!m_current_midi) {
@@ -1375,18 +1387,51 @@ void MainFrame::OnPitchRangeChange(wxSpinEvent& event) {
     SaveGlobalConfig();
 }
 
+void MainFrame::OnKeymapChoice(wxCommandEvent& event) {
+    int sel = m_keymapChoice->GetSelection();
+    if (sel == 0) {
+        // 选择内置 FF14 键位
+        m_engine.get_key_manager().reset_to_default();
+        m_currentKeymapPath.clear();
+        UpdateStatusText(wxString::FromUTF8("已切换到内置 FF14 键位"));
+    } else if (sel > 0 && sel <= (int)m_keymapFiles.size()) {
+        // 选择导入的键位映射
+        const wxString& path = m_keymapFiles[sel - 1];
+        LoadKeymapFile(path);
+    }
+    m_engine.notify_keymap_changed();
+    SaveKeymapConfig();
+}
+
 void MainFrame::OnLoadKeymap(wxCommandEvent& event) {
     wxFileDialog openFileDialog(this, wxString::FromUTF8("导入键位配置"), "", "",
                                 wxString::FromUTF8("键位配置文件 (*.txt)|*.txt"), wxFD_OPEN | wxFD_FILE_MUST_EXIST);
     if (openFileDialog.ShowModal() == wxID_CANCEL) return;
-    
-    // 直接使用宽字符路径，避免 UTF-8 转换问题
-    bool ok = m_engine.get_key_manager().load_config(openFileDialog.GetPath().ToStdWstring());
-    if (ok) UpdateStatusText(wxString::FromUTF8("键位已导入"));
-    else UpdateStatusText(wxString::FromUTF8("键位导入失败"));
+
+    wxString path = openFileDialog.GetPath();
+
+    // 检查是否已经导入过
+    for (const auto& existing : m_keymapFiles) {
+        if (existing == path) {
+            UpdateStatusText(wxString::FromUTF8("该键位映射已存在"));
+            return;
+        }
+    }
+
+    // 加载键位配置
+    bool ok = m_engine.get_key_manager().load_config(path.ToStdWstring());
     if (ok) {
+        // 添加到列表
+        m_keymapFiles.push_back(path);
+        wxString filename = path.AfterLast('\\').BeforeLast('.');
+        m_keymapChoice->Append(filename);
+        m_keymapChoice->SetSelection(m_keymapChoice->GetCount() - 1);
+        m_currentKeymapPath = path;
+        UpdateStatusText(wxString::FromUTF8("键位已导入: ") + filename);
         m_engine.notify_keymap_changed();
         SaveKeymapConfig();
+    } else {
+        UpdateStatusText(wxString::FromUTF8("键位导入失败"));
     }
 }
 
@@ -1394,17 +1439,33 @@ void MainFrame::OnSaveKeymap(wxCommandEvent& event) {
     wxFileDialog saveFileDialog(this, wxString::FromUTF8("导出键位配置"), "", "",
                                 wxString::FromUTF8("键位配置文件 (*.txt)|*.txt"), wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
     if (saveFileDialog.ShowModal() == wxID_CANCEL) return;
-    
-    // 直接使用宽字符路径，避免 UTF-8 转换问题
-    bool ok = m_engine.get_key_manager().save_config(saveFileDialog.GetPath().ToStdWstring());
-    if (ok) UpdateStatusText(wxString::FromUTF8("键位已导出"));
-    else UpdateStatusText(wxString::FromUTF8("键位导出失败"));
-    if (ok) SaveKeymapConfig();
+
+    wxString path = saveFileDialog.GetPath();
+    bool ok = m_engine.get_key_manager().save_config(path.ToStdWstring());
+    if (ok) {
+        UpdateStatusText(wxString::FromUTF8("键位已导出"));
+        SaveKeymapConfig();
+    } else {
+        UpdateStatusText(wxString::FromUTF8("键位导出失败"));
+    }
 }
 
-void MainFrame::OnResetKeymap(wxCommandEvent& event) {
-    m_engine.get_key_manager().reset_to_default();
-    UpdateStatusText(wxString::FromUTF8("键位已重置"));
+void MainFrame::OnDeleteKeymap(wxCommandEvent& event) {
+    int sel = m_keymapChoice->GetSelection();
+    if (sel == 0) {
+        // 内置 FF14 键位，无法删除，只能重置
+        m_engine.get_key_manager().reset_to_default();
+        UpdateStatusText(wxString::FromUTF8("已重置为内置 FF14 键位"));
+    } else if (sel > 0 && sel <= (int)m_keymapFiles.size()) {
+        // 删除选中的导入键位
+        m_keymapFiles.erase(m_keymapFiles.begin() + sel - 1);
+        m_keymapChoice->Delete(sel);
+        // 切换回内置 FF14
+        m_keymapChoice->SetSelection(0);
+        m_engine.get_key_manager().reset_to_default();
+        m_currentKeymapPath.clear();
+        UpdateStatusText(wxString::FromUTF8("键位映射已删除"));
+    }
     m_engine.notify_keymap_changed();
     SaveKeymapConfig();
 }
@@ -1988,41 +2049,84 @@ void MainFrame::SavePlaylistConfig() {
 }
 
 void MainFrame::LoadKeymapConfig() {
-    if (!m_config->HasGroup("/Keymap")) {
-        return;
+    // 加载键位映射文件列表
+    if (m_config->HasGroup("/KeymapFiles")) {
+        m_config->SetPath("/KeymapFiles");
+        wxString entry;
+        long idx = 0;
+        bool cont = m_config->GetFirstEntry(entry, idx);
+        while (cont) {
+            wxString path;
+            if (m_config->Read(entry, &path) && !path.empty()) {
+                m_keymapFiles.push_back(path);
+            }
+            cont = m_config->GetNextEntry(entry, idx);
+        }
+        m_config->SetPath("/");
     }
 
-    m_config->SetPath("/Keymap");
+    // 更新下拉框
+    UpdateKeymapChoice();
 
-    std::map<int, Util::KeyMapping> map;
-    wxString entry;
-    long idx = 0;
-    bool cont = m_config->GetFirstEntry(entry, idx);
-    while (cont) {
-        wxString value;
-        if (m_config->Read(entry, &value)) {
-            wxString vkStr = value.BeforeFirst(',');
-            wxString modStr = value.AfterFirst(',');
-
-            long pitch = 0;
-            long vk = 0;
-            long mod = 0;
-            if (entry.ToLong(&pitch) && vkStr.ToLong(&vk) && modStr.ToLong(&mod)) {
-                map[static_cast<int>(pitch)] = {static_cast<int>(vk), static_cast<int>(mod)};
+    // 加载当前选中的键位映射
+    wxString currentKeymap;
+    m_config->Read("/Global/CurrentKeymap", &currentKeymap, "");
+    if (!currentKeymap.empty()) {
+        // 查找并选中
+        for (size_t i = 0; i < m_keymapFiles.size(); ++i) {
+            if (m_keymapFiles[i] == currentKeymap) {
+                m_keymapChoice->SetSelection(static_cast<int>(i + 1));
+                LoadKeymapFile(currentKeymap);
+                break;
             }
         }
-        cont = m_config->GetNextEntry(entry, idx);
     }
 
-    m_config->SetPath("/");
+    // 加载自定义键位映射（兼容旧配置）
+    if (m_config->HasGroup("/Keymap")) {
+        m_config->SetPath("/Keymap");
 
-    if (!map.empty()) {
-        m_engine.get_key_manager().set_map(map);
+        std::map<int, Util::KeyMapping> map;
+        wxString entry;
+        long idx = 0;
+        bool cont = m_config->GetFirstEntry(entry, idx);
+        while (cont) {
+            wxString value;
+            if (m_config->Read(entry, &value)) {
+                wxString vkStr = value.BeforeFirst(',');
+                wxString modStr = value.AfterFirst(',');
+
+                long pitch = 0;
+                long vk = 0;
+                long mod = 0;
+                if (entry.ToLong(&pitch) && vkStr.ToLong(&vk) && modStr.ToLong(&mod)) {
+                    map[static_cast<int>(pitch)] = {static_cast<int>(vk), static_cast<int>(mod)};
+                }
+            }
+            cont = m_config->GetNextEntry(entry, idx);
+        }
+
+        m_config->SetPath("/");
+
+        if (!map.empty() && currentKeymap.empty()) {
+            m_engine.get_key_manager().set_map(map);
+        }
     }
 }
 
 void MainFrame::SaveKeymapConfig() {
+    // 保存键位映射文件列表
+    m_config->DeleteGroup("KeymapFiles");
+    m_config->SetPath("/KeymapFiles");
+    for (size_t i = 0; i < m_keymapFiles.size(); ++i) {
+        m_config->Write(wxString::Format("File%zu", i), m_keymapFiles[i]);
+    }
     m_config->SetPath("/");
+
+    // 保存当前选中的键位映射
+    m_config->Write("/Global/CurrentKeymap", m_currentKeymapPath);
+
+    // 保存当前键位映射数据
     m_config->DeleteGroup("Keymap");
     m_config->SetPath("/Keymap");
 
@@ -2035,6 +2139,41 @@ void MainFrame::SaveKeymapConfig() {
 
     m_config->SetPath("/");
     m_config->Flush();
+}
+
+void MainFrame::UpdateKeymapChoice() {
+    if (!m_keymapChoice) return;
+
+    // 保存当前选择
+    int currentSel = m_keymapChoice->GetSelection();
+
+    // 清空并重建列表
+    m_keymapChoice->Clear();
+    m_keymapChoice->Append(wxString::FromUTF8("最终幻想14"));  // 内置默认键位
+
+    // 添加导入的键位映射文件
+    for (const auto& path : m_keymapFiles) {
+        wxString filename = path.AfterLast('\\').BeforeLast('.');
+        m_keymapChoice->Append(filename);
+    }
+
+    // 恢复选择
+    if (currentSel >= 0 && currentSel < m_keymapChoice->GetCount()) {
+        m_keymapChoice->SetSelection(currentSel);
+    } else {
+        m_keymapChoice->SetSelection(0);
+    }
+}
+
+void MainFrame::LoadKeymapFile(const wxString& path) {
+    bool ok = m_engine.get_key_manager().load_config(path.ToStdWstring());
+    if (ok) {
+        m_currentKeymapPath = path;
+        wxString filename = path.AfterLast('\\').BeforeLast('.');
+        UpdateStatusText(wxString::FromUTF8("已加载键位: ") + filename);
+    } else {
+        UpdateStatusText(wxString::FromUTF8("键位加载失败"));
+    }
 }
 
 void MainFrame::LoadLastSelectedFile() {
