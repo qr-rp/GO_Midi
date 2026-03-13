@@ -132,17 +132,6 @@ private:
     void OnDeleteKeymap(wxCommandEvent& event);
     void OnSchedule(wxCommandEvent& event);
 
-    
-    /**
-     * @brief 处理状态栏延迟补偿输入框数值变化（微调箭头）。
-     */
-    void OnLatencyCompSpin(wxSpinDoubleEvent& event);
-    
-    /**
-     * @brief 处理状态栏延迟补偿输入框文本变化（输入时实时生效）。
-     */
-    void OnLatencyCompText(wxCommandEvent& event);
-    
     // Custom event handlers
     void OnNtpSyncComplete(wxCommandEvent& event);
     void OnScheduleTrigger(wxCommandEvent& event);
@@ -154,11 +143,6 @@ private:
     // Thread management
     void StartBackgroundTask(std::function<void()> task);
     void CleanupFinishedThreads();
-    
-    /**
-     * @brief 重新布局状态栏内的嵌入控件（延迟补偿输入框）。
-     */
-    void LayoutStatusBarControls();
     
     // Channel Events
     void OnWindowChoiceDropdown(wxMouseEvent& event); // For updating window list on click
@@ -270,9 +254,8 @@ private:
     
 
     
-    // StatusBar embedded control (latency compensation)
-    wxStaticText* m_latencyCompLabel = nullptr;
-    wxSpinCtrlDouble* m_latencyCompCtrl = nullptr;
+    // Latency compensation control
+    wxSpinCtrl* m_latencyCompCtrl = nullptr;
     std::atomic<long long> m_latency_comp_us{0};
     
     // State

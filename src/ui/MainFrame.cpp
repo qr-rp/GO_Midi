@@ -190,38 +190,17 @@ void MainFrame::InitUI() {
     InitKeymapPanel(mainPanel, mainSizer);
 
     mainPanel->SetSizer(mainSizer);
-    
+
     // Status Bar
-    wxStatusBar* statusBar = CreateStatusBar(3);
+    wxStatusBar* statusBar = CreateStatusBar(2);
     UpdateStatusText(wxString::FromUTF8("By:最终幻想14水晶世界_黄金谷_吸溜"));
-    statusBar->SetStatusText("BPM: --", 2);
-    
-    m_latencyCompLabel = new wxStaticText(statusBar, wxID_ANY, wxString::FromUTF8("延迟补偿:"));
-    m_latencyCompCtrl = new wxSpinCtrlDouble(statusBar, wxID_ANY, "0.0", wxDefaultPosition, wxDefaultSize,
-                                             wxSP_ARROW_KEYS | wxTE_CENTRE, -9999.0, 9999.0, 0.0, 1.0);
-    m_latencyCompCtrl->SetDigits(1);
-    m_latencyCompCtrl->SetToolTip(wxString::FromUTF8("正值推迟发送(增加延迟)，负值提前发送(抵消Ping)"));
-    m_latencyCompCtrl->Bind(wxEVT_SPINCTRLDOUBLE, &MainFrame::OnLatencyCompSpin, this);
-    m_latencyCompCtrl->Bind(wxEVT_TEXT, &MainFrame::OnLatencyCompText, this);
+    statusBar->SetStatusText("BPM: --", 1);
 
-    // 重新设计状态栏：第一字段自动调整，第二三字段紧靠右边
-    // 第二字段固定90px用于延迟补偿控件，第三字段固定75px用于BPM显示
-    const int LATENCY_FIELD_WIDTH = 90;   // 延迟补偿字段宽度
-    const int BPM_FIELD_WIDTH = 75;       // BPM字段宽度
-    
-    m_latencyCompCtrl->SetMinSize(wxSize(70, -1));   // 控件本身70px以适应90px字段
-    m_latencyCompCtrl->SetSize(wxSize(70, -1));
-    
-    // 设置状态栏字段宽度：第一字段自动(-1)，第二三字段固定
-    int widths[] = {-1, LATENCY_FIELD_WIDTH, BPM_FIELD_WIDTH};
-    statusBar->SetStatusWidths(3, widths);
+    // 设置状态栏字段宽度：第一字段自动(-1)，第二字段固定75px用于BPM显示
+    const int BPM_FIELD_WIDTH = 75;
+    int widths[] = {-1, BPM_FIELD_WIDTH};
+    statusBar->SetStatusWidths(2, widths);
 
-    LayoutStatusBarControls();
-    statusBar->Bind(wxEVT_SIZE, [this](wxSizeEvent& evt) {
-        LayoutStatusBarControls();
-        evt.Skip();
-    });
-    
     // Initial window list update
     UpdateWindowList();
 }
@@ -257,67 +236,6 @@ void MainFrame::CleanupFinishedThreads() {
     );
 }
 
-/**
- * @brief 重新布局状态栏内嵌入的控件（延迟补偿输入框）。
- */
-void MainFrame::LayoutStatusBarControls() {
-    if (!m_latencyCompCtrl || !m_latencyCompLabel) {
-        return;
-    }
-
-    wxStatusBar* statusBar = GetStatusBar();
-    if (!statusBar) {
-        return;
-    }
-
-    // 获取状态栏字段矩形
-    wxRect rect;
-    if (!statusBar->GetFieldRect(1, rect)) {
-        return;
-    }
-
-    // 右对齐布局：控件紧靠字段右边界
-    const int padY = 1;      // 垂直padding
-    const int rightPad = 2;  // 右侧padding
-    const int gap = 6;       // 标签和控件间间隙
-    
-    // 获取标签和控件尺寸
-    const wxSize labelSize = m_latencyCompLabel->GetBestSize();
-    const int ctrlW = m_latencyCompCtrl->GetMinSize().GetWidth();
-    
-    // 从右侧开始定位控件
-    const int fieldRight = rect.GetX() + rect.GetWidth();
-    const int ctrlX = fieldRight - ctrlW - rightPad;
-    const int labelX = ctrlX - gap - labelSize.GetWidth();
-    
-    // 垂直居中定位
-    const int centerY = rect.GetY() + rect.GetHeight() / 2;
-    const int labelY = centerY - labelSize.GetHeight() / 2;
-    const int ctrlY = centerY - m_latencyCompCtrl->GetSize().GetHeight() / 2;
-    
-    // 设置控件位置和大小
-    m_latencyCompLabel->SetSize(labelX, labelY, labelSize.GetWidth(), labelSize.GetHeight());
-    m_latencyCompCtrl->SetSize(ctrlX, ctrlY, ctrlW, m_latencyCompCtrl->GetSize().GetHeight());
-}
-
-/**
- * @brief 处理状态栏延迟补偿输入框数值变化（微调箭头）。
- */
-void MainFrame::OnLatencyCompSpin(wxSpinDoubleEvent& event) {
-    m_latency_comp_us.store((long long)std::llround(event.GetValue() * 1000.0));
-    event.Skip();
-}
-
-/**
- * @brief 处理状态栏延迟补偿输入框文本变化（输入时实时生效）。
- */
-void MainFrame::OnLatencyCompText(wxCommandEvent& event) {
-    if (m_latencyCompCtrl) {
-        m_latency_comp_us.store((long long)std::llround(m_latencyCompCtrl->GetValue() * 1000.0));
-    }
-    event.Skip();
-}
-
 void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     wxPanel* panel = new wxPanel(parent);
     wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
@@ -346,7 +264,7 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     // 键位映射选择器
     m_keymapChoice = new wxChoice(panel, ID_KEYMAP_CHOICE);
     m_keymapChoice->SetMinSize(wxSize(100, -1));
-    m_keymapChoice->Append(wxString::FromUTF8("最终幻想14"));  // 内置默认键位
+    m_keymapChoice->Append(wxString::FromUTF8("默认键位(最终幻想14)"));  // 内置默认键位
 
     m_loadKeymapBtn = new wxButton(panel, ID_LOAD_KEYMAP_BTN, wxString::FromUTF8("导入"));
     m_loadKeymapBtn->SetMinSize(wxSize(45, -1));
@@ -660,6 +578,27 @@ void MainFrame::InitKeymapPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
 
     m_ntpLabel = new wxStaticText(panel, wxID_ANY, "--:--", wxDefaultPosition, wxSize(45, -1), wxALIGN_CENTER);
     ntpSizer->Add(m_ntpLabel, 0, wxALIGN_CENTER_VERTICAL, 0);
+
+    ntpSizer->Add(new wxStaticLine(panel, wxID_ANY, wxDefaultPosition, wxSize(2, 20), wxLI_VERTICAL), 0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 4);
+
+    // 游戏网络延迟补偿
+    ntpSizer->Add(new wxStaticText(panel, wxID_ANY, wxString::FromUTF8("延迟补偿:")), 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
+    m_latencyCompCtrl = new wxSpinCtrl(panel, wxID_ANY, "0", wxDefaultPosition, wxSize(55, -1), wxSP_ARROW_KEYS | wxTE_CENTRE, 0, INT_MAX, 0);
+    m_latencyCompCtrl->SetToolTip(wxString::FromUTF8("请输入游戏内ping值，单人演奏可以忽略"));
+    m_latencyCompCtrl->Bind(wxEVT_SPINCTRL, [this](wxSpinEvent& event) {
+        m_latency_comp_us.store(static_cast<long long>(event.GetPosition()) * 1000LL);
+        event.Skip();
+    });
+    m_latencyCompCtrl->Bind(wxEVT_TEXT, [this](wxCommandEvent& event) {
+        if (m_latencyCompCtrl) {
+            long val = 0;
+            m_latencyCompCtrl->GetValue().ToLong(&val);
+            m_latency_comp_us.store(val * 1000LL);
+        }
+        event.Skip();
+    });
+    ntpSizer->Add(m_latencyCompCtrl, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
+    ntpSizer->Add(new wxStaticText(panel, wxID_ANY, "ms"), 0, wxALL | wxALIGN_CENTER_VERTICAL, 0);
 
     ntpSizer->Add(new wxStaticLine(panel, wxID_ANY, wxDefaultPosition, wxSize(2, 20), wxLI_VERTICAL), 0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 4);
 
@@ -1393,7 +1332,7 @@ void MainFrame::OnKeymapChoice(wxCommandEvent& event) {
         // 选择内置 FF14 键位
         m_engine.get_key_manager().reset_to_default();
         m_currentKeymapPath.clear();
-        UpdateStatusText(wxString::FromUTF8("已切换到内置 FF14 键位"));
+        UpdateStatusText(wxString::FromUTF8("已切换到默认键位"));
     } else if (sel > 0 && sel <= (int)m_keymapFiles.size()) {
         // 选择导入的键位映射
         const wxString& path = m_keymapFiles[sel - 1];
@@ -1455,7 +1394,7 @@ void MainFrame::OnDeleteKeymap(wxCommandEvent& event) {
     if (sel == 0) {
         // 内置 FF14 键位，无法删除，只能重置
         m_engine.get_key_manager().reset_to_default();
-        UpdateStatusText(wxString::FromUTF8("已重置为内置 FF14 键位"));
+        UpdateStatusText(wxString::FromUTF8("已重置为默认键位"));
     } else if (sel > 0 && sel <= (int)m_keymapFiles.size()) {
         // 删除选中的导入键位
         m_keymapFiles.erase(m_keymapFiles.begin() + sel - 1);
@@ -1538,10 +1477,10 @@ void MainFrame::OnSchedule(wxCommandEvent& event) {
             while (!m_isShuttingDown.load() && m_active_schedule_token.load() == token) {
                 now = Util::NtpClient::GetNow();
                 const auto latency_us = m_latency_comp_us.load();
-                // 逻辑反转：正数表示推迟(增加延迟)，所以目标时间 = 原始目标 + 延迟值
-                // 负数表示提前(减少延迟)，所以目标时间 = 原始目标 + (-延迟值)
-                const auto effective_target_tp = target_tp + std::chrono::microseconds(latency_us);
-                
+                // 正数表示提前触发（抵消网络延迟）
+                // 目标时间 = 原始目标 - 延迟值
+                const auto effective_target_tp = target_tp - std::chrono::microseconds(latency_us);
+
                 // 睡眠等待逻辑基于 effective_target_tp (含补偿)
                 if (now >= effective_target_tp) {
                     break;
@@ -1560,7 +1499,8 @@ void MainFrame::OnSchedule(wxCommandEvent& event) {
                 }
 
                 const auto fine_latency_us = m_latency_comp_us.load();
-                const auto fine_effective_target_tp = target_tp + std::chrono::microseconds(fine_latency_us);
+                // 正数表示提前触发
+                const auto fine_effective_target_tp = target_tp - std::chrono::microseconds(fine_latency_us);
                 
                 while (!m_isShuttingDown.load() && m_active_schedule_token.load() == token) {
                     now = Util::NtpClient::GetNow();
@@ -1998,6 +1938,9 @@ void MainFrame::LoadGlobalConfig() {
     bool decompose = false;
     m_config->Read("Decompose", &decompose, false);
 
+    int latencyComp = 0;
+    m_config->Read("LatencyComp", &latencyComp, 0);
+
     m_config->SetPath("/");
 
     m_minPitchCtrl->SetValue(minPitch);
@@ -2010,6 +1953,11 @@ void MainFrame::LoadGlobalConfig() {
     m_decomposeBtn->SetValue(decompose);
     m_engine.set_decompose(decompose);
 
+    if (m_latencyCompCtrl) {
+        m_latencyCompCtrl->SetValue(latencyComp);
+        m_latency_comp_us.store(static_cast<long long>(latencyComp) * 1000LL);
+    }
+
     wxSpinEvent dummySpin;
     OnPitchRangeChange(dummySpin);
 }
@@ -2021,6 +1969,10 @@ void MainFrame::SaveGlobalConfig() {
     m_config->Write("MaxPitch", m_maxPitchCtrl->GetValue());
     m_config->Write("PlayMode", m_play_mode);
     m_config->Write("Decompose", m_decompose_chords);
+
+    if (m_latencyCompCtrl) {
+        m_config->Write("LatencyComp", m_latencyCompCtrl->GetValue());
+    }
 
     m_config->SetPath("/");
     m_config->Flush();
@@ -2149,7 +2101,7 @@ void MainFrame::UpdateKeymapChoice() {
 
     // 清空并重建列表
     m_keymapChoice->Clear();
-    m_keymapChoice->Append(wxString::FromUTF8("最终幻想14"));  // 内置默认键位
+    m_keymapChoice->Append(wxString::FromUTF8("默认键位(最终幻想14)"));  // 内置默认键位
 
     // 添加导入的键位映射文件
     for (const auto& path : m_keymapFiles) {
