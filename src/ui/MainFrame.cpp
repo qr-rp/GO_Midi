@@ -587,7 +587,7 @@ void MainFrame::InitKeymapPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     wxBoxSizer* contentSizer = new wxBoxSizer(wxHORIZONTAL);
 
     // 游戏网络延迟补偿（左侧）
-    contentSizer->Add(new wxStaticText(panel, wxID_ANY, wxString::FromUTF8("延迟补偿:")), 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
+    contentSizer->Add(new wxStaticText(panel, wxID_ANY, wxString::FromUTF8("网络延迟补偿:")), 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     m_latencyCompCtrl = new wxSpinCtrl(panel, wxID_ANY, "0", wxDefaultPosition, wxSize(55, -1), wxSP_ARROW_KEYS | wxTE_CENTRE, 0, INT_MAX, 0);
     m_latencyCompCtrl->SetToolTip(wxString::FromUTF8("请输入游戏内ping值，单人演奏可以忽略"));
     m_latencyCompCtrl->Bind(wxEVT_SPINCTRL, [this](wxSpinEvent& event) {
