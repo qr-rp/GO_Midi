@@ -244,7 +244,6 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     wxBoxSizer* playlistSizer = new wxBoxSizer(wxHORIZONTAL);
 
     m_playlistChoice = new wxChoice(panel, ID_PLAYLIST_CHOICE);
-    m_playlistChoice->SetMinSize(wxSize(100, -1));
 
     m_addPlaylistBtn = new wxButton(panel, ID_ADD_PLAYLIST_BTN, wxString::FromUTF8("新建"));
     m_addPlaylistBtn->SetMinSize(wxSize(45, -1));
@@ -263,7 +262,6 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
 
     // 键位映射选择器
     m_keymapChoice = new wxChoice(panel, ID_KEYMAP_CHOICE);
-    m_keymapChoice->SetMinSize(wxSize(100, -1));
     m_keymapChoice->Append(wxString::FromUTF8("默认键位(最终幻想14)"));  // 内置默认键位
 
     m_loadKeymapBtn = new wxButton(panel, ID_LOAD_KEYMAP_BTN, wxString::FromUTF8("导入"));
