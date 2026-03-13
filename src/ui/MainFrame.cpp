@@ -243,7 +243,11 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     // 播放列表选择器行
     wxBoxSizer* playlistSizer = new wxBoxSizer(wxHORIZONTAL);
 
+    // 左侧区域：播放列表选择器
+    wxBoxSizer* leftSizer = new wxBoxSizer(wxHORIZONTAL);
+
     m_playlistChoice = new wxChoice(panel, ID_PLAYLIST_CHOICE);
+    m_playlistChoice->SetMinSize(wxSize(80, -1));
 
     m_addPlaylistBtn = new wxButton(panel, ID_ADD_PLAYLIST_BTN, wxString::FromUTF8("新建"));
     m_addPlaylistBtn->SetMinSize(wxSize(45, -1));
@@ -252,17 +256,22 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     m_renamePlaylistBtn = new wxButton(panel, ID_RENAME_PLAYLIST_BTN, wxString::FromUTF8("重命名"));
     m_renamePlaylistBtn->SetMinSize(wxSize(55, -1));
 
-    playlistSizer->Add(m_playlistChoice, 1, wxALL | wxEXPAND, 2);
-    playlistSizer->Add(m_addPlaylistBtn, 0, wxALL, 2);
-    playlistSizer->Add(m_deletePlaylistBtn, 0, wxALL, 2);
-    playlistSizer->Add(m_renamePlaylistBtn, 0, wxALL, 2);
+    leftSizer->Add(m_playlistChoice, 1, wxALL | wxEXPAND | wxALIGN_CENTER_VERTICAL, 2);
+    leftSizer->Add(m_addPlaylistBtn, 0, wxALL, 2);
+    leftSizer->Add(m_deletePlaylistBtn, 0, wxALL, 2);
+    leftSizer->Add(m_renamePlaylistBtn, 0, wxALL, 2);
+
+    playlistSizer->Add(leftSizer, 1, wxEXPAND, 0);
 
     // 分隔线
     playlistSizer->Add(new wxStaticLine(panel, wxID_ANY, wxDefaultPosition, wxSize(2, 20), wxLI_VERTICAL), 0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 4);
 
-    // 键位映射选择器
+    // 右侧区域：键位映射选择器
+    wxBoxSizer* rightSizer = new wxBoxSizer(wxHORIZONTAL);
+
     m_keymapChoice = new wxChoice(panel, ID_KEYMAP_CHOICE);
-    m_keymapChoice->Append(wxString::FromUTF8("默认键位(最终幻想14)"));  // 内置默认键位
+    m_keymapChoice->SetMinSize(wxSize(80, -1));
+    m_keymapChoice->Append(wxString::FromUTF8("默认键位"));  // 内置默认键位
 
     m_loadKeymapBtn = new wxButton(panel, ID_LOAD_KEYMAP_BTN, wxString::FromUTF8("导入"));
     m_loadKeymapBtn->SetMinSize(wxSize(45, -1));
@@ -271,10 +280,12 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     m_deleteKeymapBtn = new wxButton(panel, ID_DELETE_KEYMAP_BTN, wxString::FromUTF8("删除"));
     m_deleteKeymapBtn->SetMinSize(wxSize(45, -1));
 
-    playlistSizer->Add(m_keymapChoice, 1, wxALL | wxEXPAND, 2);
-    playlistSizer->Add(m_loadKeymapBtn, 0, wxALL, 2);
-    playlistSizer->Add(m_saveKeymapBtn, 0, wxALL, 2);
-    playlistSizer->Add(m_deleteKeymapBtn, 0, wxALL, 2);
+    rightSizer->Add(m_keymapChoice, 1, wxALL | wxEXPAND | wxALIGN_CENTER_VERTICAL, 2);
+    rightSizer->Add(m_loadKeymapBtn, 0, wxALL, 2);
+    rightSizer->Add(m_saveKeymapBtn, 0, wxALL, 2);
+    rightSizer->Add(m_deleteKeymapBtn, 0, wxALL, 2);
+
+    playlistSizer->Add(rightSizer, 1, wxEXPAND, 0);
 
     sizer->Add(playlistSizer, 0, wxEXPAND | wxALL, 2);
     
@@ -345,7 +356,7 @@ void MainFrame::InitControlPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     m_stopBtn = new wxButton(panel, ID_STOP_BTN, wxString::FromUTF8("停止"));
     m_nextBtn = new wxButton(panel, ID_NEXT_BTN, wxString::FromUTF8("下一曲"));
     m_modeBtn = new wxButton(panel, ID_MODE_BTN, wxString::FromUTF8("单曲播放"));
-    m_decomposeBtn = new wxToggleButton(panel, ID_DECOMPOSE_BTN, wxString::FromUTF8("单音模式"));
+    m_decomposeBtn = new wxToggleButton(panel, ID_DECOMPOSE_BTN, wxString::FromUTF8("和弦分解"));
     m_decomposeBtn->SetMinSize(wxSize(80, 25));
     
     btnSizer->Add(m_prevBtn, 0, wxALL, 2);
@@ -355,7 +366,7 @@ void MainFrame::InitControlPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     btnSizer->Add(m_modeBtn, 0, wxALL, 2);
     btnSizer->Add(m_decomposeBtn, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     
-    sizer->Add(btnSizer, 0, wxEXPAND | wxALL, 2);
+    sizer->Add(btnSizer, 0, wxALIGN_CENTER_HORIZONTAL | wxALL, 2);
     
     // Progress Bar
     wxBoxSizer* progressSizer = new wxBoxSizer(wxHORIZONTAL);
@@ -569,18 +580,14 @@ void MainFrame::InitKeymapPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     wxPanel* panel = new wxPanel(parent);
     wxBoxSizer* sizer = new wxBoxSizer(wxHORIZONTAL);
 
-    sizer->AddStretchSpacer();
+    // 左侧拉伸，让整体居中
+    sizer->AddStretchSpacer(1);
 
-    // NTP Area
-    wxBoxSizer* ntpSizer = new wxBoxSizer(wxHORIZONTAL);
+    // 底部面板（三个部分贴在一起）
+    wxBoxSizer* contentSizer = new wxBoxSizer(wxHORIZONTAL);
 
-    m_ntpLabel = new wxStaticText(panel, wxID_ANY, "--:--", wxDefaultPosition, wxSize(45, -1), wxALIGN_CENTER);
-    ntpSizer->Add(m_ntpLabel, 0, wxALIGN_CENTER_VERTICAL, 0);
-
-    ntpSizer->Add(new wxStaticLine(panel, wxID_ANY, wxDefaultPosition, wxSize(2, 20), wxLI_VERTICAL), 0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 4);
-
-    // 游戏网络延迟补偿
-    ntpSizer->Add(new wxStaticText(panel, wxID_ANY, wxString::FromUTF8("延迟补偿:")), 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
+    // 游戏网络延迟补偿（左侧）
+    contentSizer->Add(new wxStaticText(panel, wxID_ANY, wxString::FromUTF8("延迟补偿:")), 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     m_latencyCompCtrl = new wxSpinCtrl(panel, wxID_ANY, "0", wxDefaultPosition, wxSize(55, -1), wxSP_ARROW_KEYS | wxTE_CENTRE, 0, INT_MAX, 0);
     m_latencyCompCtrl->SetToolTip(wxString::FromUTF8("请输入游戏内ping值，单人演奏可以忽略"));
     m_latencyCompCtrl->Bind(wxEVT_SPINCTRL, [this](wxSpinEvent& event) {
@@ -594,25 +601,33 @@ void MainFrame::InitKeymapPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
         }
         event.Skip();
     });
-    ntpSizer->Add(m_latencyCompCtrl, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
-    ntpSizer->Add(new wxStaticText(panel, wxID_ANY, "ms"), 0, wxALL | wxALIGN_CENTER_VERTICAL, 0);
+    contentSizer->Add(m_latencyCompCtrl, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
+    contentSizer->Add(new wxStaticText(panel, wxID_ANY, "ms"), 0, wxALL | wxALIGN_CENTER_VERTICAL, 0);
 
-    ntpSizer->Add(new wxStaticLine(panel, wxID_ANY, wxDefaultPosition, wxSize(2, 20), wxLI_VERTICAL), 0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 4);
+    contentSizer->Add(new wxStaticLine(panel, wxID_ANY, wxDefaultPosition, wxSize(2, 20), wxLI_VERTICAL), 0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 4);
 
-    ntpSizer->Add(new wxStaticText(panel, wxID_ANY, wxString::FromUTF8("定时:")), 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
+    // NTP 时间（中间）
+    m_ntpLabel = new wxStaticText(panel, wxID_ANY, "--:--", wxDefaultPosition, wxSize(45, -1), wxALIGN_CENTER);
+    contentSizer->Add(m_ntpLabel, 0, wxALIGN_CENTER_VERTICAL, 0);
 
+    contentSizer->Add(new wxStaticLine(panel, wxID_ANY, wxDefaultPosition, wxSize(2, 20), wxLI_VERTICAL), 0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 4);
+
+    // 定时（右侧）
     m_schedMin = new wxSpinCtrl(panel, wxID_ANY, "0", wxDefaultPosition, wxSize(45, -1), wxSP_ARROW_KEYS | wxTE_CENTRE, 0, 59, 0);
-    ntpSizer->Add(m_schedMin, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
+    contentSizer->Add(m_schedMin, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
 
-    ntpSizer->Add(new wxStaticText(panel, wxID_ANY, ":"), 0, wxALL | wxALIGN_CENTER_VERTICAL, 0);
+    contentSizer->Add(new wxStaticText(panel, wxID_ANY, ":"), 0, wxALL | wxALIGN_CENTER_VERTICAL, 0);
 
     m_schedSec = new wxSpinCtrl(panel, wxID_ANY, "0", wxDefaultPosition, wxSize(45, -1), wxSP_ARROW_KEYS | wxTE_CENTRE, 0, 59, 0);
-    ntpSizer->Add(m_schedSec, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
+    contentSizer->Add(m_schedSec, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
 
     m_scheduleBtn = new wxButton(panel, ID_SCHEDULE_BTN, wxString::FromUTF8("定时"));
-    ntpSizer->Add(m_scheduleBtn, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
+    contentSizer->Add(m_scheduleBtn, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
 
-    sizer->Add(ntpSizer, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
+    sizer->Add(contentSizer, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
+
+    // 右侧拉伸，让整体居中
+    sizer->AddStretchSpacer(1);
 
     panel->SetSizer(sizer);
     mainSizer->Add(panel, 0, wxEXPAND | wxALL, 2);
@@ -701,7 +716,7 @@ void MainFrame::OnRemoveFile(wxCommandEvent& event) {
         m_current_midi.reset();
         
         m_playBtn->SetLabel(wxString::FromUTF8("播放"));
-        GetStatusBar()->SetStatusText("BPM: --", 2);
+        GetStatusBar()->SetStatusText("BPM: --", 1);
         m_currentFileLabel->SetLabel(wxString::FromUTF8("未选择文件"));
         m_totalTimeLabel->SetLabel("00:00");
         m_currentTimeLabel->SetLabel("00:00");
@@ -745,8 +760,8 @@ void MainFrame::OnClearList(wxCommandEvent& event) {
     
     m_current_path = "";
     m_current_midi.reset();
-    
-    GetStatusBar()->SetStatusText("BPM: --", 2);
+
+    GetStatusBar()->SetStatusText("BPM: --", 1);
     m_currentFileLabel->SetLabel(wxString::FromUTF8("未选择文件"));
     m_totalTimeLabel->SetLabel("00:00");
     m_currentTimeLabel->SetLabel("00:00");
@@ -999,7 +1014,7 @@ void MainFrame::PlayIndex(int viewIndex, bool autoPlay) {
             } else {
                 statusText += " | 4/4";
             }
-            GetStatusBar()->SetStatusText(statusText, 2);
+            GetStatusBar()->SetStatusText(statusText, 1);
 
             UpdateStatusText(wxString::FromUTF8("已加载"));
             m_stateMachine.SetContextInfo(filename);
@@ -2098,7 +2113,7 @@ void MainFrame::UpdateKeymapChoice() {
 
     // 清空并重建列表
     m_keymapChoice->Clear();
-    m_keymapChoice->Append(wxString::FromUTF8("默认键位(最终幻想14)"));  // 内置默认键位
+    m_keymapChoice->Append(wxString::FromUTF8("默认键位"));  // 内置默认键位
 
     // 添加导入的键位映射文件
     for (const auto& path : m_keymapFiles) {
