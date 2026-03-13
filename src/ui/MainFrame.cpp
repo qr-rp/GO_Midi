@@ -591,9 +591,8 @@ void MainFrame::InitKeymapPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     });
     m_latencyCompCtrl->Bind(wxEVT_TEXT, [this](wxCommandEvent& event) {
         if (m_latencyCompCtrl) {
-            long val = 0;
-            m_latencyCompCtrl->GetValue().ToLong(&val);
-            m_latency_comp_us.store(val * 1000LL);
+            int val = m_latencyCompCtrl->GetValue();
+            m_latency_comp_us.store(static_cast<long long>(val) * 1000LL);
         }
         event.Skip();
     });
