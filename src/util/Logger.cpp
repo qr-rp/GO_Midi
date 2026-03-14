@@ -309,8 +309,8 @@ namespace Util
 
         m_currentLogFile = filename.str();
 
-        // 打开文件
-        m_fileStream.open(m_currentLogFile, std::ios::out | std::ios::app);
+        // 使用 filesystem::path 正确处理可能包含中文字符的路径
+        m_fileStream.open(std::filesystem::path(m_currentLogFile), std::ios::out | std::ios::app);
         if (!m_fileStream.is_open())
         {
             std::cerr << "[Logger] Failed to open log file: " << m_currentLogFile << std::endl;

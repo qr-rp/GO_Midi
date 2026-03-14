@@ -3,6 +3,7 @@
 #include <cstring>
 #include <tuple>
 #include <unordered_map>
+#include <filesystem>
 #include "../util/Logger.h"
 
 namespace Midi
@@ -16,7 +17,7 @@ namespace Midi
         LOG_ENTRY();
         LOG_DEBUG("加载 MIDI 文件 (宽字符路径)");
 
-        std::ifstream file(filepath.c_str(), std::ios::binary | std::ios::ate);
+        std::ifstream file(std::filesystem::path(filepath), std::ios::binary | std::ios::ate);
         if (!file.is_open())
         {
             LOG_ERROR("无法打开文件 (宽字符路径)");

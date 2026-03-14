@@ -1361,9 +1361,9 @@ void MainFrame::OnLoadKeymap(wxCommandEvent& event) {
 
     wxString path = openFileDialog.GetPath();
 
-    // 检查是否已经导入过
+    // 检查是否已经导入过（Windows 路径不区分大小写）
     for (const auto& existing : m_keymapFiles) {
-        if (existing == path) {
+        if (existing.CmpNoCase(path) == 0) {
             UpdateStatusText(wxString::FromUTF8("该键位映射已存在"));
             return;
         }
@@ -2036,9 +2036,9 @@ void MainFrame::LoadKeymapConfig() {
     wxString currentKeymap;
     m_config->Read("/Global/CurrentKeymap", &currentKeymap, "");
     if (!currentKeymap.empty()) {
-        // 查找并选中
+        // 查找并选中（Windows 路径不区分大小写）
         for (size_t i = 0; i < m_keymapFiles.size(); ++i) {
-            if (m_keymapFiles[i] == currentKeymap) {
+            if (m_keymapFiles[i].CmpNoCase(currentKeymap) == 0) {
                 m_keymapChoice->SetSelection(static_cast<int>(i + 1));
                 LoadKeymapFile(currentKeymap);
                 break;
@@ -2074,6 +2074,7 @@ void MainFrame::LoadKeymapConfig() {
 
         if (!map.empty() && currentKeymap.empty()) {
             m_engine.get_key_manager().set_map(map);
+            m_engine.notify_keymap_changed();
         }
     }
 }
@@ -2135,6 +2136,7 @@ void MainFrame::LoadKeymapFile(const wxString& path) {
         m_currentKeymapPath = path;
         wxString filename = path.AfterLast('\\').BeforeLast('.');
         UpdateStatusText(wxString::FromUTF8("已加载键位: ") + filename);
+        m_engine.notify_keymap_changed();
     } else {
         UpdateStatusText(wxString::FromUTF8("键位加载失败"));
     }

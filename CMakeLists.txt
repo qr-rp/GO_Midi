@@ -150,3 +150,8 @@ target_link_libraries(wx_GO_MIDI_CPP
     shlwapi
     psapi
 )
+
+# Link stdc++fs for std::filesystem support (GCC 8 and below need this)
+if(MINGW OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_link_libraries(wx_GO_MIDI_CPP stdc++fs)
+endif()

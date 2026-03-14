@@ -432,7 +432,7 @@ namespace Util
         int line_count = 0;
         int valid_count = 0;
         // 优化：静态缓存正则表达式，避免每次调用重新编译
-        static const std::regex re(R"((?:音符\s+)?([A-G][#B]?\d+|\d+)(?:\s*\(.*?\))?[\s]*[:=\-\s]+[\s]*([^\s]+))", std::regex::icase | std::regex::optimize);
+        static const std::regex re(R"((?:音符\s+)?([A-G][#bB]?\d+|\d+)(?:\s*\(.*?\))?[\s]*[:=\-\s]+[\s]*([^\s]+))", std::regex::icase | std::regex::optimize);
         while (std::getline(lines, line))
         {
             line_count++;
