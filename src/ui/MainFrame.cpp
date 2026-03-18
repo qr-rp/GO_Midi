@@ -2177,28 +2177,44 @@ void MainFrame::SaveLastSelectedFile() {
 }
 
 int MainFrame::FindWindowByTitle(const wxString& title) {
+    std::string targetTitle = std::string(title.ToUTF8());
+    LOG("FindWindowByTitle: searching for '" + targetTitle + "' in " + std::to_string(m_windowList.size()) + " windows");
+    
     for (size_t i = 0; i < m_windowList.size(); ++i) {
-        if (m_windowList[i].title == std::string(title.ToUTF8())) {
+        LOG("FindWindowByTitle: [" + std::to_string(i) + "] '" + m_windowList[i].title + "'");
+        if (m_windowList[i].title == targetTitle) {
+            LOG("FindWindowByTitle: found at index " + std::to_string(i));
             return static_cast<int>(i);
         }
     }
+    LOG("FindWindowByTitle: not found");
     return -1;
 }
 
 void MainFrame::TryRecoverWindows() {
     // 刷新窗口列表
     UpdateWindowList();
+    LOG("TryRecoverWindows: window list size = " + std::to_string(m_windowList.size()));
 
     for (auto& c : m_channelConfigs) {
+        int currentSel = c.windowChoice->GetSelection();
+        LOG("TryRecoverWindows: channel " + std::to_string(c.channelIndex) + 
+            " selection = " + std::to_string(currentSel));
+        
         // 只处理"未选择"的通道
-        if (c.windowChoice->GetSelection() == 0) {
+        if (currentSel == 0) {
             wxString prefix = wxString::Format("Channel_%d/", c.channelIndex);
             wxString windowTitle;
             m_config->Read(prefix + "WindowTitle", &windowTitle, "");
 
+            LOG("TryRecoverWindows: channel " + std::to_string(c.channelIndex) + 
+                " saved WindowTitle = " + std::string(windowTitle.ToUTF8()));
+
             if (windowTitle.IsEmpty()) continue;
 
             int idx = FindWindowByTitle(windowTitle);
+            LOG("TryRecoverWindows: FindWindowByTitle result = " + std::to_string(idx));
+            
             if (idx >= 0) {
                 c.windowChoice->SetSelection(idx + 1);  // +1 因为第0项是"未选择"
                 m_engine.set_channel_window(c.channelIndex, m_windowList[idx].hwnd);
