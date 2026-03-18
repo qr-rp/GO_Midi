@@ -1877,27 +1877,22 @@ void MainFrame::SaveFileConfig() {
                     }
             
                     // 2. Window - 保存原始窗口标题（不含PID）
-                    int selIdx = c.windowChoice->GetSelection();
-                    wxString windowTitle;
-                    if (selIdx > 0) {  // 0 是 "未选择"
-                        void* clientData = c.windowChoice->GetClientData(selIdx);
-                        if (clientData) {
-                            HWND h = static_cast<HWND>(clientData);
-                            for (const auto& win : m_windowList) {
-                                if (win.hwnd == h) {
-                                    windowTitle = wxString::FromUTF8(win.title);
-                                    break;
-                                }
-                            }
+            // 只在用户主动选择窗口时保存，不删除原有配置（避免"先开程序后开游戏"场景下配置被误删）
+            int selIdx = c.windowChoice->GetSelection();
+            if (selIdx > 0) {  // 0 是 "未选择"
+                void* clientData = c.windowChoice->GetClientData(selIdx);
+                if (clientData) {
+                    HWND h = static_cast<HWND>(clientData);
+                    for (const auto& win : m_windowList) {
+                        if (win.hwnd == h) {
+                            m_config->Write(prefix + "WindowTitle", wxString::FromUTF8(win.title));
+                            channelHasConfig = true;
+                            break;
                         }
                     }
-            
-                    if (!windowTitle.IsEmpty()) {
-                         m_config->Write(prefix + "WindowTitle", windowTitle);
-                         channelHasConfig = true;
-                    } else {
-                         m_config->DeleteEntry(prefix + "WindowTitle");
-                    }
+                }
+            }
+            // 注意：选择"未选择"时不删除配置，保留原有 WindowTitle 供后续恢复使用
             
                     // 3. Transpose
                     int currentTranspose = c.transposeCtrl->GetValue();
