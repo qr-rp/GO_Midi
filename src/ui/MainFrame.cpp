@@ -1892,7 +1892,8 @@ void MainFrame::SaveFileConfig() {
                          m_config->DeleteEntry(prefix + "WindowTitle");
                     }
             
-                    // 3. Transpose        int currentTranspose = c.transposeCtrl->GetValue();
+                    // 3. Transpose
+                    int currentTranspose = c.transposeCtrl->GetValue();
         if (currentTranspose != 0) {
             m_config->Write(prefix + "Transpose", currentTranspose);
             channelHasConfig = true;

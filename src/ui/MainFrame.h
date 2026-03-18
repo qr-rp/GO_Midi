@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <random>
 
+#include "UIHelpers.h"
 #include "../core/PlaybackEngine.h"
 #include "Widgets.h"
 #include "PlaybackState.h"
