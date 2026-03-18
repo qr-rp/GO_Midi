@@ -507,7 +507,14 @@ wxPanel* MainFrame::CreateChannelConfig(wxPanel* parent, int index) {
 
 
 
-    windowChoice->Bind(wxEVT_CHOICE, [this, index](wxCommandEvent& e) {        int sel = e.GetSelection();
+    // 点击下拉框时刷新窗口列表，支持游戏崩溃重启后手动选择
+    windowChoice->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent& e) {
+        UpdateWindowList();
+        e.Skip();  // 继续传递事件，让下拉框正常展开
+    });
+
+    windowChoice->Bind(wxEVT_CHOICE, [this, index](wxCommandEvent& e) {
+        int sel = e.GetSelection();
         if (sel != wxNOT_FOUND && sel != 0) {
             wxChoice* c = (wxChoice*)e.GetEventObject();
             void* clientData = c->GetClientData(sel);

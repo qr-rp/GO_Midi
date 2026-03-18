@@ -9,6 +9,7 @@ GO_Midi 是一个 Windows 平台的 MIDI 自动演奏工具，主要用于游戏
 - **智能移调**：自动计算最佳移调，让音符落在可用键位范围内
 - **多通道支持**：8 个独立通道，每个通道可单独配置目标窗口、音轨和移调
 - **键盘模拟**：向指定窗口发送按键事件
+- **窗口恢复**：定时扫描窗口列表，自动恢复游戏重启后的窗口选择
 - **播放列表**：多播放列表支持，拖拽排序，多种播放模式
 - **AB 点循环**：右键设置循环区间，支持拖动调整
 - **定时播放**：NTP 时间同步，精确定时开始播放
@@ -41,7 +42,7 @@ GO_Midi/
 │   ├── ui/                 # 用户界面
 │   │   ├── MainFrame          # 主窗口框架
 │   │   ├── PlaybackState      # 播放状态机
-│   │   ├── UIHelpers          # UI 辅助函数
+│   │   ├── UIHelpers          # UI 辅助函数、UIConstants 常量
 │   │   └── Widgets            # 自定义控件（ModernSlider, ScrollingText）
 │   └── util/               # 工具类
 │       ├── KeyManager         # 键位映射管理
@@ -181,6 +182,46 @@ struct KeyMapping {
 };
 ```
 
+### UIHelpers（UI 辅助模块）
+
+位置：`src/ui/UIHelpers.h/cpp`
+
+- **UIConstants 命名空间**：集中管理 UI 字符串常量，避免重复定义
+- **UIHelpers 类**：UI 更新辅助函数
+- **ChannelUIUpdater 类**：批量更新通道控件
+
+```cpp
+// 字符串常量定义
+namespace UIConstants {
+    const wxString DEFAULT_WINDOW = "未选择";
+    const wxString DEFAULT_TRACK = "全部音轨";
+    const wxString DEFAULT_KEYMAP = "默认键位";
+    const wxString MODE_SINGLE = "单曲播放";
+    const wxString MODE_SINGLE_LOOP = "单曲循环";
+    const wxString MODE_LIST = "列表播放";
+    const wxString MODE_LIST_LOOP = "列表循环";
+    const wxString MODE_RANDOM = "随机播放";
+}
+```
+
+### 窗口恢复机制
+
+位置：`src/ui/MainFrame.cpp` - `TryRecoverWindows()`
+
+- **触发时机**：每 5 秒定时扫描（仅在非播放状态）
+- **恢复策略**：按窗口标题精确匹配
+- **工作流程**：
+  1. 刷新窗口列表 `UpdateWindowList()`
+  2. 遍历所有通道，检查是否为"未选择"状态
+  3. 读取配置中保存的 `WindowTitle`
+  4. 调用 `FindWindowByTitle()` 精确匹配标题
+  5. 匹配成功则恢复窗口选择
+
+```cpp
+// 核心辅助函数
+int FindWindowByTitle(const wxString& title);  // 按标题查找窗口索引
+```
+
 ### PlaybackStateMachine（播放状态机）
 
 位置：`src/ui/PlaybackState.h/cpp`
@@ -199,6 +240,12 @@ struct KeyMapping {
 - **类成员**：`m_` 前缀（如 `m_current_time`）
 - **常量**：`kCamelCase` 或 `UPPER_CASE`
 - **文件名**：PascalCase（如 `PlaybackEngine.cpp`）
+
+### 字符串常量管理
+
+- **集中定义**：所有 UI 字符串常量统一在 `UIConstants` 命名空间中定义
+- **避免重复**：不要在多处定义相同的字符串字面量
+- **使用方式**：`UIConstants::DEFAULT_WINDOW`、`UIConstants::MODE_SINGLE` 等
 
 ### 线程安全
 
@@ -229,7 +276,7 @@ struct KeyMapping {
 
 ```ini
 [Channel_0]
-Window=窗口标题
+WindowTitle=窗口标题    # 窗口标题（不含 PID）
 Track=音轨名称
 Transpose=0
 Enabled=1
@@ -275,8 +322,8 @@ c-          # 加 '-' 表示 Ctrl 修饰
 
 ```bash
 # 创建开发版发布
-git tag dev-v0.0.31
-git push origin dev-v0.0.31
+git tag dev-v0.0.32
+git push origin dev-v0.0.32
 
 # 创建正式版发布
 git tag v1.1.0
@@ -300,9 +347,15 @@ git push origin v1.1.0
 
 ### 添加新的播放模式
 
-1. 修改 `MainFrame.h` 中的播放模式字符串
-2. 在 `OnModeClick()` 中添加模式逻辑
-3. 更新 `GetNextRandomIndex()` 或添加新的索引选择函数
+1. 在 `UIConstants` 命名空间中添加新模式常量
+2. 在 `MainFrame.h` 中使用新常量初始化 `m_play_mode`
+3. 在 `OnModeClick()` 中添加模式逻辑
+4. 更新 `GetNextRandomIndex()` 或添加新的索引选择函数
+
+### 添加新的 UI 字符串常量
+
+1. 在 `src/ui/UIHelpers.h` 的 `UIConstants` 命名空间中添加
+2. 替换代码中所有硬编码的字符串字面量
 
 ---
 
@@ -324,6 +377,13 @@ git push origin v1.1.0
 ---
 
 ## 最近更新
+
+### dev-v0.0.32
+
+- **代码重构优化**：创建 UIConstants 命名空间集中管理字符串常量
+- **窗口恢复简化**：只使用窗口标题匹配，支持双开客户端区分
+- **定时窗口扫描**：每 5 秒自动扫描窗口变化（非播放状态）
+- **辅助函数**：添加 `FindWindowByTitle()` 统一窗口查找逻辑
 
 ### v1.1.0 / dev-v0.0.31
 
