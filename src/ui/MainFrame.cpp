@@ -2173,47 +2173,44 @@ void MainFrame::SaveLastSelectedFile() {
 
 int MainFrame::FindWindowByTitle(const wxString& title) {
     std::string targetTitle = std::string(title.ToUTF8());
-    LOG("FindWindowByTitle: searching for '" + targetTitle + "' in " + std::to_string(m_windowList.size()) + " windows");
-    
     for (size_t i = 0; i < m_windowList.size(); ++i) {
-        LOG("FindWindowByTitle: [" + std::to_string(i) + "] '" + m_windowList[i].title + "'");
         if (m_windowList[i].title == targetTitle) {
-            LOG("FindWindowByTitle: found at index " + std::to_string(i));
             return static_cast<int>(i);
         }
     }
-    LOG("FindWindowByTitle: not found");
     return -1;
 }
 
 void MainFrame::TryRecoverWindows() {
+    // 必须有已加载的文件才能恢复
+    if (m_current_path.IsEmpty()) return;
+    
+    // 设置正确的配置路径
+    wxString filename = m_current_path.AfterLast('\\');
+    filename.Replace("/", "_");
+    filename.Replace("\\", "_");
+    wxString groupName = "/Files/" + filename;
+    
     // 刷新窗口列表
     UpdateWindowList();
-    LOG("TryRecoverWindows: window list size = " + std::to_string(m_windowList.size()));
 
     for (auto& c : m_channelConfigs) {
         int currentSel = c.windowChoice->GetSelection();
-        LOG("TryRecoverWindows: channel " + std::to_string(c.channelIndex) + 
-            " selection = " + std::to_string(currentSel));
         
         // 只处理"未选择"的通道
         if (currentSel == 0) {
             wxString prefix = wxString::Format("Channel_%d/", c.channelIndex);
             wxString windowTitle;
-            m_config->Read(prefix + "WindowTitle", &windowTitle, "");
-
-            LOG("TryRecoverWindows: channel " + std::to_string(c.channelIndex) + 
-                " saved WindowTitle = " + std::string(windowTitle.ToUTF8()));
+            m_config->Read(groupName + "/" + prefix + "WindowTitle", &windowTitle, "");
 
             if (windowTitle.IsEmpty()) continue;
 
             int idx = FindWindowByTitle(windowTitle);
-            LOG("TryRecoverWindows: FindWindowByTitle result = " + std::to_string(idx));
             
             if (idx >= 0) {
                 c.windowChoice->SetSelection(idx + 1);  // +1 因为第0项是"未选择"
                 m_engine.set_channel_window(c.channelIndex, m_windowList[idx].hwnd);
-                LOG("Recovered window by title: " + std::string(windowTitle.ToUTF8()));
+                LOG("Recovered window: " + std::string(windowTitle.ToUTF8()));
             }
         }
     }
