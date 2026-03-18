@@ -271,7 +271,7 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
 
     m_keymapChoice = new wxChoice(panel, ID_KEYMAP_CHOICE);
     m_keymapChoice->SetMinSize(wxSize(80, -1));
-    m_keymapChoice->Append(wxString::FromUTF8("默认键位"));  // 内置默认键位
+    m_keymapChoice->Append(UIConstants::DEFAULT_KEYMAP);  // 内置默认键位
 
     m_loadKeymapBtn = new wxButton(panel, ID_LOAD_KEYMAP_BTN, wxString::FromUTF8("导入"));
     m_loadKeymapBtn->SetMinSize(wxSize(45, -1));
@@ -355,7 +355,7 @@ void MainFrame::InitControlPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     m_playBtn = new wxButton(panel, ID_PLAY_BTN, wxString::FromUTF8("播放"));
     m_stopBtn = new wxButton(panel, ID_STOP_BTN, wxString::FromUTF8("停止"));
     m_nextBtn = new wxButton(panel, ID_NEXT_BTN, wxString::FromUTF8("下一曲"));
-    m_modeBtn = new wxButton(panel, ID_MODE_BTN, wxString::FromUTF8("单曲播放"));
+    m_modeBtn = new wxButton(panel, ID_MODE_BTN, UIConstants::MODE_SINGLE);
     m_decomposeBtn = new wxToggleButton(panel, ID_DECOMPOSE_BTN, wxString::FromUTF8("和弦分解"));
     m_decomposeBtn->SetMinSize(wxSize(80, 25));
     
@@ -463,7 +463,7 @@ wxPanel* MainFrame::CreateChannelConfig(wxPanel* parent, int index) {
     enableBtn->SetMinSize(wxSize(50, -1));
     
     wxChoice* windowChoice = new wxChoice(panel, wxID_ANY);
-    windowChoice->Append(wxString::FromUTF8("未选择"));
+    windowChoice->Append(UIConstants::DEFAULT_WINDOW);
     windowChoice->SetSelection(0);
     
     row1->Add(enableBtn, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
@@ -480,7 +480,7 @@ wxPanel* MainFrame::CreateChannelConfig(wxPanel* parent, int index) {
 
     
     wxChoice* trackChoice = new wxChoice(panel, wxID_ANY);
-    trackChoice->Append(wxString::FromUTF8("全部音轨"));
+    trackChoice->Append(UIConstants::DEFAULT_TRACK);
     trackChoice->SetSelection(0);
     
     row2->Add(transposeCtrl, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
@@ -505,14 +505,9 @@ wxPanel* MainFrame::CreateChannelConfig(wxPanel* parent, int index) {
     });
 
 
-    
-    windowChoice->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent& e) {
-         OnWindowChoiceDropdown(e);
-         e.Skip(); // Allow default processing
-    });
-    
-    windowChoice->Bind(wxEVT_CHOICE, [this, index](wxCommandEvent& e) {
-        int sel = e.GetSelection();
+
+
+    windowChoice->Bind(wxEVT_CHOICE, [this, index](wxCommandEvent& e) {        int sel = e.GetSelection();
         if (sel != wxNOT_FOUND && sel != 0) {
             wxChoice* c = (wxChoice*)e.GetEventObject();
             void* clientData = c->GetClientData(sel);
@@ -554,6 +549,8 @@ wxPanel* MainFrame::CreateChannelConfig(wxPanel* parent, int index) {
              if (clientData != nullptr) {
                  int trackIdx = static_cast<int>(reinterpret_cast<intptr_t>(clientData));
                  m_engine.set_channel_track(index, trackIdx);
+             } else {
+                 m_engine.set_channel_track(index, -1);
              }
         }
         SaveFileConfig();
@@ -1146,14 +1143,14 @@ void MainFrame::OnPrev(wxCommandEvent& event) {
     
     int nextIndex = -1;
     
-    if (m_play_mode == wxString::FromUTF8("随机播放")) {
+    if (m_play_mode == UIConstants::MODE_RANDOM) {
         // For previous in random mode, we reset and get a new random song
         ResetRandomSequence();
         nextIndex = GetNextRandomIndex();
     } else {
         nextIndex = m_current_play_index - 1;
         if (nextIndex < 0) {
-            if (m_play_mode == wxString::FromUTF8("列表循环")) {
+            if (m_play_mode == UIConstants::MODE_LIST_LOOP) {
                 nextIndex = m_playlistCtrl->GetItemCount() - 1;
             } else {
                 nextIndex = 0; // Stop or stay at start?
@@ -1171,12 +1168,12 @@ void MainFrame::OnNext(wxCommandEvent& event) {
     
     int nextIndex = -1;
     
-    if (m_play_mode == wxString::FromUTF8("随机播放")) {
+    if (m_play_mode == UIConstants::MODE_RANDOM) {
         nextIndex = GetNextRandomIndex();
     } else {
         nextIndex = m_current_play_index + 1;
         if (nextIndex >= m_playlistCtrl->GetItemCount()) {
-            if (m_play_mode == wxString::FromUTF8("列表循环")) {
+            if (m_play_mode == UIConstants::MODE_LIST_LOOP) {
                 nextIndex = 0;
             } else {
                 // End of list, stop if playing
@@ -1195,17 +1192,17 @@ void MainFrame::OnNext(wxCommandEvent& event) {
 }
 
 void MainFrame::OnModeClick(wxCommandEvent& event) {
-    // Cycle modes: "单曲播放", "单曲循环", "列表播放", "列表循环", "随机播放"
-    if (m_play_mode == wxString::FromUTF8("单曲播放")) m_play_mode = wxString::FromUTF8("单曲循环");
-    else if (m_play_mode == wxString::FromUTF8("单曲循环")) m_play_mode = wxString::FromUTF8("列表播放");
-    else if (m_play_mode == wxString::FromUTF8("列表播放")) m_play_mode = wxString::FromUTF8("列表循环");
-    else if (m_play_mode == wxString::FromUTF8("列表循环")) m_play_mode = wxString::FromUTF8("随机播放");
-    else m_play_mode = wxString::FromUTF8("单曲播放");
+    // Cycle modes
+    if (m_play_mode == UIConstants::MODE_SINGLE) m_play_mode = UIConstants::MODE_SINGLE_LOOP;
+    else if (m_play_mode == UIConstants::MODE_SINGLE_LOOP) m_play_mode = UIConstants::MODE_LIST;
+    else if (m_play_mode == UIConstants::MODE_LIST) m_play_mode = UIConstants::MODE_LIST_LOOP;
+    else if (m_play_mode == UIConstants::MODE_LIST_LOOP) m_play_mode = UIConstants::MODE_RANDOM;
+    else m_play_mode = UIConstants::MODE_SINGLE;
     
     m_modeBtn->SetLabel(m_play_mode);
     
     // Reset random sequence when entering/exiting random mode
-    if (m_play_mode == wxString::FromUTF8("随机播放")) {
+    if (m_play_mode == UIConstants::MODE_RANDOM) {
         ResetRandomSequence();
     }
     
@@ -1540,11 +1537,6 @@ void MainFrame::OnSchedule(wxCommandEvent& event) {
     }
 }
 
-void MainFrame::OnWindowChoiceDropdown(wxMouseEvent& event) {
-    UpdateWindowList();
-    event.Skip();
-}
-
 void MainFrame::OnNtpSyncComplete(wxCommandEvent& event) {
     // 安全地处理来自后台线程的NTP同步结果
     if (m_isShuttingDown.load()) {
@@ -1637,7 +1629,7 @@ void MainFrame::UpdateTrackList() {
     wxArrayString displayItems;
     std::vector<int> trackIndices;
     
-    displayItems.Add(wxString::FromUTF8("全部音轨"));
+    displayItems.Add(UIConstants::DEFAULT_TRACK);
     trackIndices.push_back(-1);
     
     int displayIdx = 1;
@@ -1674,7 +1666,7 @@ void MainFrame::UpdateTrackList() {
     
     // Use helper to update all channels
     UI::ChannelUIUpdater::UpdateTrackLists(channelInfos, displayItems, trackIndices);
-    
+
     // Sync engine mappings
     for (auto& config : m_channelConfigs) {
         int sel = config.trackChoice->GetSelection();
@@ -1683,12 +1675,23 @@ void MainFrame::UpdateTrackList() {
             if (clientData != nullptr) {
                 int trackIdx = static_cast<int>(reinterpret_cast<intptr_t>(clientData));
                 m_engine.set_channel_track(config.channelIndex, trackIdx);
+            } else {
+                m_engine.set_channel_track(config.channelIndex, -1);
             }
         }
     }
 }
 
 void MainFrame::OnTimer(wxTimerEvent& event) {
+    // 每5秒扫描窗口变化，仅在非播放状态时生效
+    if (!m_engine.is_playing()) {
+        static int windowScanCounter = 0;
+        if (++windowScanCounter >= 50) { // 100ms * 50 = 5s
+            windowScanCounter = 0;
+            TryRecoverWindows();
+        }
+    }
+
     auto now_ntp = Util::NtpClient::GetNow();
     const bool synced = Util::NtpClient::IsSynced();
     static bool last_synced = false;
@@ -1753,10 +1756,10 @@ void MainFrame::OnTimer(wxTimerEvent& event) {
 
         // Check if finished
         if (m_current_midi && t >= m_current_midi->length && m_current_midi->length > 0) {
-            if (m_play_mode == wxString::FromUTF8("单曲循环")) {
+            if (m_play_mode == UIConstants::MODE_SINGLE_LOOP) {
                 m_engine.seek(0);
                 m_engine.play();
-            } else if (m_play_mode == wxString::FromUTF8("单曲播放")) {
+            } else if (m_play_mode == UIConstants::MODE_SINGLE) {
                 wxCommandEvent dummy;
                 OnStop(dummy);
             } else {
@@ -1796,7 +1799,7 @@ void MainFrame::OnStateChange(UI::PlaybackStatus oldState, UI::PlaybackStatus ne
 
 void MainFrame::UpdateWindowList() {
     m_windowList = Core::KeyboardSimulator::GetWindowList();
-    
+
     // Sort windows by title (case insensitive)
     std::sort(m_windowList.begin(), m_windowList.end(), [](const Core::KeyboardSimulator::WindowInfo& a, const Core::KeyboardSimulator::WindowInfo& b) {
 #ifdef _WIN32
@@ -1805,7 +1808,7 @@ void MainFrame::UpdateWindowList() {
         return strcasecmp(a.title.c_str(), b.title.c_str()) < 0;
 #endif
     });
-    
+
     // Convert channel configs to UIHelpers format
     std::vector<UI::ChannelUIUpdater::ChannelUpdateInfo> channelInfos;
     for (auto& config : m_channelConfigs) {
@@ -1860,48 +1863,36 @@ void MainFrame::SaveFileConfig() {
         bool defaultEnabled = (c.channelIndex == 0);
         bool currentEnabled = c.enableBtn->GetValue();
         if (currentEnabled != defaultEnabled) {
-            m_config->Write(prefix + "Enabled", currentEnabled);
-            channelHasConfig = true;
-        } else {
-            m_config->DeleteEntry(prefix + "Enabled");
-        }
-        
-        // 2. Window - 只保存标题和进程名用于恢复
-        wxString currentWindow = c.windowChoice->GetStringSelection();
-        if (currentWindow.IsEmpty()) currentWindow = wxString::FromUTF8("未选择");
-        
-        if (currentWindow != wxString::FromUTF8("未选择")) {
-             m_config->Write(prefix + "WindowTitle", currentWindow);
-             channelHasConfig = true;
-        } else {
-             m_config->DeleteEntry(prefix + "WindowTitle");
-        }
-        
-        // 3. WindowProcess - 保存进程名或 MIDI 设备类型用于恢复
-        wxString processName = "";
-        int selIdx = c.windowChoice->GetSelection();
-        if (selIdx != wxNOT_FOUND) {
-            void* clientData = c.windowChoice->GetClientData(selIdx);
-            if (clientData) {
-                HWND h = static_cast<HWND>(clientData);
-                for (const auto& win : m_windowList) {
-                    if (win.hwnd == h) {
-                        processName = win.process_name;
-                        break;
+                        m_config->Write(prefix + "Enabled", currentEnabled);
+                        channelHasConfig = true;
+                    } else {
+                        m_config->DeleteEntry(prefix + "Enabled");
                     }
-                }
-            }
-        }
-        
-        if (!processName.IsEmpty()) {
-            m_config->Write(prefix + "WindowProcess", processName);
-            channelHasConfig = true;
-        } else {
-            m_config->DeleteEntry(prefix + "WindowProcess");
-        }
-
-        // 4. Transpose
-        int currentTranspose = c.transposeCtrl->GetValue();
+            
+                    // 2. Window - 保存原始窗口标题（不含PID）
+                    int selIdx = c.windowChoice->GetSelection();
+                    wxString windowTitle;
+                    if (selIdx > 0) {  // 0 是 "未选择"
+                        void* clientData = c.windowChoice->GetClientData(selIdx);
+                        if (clientData) {
+                            HWND h = static_cast<HWND>(clientData);
+                            for (const auto& win : m_windowList) {
+                                if (win.hwnd == h) {
+                                    windowTitle = wxString::FromUTF8(win.title);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+            
+                    if (!windowTitle.IsEmpty()) {
+                         m_config->Write(prefix + "WindowTitle", windowTitle);
+                         channelHasConfig = true;
+                    } else {
+                         m_config->DeleteEntry(prefix + "WindowTitle");
+                    }
+            
+                    // 3. Transpose        int currentTranspose = c.transposeCtrl->GetValue();
         if (currentTranspose != 0) {
             m_config->Write(prefix + "Transpose", currentTranspose);
             channelHasConfig = true;
@@ -1911,9 +1902,9 @@ void MainFrame::SaveFileConfig() {
         
         // 5. Track
         wxString currentTrack = c.trackChoice->GetStringSelection();
-        if (currentTrack.IsEmpty()) currentTrack = wxString::FromUTF8("全部音轨");
+        if (currentTrack.IsEmpty()) currentTrack = UIConstants::DEFAULT_TRACK;
         
-        if (currentTrack != wxString::FromUTF8("全部音轨")) {
+        if (currentTrack != UIConstants::DEFAULT_TRACK) {
             m_config->Write(prefix + "Track", currentTrack);
             channelHasConfig = true;
         } else {
@@ -1944,8 +1935,8 @@ void MainFrame::LoadGlobalConfig() {
     m_config->Read("MinPitch", &minPitch, 48);
     m_config->Read("MaxPitch", &maxPitch, 84);
 
-    wxString playMode = wxString::FromUTF8("单曲播放");
-    m_config->Read("PlayMode", &playMode, wxString::FromUTF8("单曲播放"));
+    wxString playMode = UIConstants::MODE_SINGLE;
+    m_config->Read("PlayMode", &playMode, UIConstants::MODE_SINGLE);
 
     bool decompose = false;
     m_config->Read("Decompose", &decompose, false);
@@ -2114,7 +2105,7 @@ void MainFrame::UpdateKeymapChoice() {
 
     // 清空并重建列表
     m_keymapChoice->Clear();
-    m_keymapChoice->Append(wxString::FromUTF8("默认键位"));  // 内置默认键位
+    m_keymapChoice->Append(UIConstants::DEFAULT_KEYMAP);  // 内置默认键位
 
     // 添加导入的键位映射文件
     for (const auto& path : m_keymapFiles) {
@@ -2177,38 +2168,36 @@ void MainFrame::SaveLastSelectedFile() {
     m_config->Flush();
 }
 
-wxString MainFrame::RemoveParenthesesContent(const wxString& title) {
-    wxString result = title;
-    
-    // 找到第一个左括号的位置
-    size_t startPos = result.Find('(');
-    if (startPos != wxString::npos) {
-        // 找到对应的右括号位置
-        size_t endPos = result.find(')', startPos);
-        if (endPos != wxString::npos) {
-            // 移除括号及其内容
-            result = result.substr(0, startPos) + result.substr(endPos + 1);
+int MainFrame::FindWindowByTitle(const wxString& title) {
+    for (size_t i = 0; i < m_windowList.size(); ++i) {
+        if (m_windowList[i].title == std::string(title.ToUTF8())) {
+            return static_cast<int>(i);
         }
     }
-    
-    // 去除前后空格
-    result.Trim(true);  // 去除前导空格
-    result.Trim(false); // 去除尾随空格
-    
-    return result;
+    return -1;
 }
 
-bool MainFrame::CompareWindowTitleAndProcess(const wxString& configTitle, const wxString& configProcess, 
-                                           const Core::KeyboardSimulator::WindowInfo& windowInfo) {
-    // 去除配置标题中的括号内容
-    wxString cleanConfigTitle = RemoveParenthesesContent(configTitle);
-    wxString cleanWindowTitle = RemoveParenthesesContent(windowInfo.title);
-    
-    // 同时比较标题和进程名
-    bool titleMatch = (cleanConfigTitle == cleanWindowTitle);
-    bool processMatch = (std::string(configProcess.ToUTF8()) == windowInfo.process_name);
-    
-    return titleMatch && processMatch;
+void MainFrame::TryRecoverWindows() {
+    // 刷新窗口列表
+    UpdateWindowList();
+
+    for (auto& c : m_channelConfigs) {
+        // 只处理"未选择"的通道
+        if (c.windowChoice->GetSelection() == 0) {
+            wxString prefix = wxString::Format("Channel_%d/", c.channelIndex);
+            wxString windowTitle;
+            m_config->Read(prefix + "WindowTitle", &windowTitle, "");
+
+            if (windowTitle.IsEmpty()) continue;
+
+            int idx = FindWindowByTitle(windowTitle);
+            if (idx >= 0) {
+                c.windowChoice->SetSelection(idx + 1);  // +1 因为第0项是"未选择"
+                m_engine.set_channel_window(c.channelIndex, m_windowList[idx].hwnd);
+                LOG("Recovered window by title: " + std::string(windowTitle.ToUTF8()));
+            }
+        }
+    }
 }
 
 void MainFrame::LoadFileConfig(const wxString& filename) {
@@ -2250,69 +2239,29 @@ void MainFrame::LoadFileConfig(const wxString& filename) {
         UpdateChannelUI(c.channelIndex, enabled);
         m_engine.set_channel_enable(c.channelIndex, enabled);
         
-        // 2. Window - 使用标题和进程名进行恢复
+        // 2. Window - 按标题匹配恢复
         wxString currentSel = c.windowChoice->GetStringSelection();
-        wxString defaultWindow = wxString::FromUTF8("未选择");
-        
+        wxString defaultWindow = UIConstants::DEFAULT_WINDOW;
+
         // Use current selection as default if available (prevents reset on new file load)
         if (!currentSel.IsEmpty()) {
             defaultWindow = currentSel;
         }
-        
+
         wxString windowTitle = defaultWindow;
-        wxString windowProcess = "";
-        
+
         if (hasConfig) {
             m_config->Read(prefix + "WindowTitle", &windowTitle, defaultWindow);
-            m_config->Read(prefix + "WindowProcess", &windowProcess, "");
         }
-        
-        bool found = false;
-        
-        // 1. 尝试精确匹配标题（去除括号内容后）
-        if (c.windowChoice->FindString(windowTitle) != wxNOT_FOUND) {
-            c.windowChoice->SetStringSelection(windowTitle);
-            found = true;
-        } 
-        // 2. 尝试匹配 MIDI 设备
-        // 3. 尝试按标题和进程名同时匹配（自动恢复）
-        else if (!windowProcess.IsEmpty()) {
-            for (unsigned int i = 0; i < c.windowChoice->GetCount(); ++i) {
-                if (i == 0) continue;
-                
-                size_t winIdx = i - 1;
-                if (winIdx < m_windowList.size()) {
-                    if (CompareWindowTitleAndProcess(windowTitle, windowProcess, m_windowList[winIdx])) {
-                         c.windowChoice->SetSelection(i);
-                         found = true;
-                         LOG("Recovered window by Title and Process: " + std::string(windowTitle.ToUTF8()) + 
-                             " / " + std::string(windowProcess.ToUTF8()));
-                         break;
-                    }
-                }
+
+        // 按原始标题匹配
+        if (!windowTitle.IsEmpty() && windowTitle != UIConstants::DEFAULT_WINDOW) {
+            int idx = FindWindowByTitle(windowTitle);
+            if (idx >= 0) {
+                c.windowChoice->SetSelection(idx + 1);  // +1 因为第0项是"未选择"
             }
         }
-        // 4. 备选方案：仅按进程名匹配
-        else if (!windowProcess.IsEmpty()) {
-            for (unsigned int i = 0; i < c.windowChoice->GetCount(); ++i) {
-                if (i == 0) continue;
-                
-                size_t winIdx = i - 1;
-                if (winIdx < m_windowList.size()) {
-                    if (m_windowList[winIdx].process_name == std::string(windowProcess.ToUTF8())) {
-                         c.windowChoice->SetSelection(i);
-                         found = true;
-                         LOG("Recovered window by Process Name: " + std::string(windowProcess.ToUTF8()));
-                         break;
-                    }
-                }
-            }
-        }
-        
-        if (!found) {
-             c.windowChoice->SetSelection(0);
-        }
-        
+
         int selWin = c.windowChoice->GetSelection();
         if (selWin != wxNOT_FOUND && selWin != 0) { // 0 is "None"
                 void* clientData = c.windowChoice->GetClientData(selWin);
@@ -2337,18 +2286,18 @@ void MainFrame::LoadFileConfig(const wxString& filename) {
         m_engine.set_channel_transpose(c.channelIndex, transpose);
         
         // 4. Track
-        wxString defaultTrack = wxString::FromUTF8("全部音轨");
+        wxString defaultTrack = UIConstants::DEFAULT_TRACK;
         wxString track = defaultTrack;
         if (hasConfig) {
             m_config->Read(prefix + "Track", &track, defaultTrack);
         }
-        
+
         if (c.trackChoice->FindString(track) != wxNOT_FOUND) {
             c.trackChoice->SetStringSelection(track);
         } else {
             c.trackChoice->SetSelection(0);
         }
-        
+
         // Set engine track index from client data
         int selTrack = c.trackChoice->GetSelection();
         if (selTrack != wxNOT_FOUND) {
@@ -2356,6 +2305,8 @@ void MainFrame::LoadFileConfig(const wxString& filename) {
             if (clientData != nullptr) {
                 int trackIdx = static_cast<int>(reinterpret_cast<intptr_t>(clientData));
                 m_engine.set_channel_track(c.channelIndex, trackIdx);
+            } else {
+                m_engine.set_channel_track(c.channelIndex, -1);
             }
         } else {
             m_engine.set_channel_track(c.channelIndex, -1);

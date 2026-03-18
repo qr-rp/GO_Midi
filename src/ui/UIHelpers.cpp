@@ -41,7 +41,7 @@ void ChannelUIUpdater::UpdateWindowLists(
     wxArrayString items;
     std::vector<void*> clientData;
     
-    items.Add(wxString::FromUTF8("未选择"));
+    items.Add(UIConstants::DEFAULT_WINDOW);
     clientData.push_back(nullptr);
     
     // 添加窗口到列表

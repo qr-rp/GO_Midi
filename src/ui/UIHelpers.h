@@ -8,6 +8,20 @@
 #include <string>
 #include "../core/KeyboardSimulator.h"
 
+// UI 常量字符串
+namespace UIConstants {
+    const wxString DEFAULT_WINDOW = wxString::FromUTF8("未选择");
+    const wxString DEFAULT_TRACK = wxString::FromUTF8("全部音轨");
+    const wxString DEFAULT_KEYMAP = wxString::FromUTF8("默认键位");
+    
+    // 播放模式
+    const wxString MODE_SINGLE = wxString::FromUTF8("单曲播放");
+    const wxString MODE_SINGLE_LOOP = wxString::FromUTF8("单曲循环");
+    const wxString MODE_LIST = wxString::FromUTF8("列表播放");
+    const wxString MODE_LIST_LOOP = wxString::FromUTF8("列表循环");
+    const wxString MODE_RANDOM = wxString::FromUTF8("随机播放");
+}
+
 namespace UI {
 
 // UI更新辅助类

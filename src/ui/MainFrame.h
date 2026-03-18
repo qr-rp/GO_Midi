@@ -145,7 +145,6 @@ private:
     void CleanupFinishedThreads();
     
     // Channel Events
-    void OnWindowChoiceDropdown(wxMouseEvent& event); // For updating window list on click
 
     // Timer Events
     void OnTimer(wxTimerEvent& event);
@@ -167,12 +166,11 @@ private:
     void InitializeRandomShuffle();
     int GetNextRandomIndex();
     void ResetRandomSequence();
-    
-    // Window Title Processing
-    wxString RemoveParenthesesContent(const wxString& title);
-    bool CompareWindowTitleAndProcess(const wxString& configTitle, const wxString& configProcess, 
-                                    const Core::KeyboardSimulator::WindowInfo& windowInfo);
-    
+
+    // Window Recovery
+    void TryRecoverWindows();  // 定时扫描并恢复窗口选择
+    int FindWindowByTitle(const wxString& title);  // 按标题查找窗口索引，返回 -1 表示未找到
+
     // State Machine Callbacks
     void OnStateChange(UI::PlaybackStatus oldState, UI::PlaybackStatus newState);
 
@@ -270,7 +268,7 @@ private:
     long m_drag_source_view = -1;
     std::vector<wxString> m_playlist_files; // Stores full paths
     int m_current_play_index = -1;
-    wxString m_play_mode = wxString::FromUTF8("单曲播放"); // "单曲播放", "单曲循环", "列表播放", "列表循环", "随机播放"
+    wxString m_play_mode = UIConstants::MODE_SINGLE;
     bool m_decompose_chords = false;
     
     // Enhanced Random Playback Variables
