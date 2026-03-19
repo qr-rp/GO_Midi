@@ -1876,7 +1876,7 @@ void MainFrame::SaveFileConfig() {
                         m_config->DeleteEntry(prefix + "Enabled");
                     }
             
-                    // 2. Window - 保存原始窗口标题（不含PID）
+                    // 2. Window - 保存原始窗口标题和进程名（用于精确恢复）
             // 只在用户主动选择窗口时保存，不删除原有配置（避免"先开程序后开游戏"场景下配置被误删）
             int selIdx = c.windowChoice->GetSelection();
             if (selIdx > 0) {  // 0 是 "未选择"
@@ -1886,13 +1886,14 @@ void MainFrame::SaveFileConfig() {
                     for (const auto& win : m_windowList) {
                         if (win.hwnd == h) {
                             m_config->Write(prefix + "WindowTitle", wxString::FromUTF8(win.title));
+                            m_config->Write(prefix + "ProcessName", wxString::FromUTF8(win.process_name));
                             channelHasConfig = true;
                             break;
                         }
                     }
                 }
             }
-            // 注意：选择"未选择"时不删除配置，保留原有 WindowTitle 供后续恢复使用
+            // 注意：选择"未选择"时不删除配置，保留原有配置供后续恢复使用
             
                     // 3. Transpose
                     int currentTranspose = c.transposeCtrl->GetValue();
@@ -2181,6 +2182,30 @@ int MainFrame::FindWindowByTitle(const wxString& title) {
     return -1;
 }
 
+int MainFrame::FindWindowByTitleAndProcess(const wxString& title, const wxString& processName) {
+    std::string targetTitle = std::string(title.ToUTF8());
+    std::string targetProcess = std::string(processName.ToUTF8());
+    
+    // 优先匹配：标题 + 进程名都相同
+    for (size_t i = 0; i < m_windowList.size(); ++i) {
+        if (m_windowList[i].title == targetTitle && 
+            m_windowList[i].process_name == targetProcess) {
+            return static_cast<int>(i);
+        }
+    }
+    
+    // 降级匹配：只匹配标题（兼容旧配置）
+    if (!targetTitle.empty()) {
+        for (size_t i = 0; i < m_windowList.size(); ++i) {
+            if (m_windowList[i].title == targetTitle) {
+                return static_cast<int>(i);
+            }
+        }
+    }
+    
+    return -1;
+}
+
 void MainFrame::TryRecoverWindows() {
     // 必须有已加载的文件才能恢复
     if (m_current_path.IsEmpty()) return;
@@ -2201,16 +2226,19 @@ void MainFrame::TryRecoverWindows() {
         if (currentSel == 0) {
             wxString prefix = wxString::Format("Channel_%d/", c.channelIndex);
             wxString windowTitle;
+            wxString processName;
             m_config->Read(groupName + "/" + prefix + "WindowTitle", &windowTitle, "");
+            m_config->Read(groupName + "/" + prefix + "ProcessName", &processName, "");
 
             if (windowTitle.IsEmpty()) continue;
 
-            int idx = FindWindowByTitle(windowTitle);
+            int idx = FindWindowByTitleAndProcess(windowTitle, processName);
             
             if (idx >= 0) {
                 c.windowChoice->SetSelection(idx + 1);  // +1 因为第0项是"未选择"
                 m_engine.set_channel_window(c.channelIndex, m_windowList[idx].hwnd);
-                LOG("Recovered window: " + std::string(windowTitle.ToUTF8()));
+                LOG("Recovered window: " + std::string(windowTitle.ToUTF8()) + 
+                    " (process: " + std::string(processName.ToUTF8()) + ")");
             }
         }
     }
@@ -2255,7 +2283,7 @@ void MainFrame::LoadFileConfig(const wxString& filename) {
         UpdateChannelUI(c.channelIndex, enabled);
         m_engine.set_channel_enable(c.channelIndex, enabled);
         
-        // 2. Window - 按标题匹配恢复
+        // 2. Window - 按标题+进程名匹配恢复
         wxString currentSel = c.windowChoice->GetStringSelection();
         wxString defaultWindow = UIConstants::DEFAULT_WINDOW;
 
@@ -2265,14 +2293,16 @@ void MainFrame::LoadFileConfig(const wxString& filename) {
         }
 
         wxString windowTitle = defaultWindow;
+        wxString processName;
 
         if (hasConfig) {
             m_config->Read(prefix + "WindowTitle", &windowTitle, defaultWindow);
+            m_config->Read(prefix + "ProcessName", &processName, "");
         }
 
-        // 按原始标题匹配
+        // 按标题+进程名匹配
         if (!windowTitle.IsEmpty() && windowTitle != UIConstants::DEFAULT_WINDOW) {
-            int idx = FindWindowByTitle(windowTitle);
+            int idx = FindWindowByTitleAndProcess(windowTitle, processName);
             if (idx >= 0) {
                 c.windowChoice->SetSelection(idx + 1);  // +1 因为第0项是"未选择"
             }

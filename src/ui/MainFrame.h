@@ -171,6 +171,7 @@ private:
     // Window Recovery
     void TryRecoverWindows();  // 定时扫描并恢复窗口选择
     int FindWindowByTitle(const wxString& title);  // 按标题查找窗口索引，返回 -1 表示未找到
+    int FindWindowByTitleAndProcess(const wxString& title, const wxString& processName);  // 按标题+进程名查找窗口索引
 
     // State Machine Callbacks
     void OnStateChange(UI::PlaybackStatus oldState, UI::PlaybackStatus newState);
