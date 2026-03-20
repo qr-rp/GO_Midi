@@ -52,11 +52,9 @@ public:
     };
 
     // 批量更新窗口列表
-    // oldWindowList: 旧的窗口列表，用于根据 HWND 查找标题+进程名来恢复选择
     static void UpdateWindowLists(
         std::vector<ChannelUpdateInfo>& channels,
-        const std::vector<Core::KeyboardSimulator::WindowInfo>& windowList,
-        const std::vector<Core::KeyboardSimulator::WindowInfo>& oldWindowList
+        const std::vector<Core::KeyboardSimulator::WindowInfo>& windowList
     );
 
     // 批量更新音轨列表

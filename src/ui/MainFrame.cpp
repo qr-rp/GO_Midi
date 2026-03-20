@@ -1805,9 +1805,6 @@ void MainFrame::OnStateChange(UI::PlaybackStatus oldState, UI::PlaybackStatus ne
 }
 
 void MainFrame::UpdateWindowList() {
-    // 保存旧的窗口列表，用于根据 HWND 查找标题+进程名来恢复选择
-    auto oldWindowList = m_windowList;
-
     m_windowList = Core::KeyboardSimulator::GetWindowList();
 
     // Sort windows by title (case insensitive)
@@ -1832,7 +1829,7 @@ void MainFrame::UpdateWindowList() {
     }
     
     // Use helper to update all channels
-    UI::ChannelUIUpdater::UpdateWindowLists(channelInfos, m_windowList, oldWindowList);
+    UI::ChannelUIUpdater::UpdateWindowLists(channelInfos, m_windowList);
     
     // Sync engine
     for (size_t i = 0; i < m_channelConfigs.size(); ++i) {
