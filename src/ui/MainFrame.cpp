@@ -2186,20 +2186,15 @@ int MainFrame::FindWindowByTitleAndProcess(const wxString& title, const wxString
     std::string targetTitle = std::string(title.ToUTF8());
     std::string targetProcess = std::string(processName.ToUTF8());
     
-    // 优先匹配：标题 + 进程名都相同
+    // 必须标题 + 进程名都匹配，否则不恢复
+    if (targetTitle.empty() || targetProcess.empty()) {
+        return -1;
+    }
+    
     for (size_t i = 0; i < m_windowList.size(); ++i) {
         if (m_windowList[i].title == targetTitle && 
             m_windowList[i].process_name == targetProcess) {
             return static_cast<int>(i);
-        }
-    }
-    
-    // 降级匹配：只匹配标题（兼容旧配置）
-    if (!targetTitle.empty()) {
-        for (size_t i = 0; i < m_windowList.size(); ++i) {
-            if (m_windowList[i].title == targetTitle) {
-                return static_cast<int>(i);
-            }
         }
     }
     
