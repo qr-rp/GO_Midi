@@ -573,8 +573,11 @@ namespace Core
                 has_global_config = true;
         }
 
-        // 仅在有特定音轨配置时才计算独立移调值
-        if (has_specific_track_config)
+        // 音域为全范围 (0-127) 时禁用智能移调，避免对打击乐等特殊音轨产生干扰
+        bool is_full_range = (m_min_pitch == 0 && m_max_pitch == 127);
+
+        // 仅在有特定音轨配置且非全范围时才计算独立移调值
+        if (has_specific_track_config && !is_full_range)
         {
             for (size_t i = 0; i < m_track_pitch_histograms.size(); ++i)
             {
@@ -583,7 +586,7 @@ namespace Core
         }
 
         // 全局配置：使用预计算的全局直方图计算统一移调值
-        if (has_global_config)
+        if (has_global_config && !is_full_range)
         {
             global_shift = compute_best_shift(m_global_histogram);
         }

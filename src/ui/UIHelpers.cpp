@@ -10,7 +10,14 @@ void UIHelpers::UpdateChoiceItems(
 ) {
     if (!choice) return;
 
-    wxString currentSel = keepSelection ? choice->GetStringSelection() : "";
+    // 优先通过 clientData (HWND/trackIndex) 恢复选择，避免字符串匹配因 PID 变化导致失败
+    void* currentData = nullptr;
+    if (keepSelection) {
+        int currentSel = choice->GetSelection();
+        if (currentSel != wxNOT_FOUND && currentSel > 0) {
+            currentData = choice->GetClientData(currentSel);
+        }
+    }
     
     choice->Freeze();
     choice->Clear();
@@ -20,8 +27,19 @@ void UIHelpers::UpdateChoiceItems(
         choice->Append(items[i], data);
     }
     
-    if (keepSelection && !currentSel.IsEmpty() && choice->FindString(currentSel) != wxNOT_FOUND) {
-        choice->SetStringSelection(currentSel);
+    // 通过 clientData 恢复选择
+    if (keepSelection && currentData != nullptr) {
+        bool found = false;
+        for (size_t i = 0; i < choice->GetCount(); ++i) {
+            if (choice->GetClientData(i) == currentData) {
+                choice->SetSelection(i);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            choice->SetSelection(0);
+        }
     } else {
         choice->SetSelection(0);
     }
