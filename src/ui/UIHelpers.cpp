@@ -54,7 +54,8 @@ wxString UIHelpers::FormatTime(int seconds) {
 
 void ChannelUIUpdater::UpdateWindowLists(
     std::vector<ChannelUpdateInfo>& channels,
-    const std::vector<Core::KeyboardSimulator::WindowInfo>& windowList
+    const std::vector<Core::KeyboardSimulator::WindowInfo>& windowList,
+    const std::vector<Core::KeyboardSimulator::WindowInfo>& oldWindowList
 ) {
     wxArrayString items;
     std::vector<void*> clientData;
@@ -70,7 +71,36 @@ void ChannelUIUpdater::UpdateWindowLists(
     }
     
     for (auto& ch : channels) {
-        UIHelpers::UpdateChoiceItems(ch.windowChoice, items, clientData, true);
+        // 在刷新前，根据当前选择的 HWND 从旧窗口列表中查找标题和进程名
+        std::string currentTitle;
+        std::string currentProcess;
+        int currentSel = ch.windowChoice->GetSelection();
+        if (currentSel > 0) {  // 0 是"未选择"
+            void* currentHwnd = ch.windowChoice->GetClientData(currentSel);
+            if (currentHwnd != nullptr) {
+                for (const auto& win : oldWindowList) {
+                    if (win.hwnd == currentHwnd) {
+                        currentTitle = win.title;
+                        currentProcess = win.process_name;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // 刷新列表
+        UIHelpers::UpdateChoiceItems(ch.windowChoice, items, clientData, false);
+        
+        // 根据 标题+进程名 在新窗口列表中恢复选择
+        if (!currentTitle.empty()) {
+            for (size_t i = 0; i < windowList.size(); ++i) {
+                if (windowList[i].title == currentTitle && 
+                    windowList[i].process_name == currentProcess) {
+                    ch.windowChoice->SetSelection(i + 1);  // +1 因为第0项是"未选择"
+                    break;
+                }
+            }
+        }
     }
 }
 
