@@ -1876,7 +1876,7 @@ void MainFrame::SaveFileConfig() {
                         m_config->DeleteEntry(prefix + "Enabled");
                     }
             
-                    // 2. Window - 保存原始窗口标题和进程名（用于精确恢复）
+                    // 2. Window - 保存原始窗口标题、PID 和进程名（用于精确恢复）
             // 只在用户主动选择窗口时保存，不删除原有配置（避免"先开程序后开游戏"场景下配置被误删）
             int selIdx = c.windowChoice->GetSelection();
             if (selIdx > 0) {  // 0 是 "未选择"
@@ -1886,6 +1886,7 @@ void MainFrame::SaveFileConfig() {
                     for (const auto& win : m_windowList) {
                         if (win.hwnd == h) {
                             m_config->Write(prefix + "WindowTitle", wxString::FromUTF8(win.title));
+                            m_config->Write(prefix + "WindowPID", static_cast<long>(win.pid));
                             m_config->Write(prefix + "ProcessName", wxString::FromUTF8(win.process_name));
                             channelHasConfig = true;
                             break;
@@ -2182,15 +2183,27 @@ int MainFrame::FindWindowByTitle(const wxString& title) {
     return -1;
 }
 
-int MainFrame::FindWindowByTitleAndProcess(const wxString& title, const wxString& processName) {
+int MainFrame::FindWindowByTitleAndProcess(const wxString& title, const wxString& processName, long pid) {
     std::string targetTitle = std::string(title.ToUTF8());
     std::string targetProcess = std::string(processName.ToUTF8());
     
-    // 必须标题 + 进程名都匹配，否则不恢复
+    // 必须有标题和进程名
     if (targetTitle.empty() || targetProcess.empty()) {
         return -1;
     }
     
+    // 第一级匹配：标题 + PID + 进程名（最精确）
+    if (pid > 0) {
+        for (size_t i = 0; i < m_windowList.size(); ++i) {
+            if (m_windowList[i].title == targetTitle && 
+                m_windowList[i].process_name == targetProcess &&
+                static_cast<long>(m_windowList[i].pid) == pid) {
+                return static_cast<int>(i);
+            }
+        }
+    }
+    
+    // 第二级匹配：标题 + 进程名（降级）
     for (size_t i = 0; i < m_windowList.size(); ++i) {
         if (m_windowList[i].title == targetTitle && 
             m_windowList[i].process_name == targetProcess) {
@@ -2222,18 +2235,21 @@ void MainFrame::TryRecoverWindows() {
             wxString prefix = wxString::Format("Channel_%d/", c.channelIndex);
             wxString windowTitle;
             wxString processName;
+            long windowPID = 0;
             m_config->Read(groupName + "/" + prefix + "WindowTitle", &windowTitle, "");
             m_config->Read(groupName + "/" + prefix + "ProcessName", &processName, "");
+            m_config->Read(groupName + "/" + prefix + "WindowPID", &windowPID, 0L);
 
             if (windowTitle.IsEmpty()) continue;
 
-            int idx = FindWindowByTitleAndProcess(windowTitle, processName);
+            int idx = FindWindowByTitleAndProcess(windowTitle, processName, windowPID);
             
             if (idx >= 0) {
                 c.windowChoice->SetSelection(idx + 1);  // +1 因为第0项是"未选择"
                 m_engine.set_channel_window(c.channelIndex, m_windowList[idx].hwnd);
                 LOG("Recovered window: " + std::string(windowTitle.ToUTF8()) + 
-                    " (process: " + std::string(processName.ToUTF8()) + ")");
+                    " (pid: " + std::to_string(windowPID) + 
+                    ", process: " + std::string(processName.ToUTF8()) + ")");
             }
         }
     }
