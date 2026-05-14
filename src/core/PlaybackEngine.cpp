@@ -719,7 +719,7 @@ namespace Core
         if (m_decompose)
         {
             const double CHORD_THRESHOLD = 0.03;
-            const double STAGGER = 0.015;
+            const double STAGGER = 0.05;
 
             std::unordered_map<void *, std::vector<TempNote>> grouped;
             for (const auto &n : notes)
