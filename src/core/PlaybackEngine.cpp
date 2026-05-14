@@ -179,6 +179,7 @@ namespace Core
                                             << ", 音轨数=" << midi_file.raw_notes_by_track.size());
 
         m_config_version++; // Trigger rebuild
+        m_all_notes_generation.fetch_add(1, std::memory_order_release);
         m_cv.notify_all();
     }
 
@@ -438,19 +439,21 @@ namespace Core
         return current;
     }
 
-    void PlaybackEngine::rebuild_events()
+    void PlaybackEngine::rebuild_events(const std::vector<Midi::RawNote>& input_notes,
+                                       const std::vector<std::vector<float>>& track_hists,
+                                       const std::vector<float>& global_hist)
     {
         LOG_DEBUG("重建事件列表");
 
         m_events.clear();
 
         // 内存管理：如果容量远大于可能需要的最大值，释放多余内存
-        size_t max_events = m_all_notes.size() * 2;
+        size_t max_events = input_notes.size() * 2;
         if (m_events.capacity() > max_events * 4) {
             m_events.shrink_to_fit();
         }
 
-        if (m_all_notes.empty())
+        if (input_notes.empty())
         {
             LOG_DEBUG("音符列表为空，跳过重建");
             return;
@@ -458,7 +461,7 @@ namespace Core
 
         // 即用即走：临时音符列表作为局部变量
         std::vector<TempNote> temp_notes;
-        temp_notes.reserve(m_all_notes.size());
+        temp_notes.reserve(input_notes.size());
         auto &notes = temp_notes;
 
         // 1. Filter and Map
@@ -559,7 +562,7 @@ namespace Core
         // 计算移调值：支持混合模式
         // - 特定音轨配置：使用该音轨独立计算的移调值
         // - 全部音轨配置：使用全局直方图计算的统一移调值（相对移调，保持音轨音高关系）
-        std::vector<int> track_best_shifts(m_track_pitch_histograms.size(), 0);
+        std::vector<int> track_best_shifts(track_hists.size(), 0);
         int global_shift = 0;
 
         // 先检查配置类型，按需计算
@@ -579,21 +582,21 @@ namespace Core
         // 仅在有特定音轨配置且非全范围时才计算独立移调值
         if (has_specific_track_config && !is_full_range)
         {
-            for (size_t i = 0; i < m_track_pitch_histograms.size(); ++i)
+            for (size_t i = 0; i < track_hists.size(); ++i)
             {
-                track_best_shifts[i] = compute_best_shift(m_track_pitch_histograms[i]);
+                track_best_shifts[i] = compute_best_shift(track_hists[i]);
             }
         }
 
         // 全局配置：使用预计算的全局直方图计算统一移调值
         if (has_global_config && !is_full_range)
         {
-            global_shift = compute_best_shift(m_global_histogram);
+            global_shift = compute_best_shift(global_hist);
         }
 
-        // Optimization: Iterate m_all_notes ONCE (Cache Locality)
-        // m_all_notes is already sorted by start time, so we iterate in time order.
-        for (const auto &raw : m_all_notes)
+        // Optimization: Iterate notes ONCE (Cache Locality)
+        // notes is already sorted by start time, so we iterate in time order.
+        for (const auto &raw : notes)
         {
             for (const auto &vc : valid_configs)
             {
@@ -829,7 +832,7 @@ namespace Core
         // 7. Final Sort
         std::sort(m_events.begin(), m_events.end());
 
-        LOG_INFO("事件重建完成: 原始音符=" << m_all_notes.size()
+        LOG_INFO("事件重建完成: 原始音符=" << notes.size()
                                            << ", 过滤后音符=" << notes.size()
                                            << ", 事件数=" << m_events.size());
     }
@@ -877,8 +880,21 @@ namespace Core
                 // Save current playback position relative to events?
                 // Actually if we rebuild, the indices change.
                 // We should re-find the index based on time.
-                rebuild_events();
-                m_built_version = m_config_version.load();
+                // 在锁内快照共享数据，离开锁后执行重建，避免长时间持锁阻塞 UI 线程
+                std::vector<Midi::RawNote> notes_snapshot = m_all_notes;
+                std::vector<std::vector<float>> track_hists_snapshot = m_track_pitch_histograms;
+                std::vector<float> global_hist_snapshot = m_global_histogram;
+                int notes_gen = m_all_notes_generation.load(std::memory_order_acquire);
+                lock.unlock();
+
+                rebuild_events(notes_snapshot, track_hists_snapshot, global_hist_snapshot);
+
+                lock.lock();
+                // 重建期间 m_all_notes 未被 load_midi() 修改，版本号有效
+                if (m_all_notes_generation.load(std::memory_order_acquire) == notes_gen) {
+                    m_built_version = m_config_version.load();
+                }
+                // 否则：数据已过期，在下一轮循环检测到版本变化后会再次重建
 
                 // Reset index based on current time (Binary search for efficiency)
                 auto it = std::lower_bound(m_events.begin(), m_events.end(), m_current_time.load(),
@@ -898,8 +914,18 @@ namespace Core
                 // If seeked/unpaused, update index
                 if (m_config_version != m_built_version)
                 {
-                    rebuild_events();
-                    m_built_version = m_config_version.load();
+                    std::vector<Midi::RawNote> notes_snapshot = m_all_notes;
+                    std::vector<std::vector<float>> track_hists_snapshot = m_track_pitch_histograms;
+                    std::vector<float> global_hist_snapshot = m_global_histogram;
+                    int notes_gen = m_all_notes_generation.load(std::memory_order_acquire);
+                    lock.unlock();
+
+                    rebuild_events(notes_snapshot, track_hists_snapshot, global_hist_snapshot);
+
+                    lock.lock();
+                    if (m_all_notes_generation.load(std::memory_order_acquire) == notes_gen) {
+                        m_built_version = m_config_version.load();
+                    }
                 }
 
                 // Re-sync index

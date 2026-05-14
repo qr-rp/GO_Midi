@@ -1699,6 +1699,16 @@ void MainFrame::OnTimer(wxTimerEvent& event) {
         }
     }
 
+    // 每30秒检测全局热键钩子状态，被系统卸载时自动恢复
+    static int hookHealthCounter = 0;
+    if (++hookHealthCounter >= 300) { // 100ms * 300 = 30s
+        hookHealthCounter = 0;
+        if (!g_hKeyboardHook) {
+            LOG_WARN("全局热键钩子已丢失，正在重新安装...");
+            InstallGlobalHook();
+        }
+    }
+
     auto now_ntp = Util::NtpClient::GetNow();
     const bool synced = Util::NtpClient::IsSynced();
     static bool last_synced = false;
@@ -2322,9 +2332,12 @@ void MainFrame::LoadFileConfig(const wxString& filename) {
         int selWin = c.windowChoice->GetSelection();
         if (selWin != wxNOT_FOUND && selWin != 0) { // 0 is "None"
                 void* clientData = c.windowChoice->GetClientData(selWin);
-                if (clientData != nullptr) {
+                if (clientData != nullptr && IsWindow(static_cast<HWND>(clientData))) {
                     m_engine.set_channel_window(c.channelIndex, clientData);
                 } else {
+                    if (clientData != nullptr) {
+                        LOG_WARN("LoadFileConfig: 通道 " << c.channelIndex << " 窗口句柄已失效，重置为空");
+                    }
                     m_engine.set_channel_window(c.channelIndex, nullptr);
                 }
         } else {

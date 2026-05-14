@@ -448,44 +448,35 @@ namespace Util
     {
         LOG_DEBUG("[NtpClient] 强制关闭");
 
-        // 立即设置停止标志
         s_auto_sync_stop.store(true);
-
-        // 通知所有等待的线程
         s_cv.notify_all();
 
-        // 如果线程仍在运行，立即分离它以避免阻塞
         if (s_auto_thread.joinable())
         {
-            try
+            // 重试等待线程结束，最多 2000ms（4次 × 500ms），避免过早 detach 导致资源泄漏
+            bool joined = false;
+            for (int attempt = 0; attempt < 4; ++attempt)
             {
-                // 给线程一小段时间来响应停止信号
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-                // 检查线程是否已经结束
-                if (s_auto_thread.joinable())
+                if (!s_auto_thread.joinable())
                 {
-                    // 如果线程仍未结束，就分离它
-                    LOG_WARN("NTP 同步线程未响应，强制分离");
-                    s_auto_thread.detach();
+                    joined = true;
+                    break;
                 }
-                else
-                {
-                    // 线程已结束，正常join
-                    s_auto_thread.join();
-                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
             }
-            catch (...)
+
+            if (!joined && s_auto_thread.joinable())
             {
-                // 忽略任何异常，确保强制关闭
-                if (s_auto_thread.joinable())
-                {
-                    s_auto_thread.detach();
-                }
+                // 如果仍未退出，才分离线程
+                LOG_ERROR("NTP 同步线程在 2000ms 内未响应，强制分离（可能导致资源泄漏）");
+                s_auto_thread.detach();
+            }
+            else if (!joined)
+            {
+                s_auto_thread.join();
             }
         }
 
-        // 确保状态被重置
         s_auto_sync_running.store(false);
         s_synced.store(false);
     }

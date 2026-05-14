@@ -100,7 +100,9 @@ namespace Core {
         };
 
         void playback_thread();
-        void rebuild_events();
+        void rebuild_events(const std::vector<Midi::RawNote>& input_notes,
+                            const std::vector<std::vector<float>>& track_hists,
+                            const std::vector<float>& global_hist);
 
         /// 核心数据：持久化持有
         std::vector<Midi::RawNote> m_all_notes;
@@ -113,6 +115,7 @@ namespace Core {
         std::vector<float> m_global_histogram;
         
         std::atomic<int> m_config_version{0};   ///< 触发重建的版本号
+        std::atomic<int> m_all_notes_generation{0}; ///< m_all_notes 的代数，用于检测锁外重建时的并发修改
         int m_built_version{-1};                ///< 最后构建的版本
         bool m_seek_triggered{false};           ///< 跳转触发标志
 
