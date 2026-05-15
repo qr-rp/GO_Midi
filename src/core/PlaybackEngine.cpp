@@ -4,9 +4,14 @@
 #include <map>
 #include <cmath>
 #include <iostream>
-#define NOMINMAX  // 抑制 Windows SDK 的 min/max 宏，避免与 std::min/std::max 冲突
 #include <windows.h>
 #include <mmsystem.h>
+#ifdef max
+#undef max  // 消除 Windows SDK min/max 宏，避免与 std::max 冲突
+#endif
+#ifdef min
+#undef min
+#endif
 #include "../util/Logger.h"
 
 // 辅助宏：记录函数入口
