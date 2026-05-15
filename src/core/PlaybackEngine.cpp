@@ -594,9 +594,9 @@ namespace Core
             global_shift = compute_best_shift(global_hist);
         }
 
-        // Optimization: Iterate notes ONCE (Cache Locality)
-        // notes is already sorted by start time, so we iterate in time order.
-        for (const auto &raw : notes)
+        // Optimization: Iterate input_notes ONCE (Cache Locality)
+        // input_notes is already sorted by start time, so we iterate in time order.
+        for (const auto &raw : input_notes)
         {
             for (const auto &vc : valid_configs)
             {
