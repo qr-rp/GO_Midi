@@ -119,6 +119,12 @@ namespace Core
             }
         }
 
+        // 最高音加固参数（命名常量，便于调试和调整）
+        constexpr float kHighNoteBaseBoost = 1.2f;   // 最高音加固基准系数
+        constexpr float kHighNoteStepDecay = 0.1f;   // 每下降一个半音加固衰减量
+        constexpr int   kMinBoostDepth     = 4;      // 加固最少覆盖半音数
+        constexpr int   kBoostDepthPercent = 15;     // 加固深度占音域宽度的百分比
+
         // Apply highest pitch weighting to protect melody high points from being transposed out of range
         for (size_t t = 0; t < m_track_pitch_histograms.size(); ++t)
         {
@@ -135,16 +141,30 @@ namespace Core
                 }
             }
 
+            // 基于音域宽度动态计算加固深度（至少 4 个半音，通常为音域宽度的 15%）
+            int lowest_pitch = highest_pitch;
+            for (int p = 0; p < highest_pitch; ++p)
+            {
+                if (hist[p] > 0.0f)
+                {
+                    lowest_pitch = p;
+                    break;
+                }
+            }
+            int pitch_range = highest_pitch - lowest_pitch;
+            int boost_depth = std::max(kMinBoostDepth, pitch_range * kBoostDepthPercent / 100);
+
             // Apply highest pitch boost: protect melody high points from being transposed out of range
-            int start_pitch = highest_pitch - 3;
+            int start_pitch = highest_pitch - boost_depth + 1;
             if (start_pitch < 0) start_pitch = 0;
             for (int p = start_pitch; p <= highest_pitch; ++p)
             {
                 if (hist[p] > 0.0f)
                 {
                     float distance = static_cast<float>(highest_pitch - p);
-                    float boost = 1.2f - 0.1f * distance;
-                    hist[p] *= boost;
+                    float boost = kHighNoteBaseBoost - kHighNoteStepDecay * distance;
+                    if (boost > 1.0f)
+                        hist[p] *= boost;
                 }
             }
         }
@@ -161,15 +181,29 @@ namespace Core
                 }
             }
 
-            int start_pitch = highest_pitch - 3;
+            // 基于音域宽度动态计算加固深度
+            int lowest_pitch = highest_pitch;
+            for (int p = 0; p < highest_pitch; ++p)
+            {
+                if (m_global_histogram[p] > 0.0f)
+                {
+                    lowest_pitch = p;
+                    break;
+                }
+            }
+            int pitch_range = highest_pitch - lowest_pitch;
+            int boost_depth = std::max(kMinBoostDepth, pitch_range * kBoostDepthPercent / 100);
+
+            int start_pitch = highest_pitch - boost_depth + 1;
             if (start_pitch < 0) start_pitch = 0;
             for (int p = start_pitch; p <= highest_pitch; ++p)
             {
                 if (m_global_histogram[p] > 0.0f)
                 {
                     float distance = static_cast<float>(highest_pitch - p);
-                    float boost = 1.2f - 0.1f * distance;
-                    m_global_histogram[p] *= boost;
+                    float boost = kHighNoteBaseBoost - kHighNoteStepDecay * distance;
+                    if (boost > 1.0f)
+                        m_global_histogram[p] *= boost;
                 }
             }
         }
@@ -515,11 +549,8 @@ namespace Core
         // 八度移调（模12），保持和弦性质不变
         auto compute_best_shift = [&](const std::vector<float> &hist)
         {
-            float prefix[129] = {};
-            for (int p = 0; p < 128; ++p)
-            {
-                prefix[p + 1] = prefix[p] + hist[p];
-            }
+            const float center = (m_min_pitch + m_max_pitch) / 2.0f;
+            const float half_range = std::max((m_max_pitch - m_min_pitch) / 2.0f, 1.0f);
             
             // 尝试 -4 到 +4 八度的移调（保持和弦性质）
             float scores[9] = {};
@@ -534,7 +565,20 @@ namespace Core
                     high = 127;
                 if (low <= high)
                 {
-                    scores[oct + 4] += prefix[high + 1] - prefix[low];
+                    // 加权计数：靠近音域中心（m_min_pitch ~ m_max_pitch 的中央）的音符获得更高权重
+                    // 边界权重趋近于 0，中心权重 = 1.0，避免选择音符卡在键盘边界的移调
+                    float &score = scores[oct + 4];
+                    for (int p = low; p <= high; ++p)
+                    {
+                        if (hist[p] > 0.0f)
+                        {
+                            float mapped = static_cast<float>(p + shift);
+                            float dist = std::abs(mapped - center);
+                            float weight = 1.0f - dist / half_range;
+                            if (weight > 0.0f)
+                                score += hist[p] * weight;
+                        }
+                    }
                 }
             }
             
