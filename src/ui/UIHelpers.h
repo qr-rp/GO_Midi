@@ -20,6 +20,13 @@ namespace UIConstants {
     const wxString MODE_LIST = wxString::FromUTF8("列表播放");
     const wxString MODE_LIST_LOOP = wxString::FromUTF8("列表循环");
     const wxString MODE_RANDOM = wxString::FromUTF8("随机播放");
+
+    // 状态栏
+    const wxString AUTHOR_SIGNATURE = wxString::FromUTF8("By:最终幻想14水晶世界_黄金谷_吸溜");
+    const wxString STATUS_SYNCING  = wxString::FromUTF8("时间同步中...");
+    const wxString STATUS_LOADED   = wxString::FromUTF8("已加载");
+    const wxString STATUS_PAUSED   = wxString::FromUTF8("已暂停");
+    const wxString BPM_PLACEHOLDER = "BPM: --";
 }
 
 namespace UI {

@@ -7,6 +7,25 @@
 #ifdef __WXMSW__
 #include <windows.h>
 #include <commctrl.h>
+
+static void AllowDragDropForAdmin(HWND hwnd) {
+    if (!hwnd) return;
+    
+    typedef BOOL (WINAPI *ChangeWindowMessageFilterExFn)(HWND, UINT, DWORD, void*);
+    HMODULE hUser32 = GetModuleHandleW(L"user32.dll");
+    if (!hUser32) return;
+    
+    auto pfn = reinterpret_cast<ChangeWindowMessageFilterExFn>(
+        GetProcAddress(hUser32, "ChangeWindowMessageFilterEx"));
+    if (!pfn) return;
+    
+    // MSGFLT_ALLOW is already defined as 1 in newer SDKs, use raw value
+    const DWORD kAllow = 1;
+    
+    pfn(hwnd, WM_DROPFILES,       kAllow, nullptr);
+    pfn(hwnd, WM_COPYDATA,        kAllow, nullptr);
+    pfn(hwnd, 0x0049,             kAllow, nullptr);  // WM_COPYGLOBALDATA
+}
 #endif
 
 #include <wx/filedlg.h>
@@ -22,10 +41,34 @@
 #include <wx/filefn.h>
 #include <wx/filename.h>
 #include <wx/stdpaths.h>
+#include <wx/dnd.h>
 #include <map>
 #include <cmath>
 #include "../util/KeyManager.h"
 #include "../core/KeyboardSimulator.h"
+
+class MidiDropTarget : public wxFileDropTarget {
+public:
+    explicit MidiDropTarget(MainFrame* frame) : m_frame(frame) {}
+    
+    bool OnDropFiles(wxCoord x, wxCoord y, const wxArrayString& filenames) override {
+        wxArrayString midiFiles;
+        for (const auto& f : filenames) {
+            wxString lower = f.Lower();
+            if (lower.EndsWith(".mid") || lower.EndsWith(".midi")) {
+                midiFiles.Add(f);
+            }
+        }
+        if (!midiFiles.IsEmpty()) {
+            m_frame->ImportFiles(midiFiles);
+            return true;
+        }
+        return false;
+    }
+    
+private:
+    MainFrame* m_frame;
+};
 
 wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_BUTTON(ID_IMPORT_BTN, MainFrame::OnImportFile)
@@ -47,7 +90,7 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_BUTTON(ID_STOP_BTN, MainFrame::OnStop)
     EVT_BUTTON(ID_NEXT_BTN, MainFrame::OnNext)
     EVT_BUTTON(ID_MODE_BTN, MainFrame::OnModeClick)
-    EVT_TOGGLEBUTTON(ID_DECOMPOSE_BTN, MainFrame::OnDecomposeToggle)
+    EVT_BUTTON(ID_DECOMPOSE_BTN, MainFrame::OnDecomposeClick)
     
     // Slider events
     EVT_MODERN_SLIDER_THUMBTRACK(ID_PROGRESS_SLIDER, MainFrame::OnSliderTrack)
@@ -76,6 +119,7 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     
     EVT_TIMER(ID_PLAYBACK_TIMER, MainFrame::OnTimer)
     EVT_TIMER(ID_STATUS_TIMER, MainFrame::OnStatusTimer)
+    EVT_TIMER(ID_HELP_SCROLL_TIMER, MainFrame::OnHelpScrollTimer)
 wxEND_EVENT_TABLE()
 
 MainFrame::MainFrame()
@@ -110,9 +154,10 @@ MainFrame::MainFrame()
     m_timer.Start(100);
     
     m_statusTimer.SetOwner(this, ID_STATUS_TIMER);
+    m_helpScrollTimer.SetOwner(this, ID_HELP_SCROLL_TIMER);
+    InitHelpMessages();
 
     Util::NtpClient::StartAutoSync();
-    UpdateStatusText(wxString::FromUTF8("时间同步中..."));
     
     // Initialize State Machine
     m_stateMachine.SetStateChangeCallback([this](UI::PlaybackStatus oldState, UI::PlaybackStatus newState) {
@@ -134,6 +179,11 @@ MainFrame::MainFrame()
     m_need_shuffle_reset = true;
     
     m_stateMachine.TransitionTo(UI::PlaybackStatus::Idle);
+    UpdateStatusText(UIConstants::STATUS_SYNCING);
+
+#ifdef __WXMSW__
+    AllowDragDropForAdmin(GetHandle());
+#endif
 
     // Initialize Global Hook
     InstallGlobalHook();
@@ -155,6 +205,7 @@ MainFrame::~MainFrame() {
     // 停止定时器
     m_timer.Stop();
     m_statusTimer.Stop();
+    m_helpScrollTimer.Stop();
     
     // 停止播放引擎
     m_engine.stop();
@@ -190,11 +241,17 @@ void MainFrame::InitUI() {
     InitKeymapPanel(mainPanel, mainSizer);
 
     mainPanel->SetSizer(mainSizer);
+    mainPanel->SetDropTarget(new MidiDropTarget(this));
 
     // Status Bar
     wxStatusBar* statusBar = CreateStatusBar(2);
-    UpdateStatusText(wxString::FromUTF8("By:最终幻想14水晶世界_黄金谷_吸溜"));
-    statusBar->SetStatusText("BPM: --", 1);
+    
+    wxFont statusFont = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
+    statusFont.SetPointSize(9);
+    statusBar->SetFont(statusFont);
+    
+    UpdateStatusText(UIConstants::AUTHOR_SIGNATURE);
+    statusBar->SetStatusText(UIConstants::BPM_PLACEHOLDER, 1);
 
     // 设置状态栏字段宽度：第一字段自动(-1)，第二字段固定75px用于BPM显示
     const int BPM_FIELD_WIDTH = 75;
@@ -356,7 +413,7 @@ void MainFrame::InitControlPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     m_stopBtn = new wxButton(panel, ID_STOP_BTN, wxString::FromUTF8("停止"));
     m_nextBtn = new wxButton(panel, ID_NEXT_BTN, wxString::FromUTF8("下一曲"));
     m_modeBtn = new wxButton(panel, ID_MODE_BTN, UIConstants::MODE_SINGLE);
-    m_decomposeBtn = new wxToggleButton(panel, ID_DECOMPOSE_BTN, wxString::FromUTF8("和弦分解"));
+    m_decomposeBtn = new wxButton(panel, ID_DECOMPOSE_BTN, wxString::FromUTF8("普通模式"));
     m_decomposeBtn->SetMinSize(wxSize(80, 25));
     
     btnSizer->Add(m_prevBtn, 0, wxALL, 2);
@@ -640,8 +697,6 @@ void MainFrame::InitKeymapPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
 // ================= Event Stubs =================
 
 void MainFrame::OnImportFile(wxCommandEvent& event) {
-    if (!m_playlistCtrl) return;
-    
     wxFileDialog openFileDialog(this, wxString::FromUTF8("选择MIDI文件"), "", "",
                                 wxString::FromUTF8("MIDI文件 (*.mid;*.midi)|*.mid;*.midi|所有文件 (*.*)|*.*"),
                                 wxFD_OPEN | wxFD_FILE_MUST_EXIST | wxFD_MULTIPLE);
@@ -651,6 +706,11 @@ void MainFrame::OnImportFile(wxCommandEvent& event) {
 
     wxArrayString paths;
     openFileDialog.GetPaths(paths);
+    ImportFiles(paths);
+}
+
+void MainFrame::ImportFiles(const wxArrayString& paths) {
+    if (!m_playlistCtrl || paths.IsEmpty()) return;
     
     wxString keyword = m_searchCtrl->GetValue().Lower();
     bool hasSearch = !keyword.IsEmpty();
@@ -659,13 +719,10 @@ void MainFrame::OnImportFile(wxCommandEvent& event) {
     m_playlistCtrl->Freeze();
 
     for (const auto& path : paths) {
-        // 使用 PlaylistManager 添加文件
         if (m_playlistManager.AddFile(path)) {
-            // 同步更新本地缓存
             m_playlist_files.push_back(path);
             long newModelIndex = static_cast<long>(m_playlist_files.size() - 1);
             
-            // Incremental Update: Add to view if matches search (or no search)
             wxString name = path.AfterLast('\\');
             if (!hasSearch || name.Lower().Contains(keyword)) {
                 long viewIdx = m_playlistCtrl->GetItemCount();
@@ -679,7 +736,6 @@ void MainFrame::OnImportFile(wxCommandEvent& event) {
     m_playlistCtrl->Thaw();
 
     if (added) {
-        // No full refresh needed
         SavePlaylistConfig();
     }
 }
@@ -720,7 +776,7 @@ void MainFrame::OnRemoveFile(wxCommandEvent& event) {
         m_current_midi.reset();
         
         m_playBtn->SetLabel(wxString::FromUTF8("播放"));
-        GetStatusBar()->SetStatusText("BPM: --", 1);
+        GetStatusBar()->SetStatusText(UIConstants::BPM_PLACEHOLDER, 1);
         m_currentFileLabel->SetLabel(wxString::FromUTF8("未选择文件"));
         m_totalTimeLabel->SetLabel("00:00");
         m_currentTimeLabel->SetLabel("00:00");
@@ -765,7 +821,7 @@ void MainFrame::OnClearList(wxCommandEvent& event) {
     m_current_path = "";
     m_current_midi.reset();
 
-    GetStatusBar()->SetStatusText("BPM: --", 1);
+    GetStatusBar()->SetStatusText(UIConstants::BPM_PLACEHOLDER, 1);
     m_currentFileLabel->SetLabel(wxString::FromUTF8("未选择文件"));
     m_totalTimeLabel->SetLabel("00:00");
     m_currentTimeLabel->SetLabel("00:00");
@@ -1020,9 +1076,9 @@ void MainFrame::PlayIndex(int viewIndex, bool autoPlay) {
             }
             GetStatusBar()->SetStatusText(statusText, 1);
 
-            UpdateStatusText(wxString::FromUTF8("已加载"));
             m_stateMachine.SetContextInfo(filename);
             m_stateMachine.TransitionTo(UI::PlaybackStatus::Idle);
+            UpdateStatusText(UIConstants::STATUS_LOADED);
         } catch (const std::exception& e) {
             wxString msg = wxString::Format(wxString::FromUTF8("加载失败: %s"), e.what());
             LOG("Exception in PlayIndex: " + std::string(e.what()));
@@ -1216,9 +1272,12 @@ void MainFrame::OnModeClick(wxCommandEvent& event) {
     SaveGlobalConfig();
 }
 
-void MainFrame::OnDecomposeToggle(wxCommandEvent& event) {
-    m_decompose_chords = m_decomposeBtn->GetValue();
+void MainFrame::OnDecomposeClick(wxCommandEvent& event) {
+    m_decompose_chords = !m_decompose_chords;
     m_engine.set_decompose(m_decompose_chords);
+    m_decomposeBtn->SetLabel(m_decompose_chords 
+        ? wxString::FromUTF8("和弦分解") 
+        : wxString::FromUTF8("普通模式"));
     SaveGlobalConfig();
 }
 
@@ -1699,6 +1758,16 @@ void MainFrame::OnTimer(wxTimerEvent& event) {
         }
     }
 
+    // 每30秒检测全局热键钩子状态，被系统卸载时自动恢复
+    static int hookHealthCounter = 0;
+    if (++hookHealthCounter >= 300) { // 100ms * 300 = 30s
+        hookHealthCounter = 0;
+        if (!g_hKeyboardHook) {
+            LOG_WARN("全局热键钩子已丢失，正在重新安装...");
+            InstallGlobalHook();
+        }
+    }
+
     auto now_ntp = Util::NtpClient::GetNow();
     const bool synced = Util::NtpClient::IsSynced();
     static bool last_synced = false;
@@ -1782,26 +1851,28 @@ void MainFrame::OnTimer(wxTimerEvent& event) {
 }
 
 void MainFrame::OnStatusTimer(wxTimerEvent& event) {
-    // Revert status text to author signature when idle
     if (m_stateMachine.IsIdle()) {
-        SetStatusText(wxString::FromUTF8("By:最终幻想14水晶世界_黄金谷_吸溜"), 0);
+        m_helpScrollActive = true;
+        m_helpScrollTimer.Start(50, wxTIMER_ONE_SHOT);
     } else {
         m_stateUpdater->UpdateStatusBar();
     }
 }
 
 void MainFrame::UpdateStatusText(const wxString& text) {
+    m_helpScrollTimer.Stop();
     SetStatusText(text, 0);
-    // Auto revert after 3 seconds
     m_statusTimer.Start(3000, wxTIMER_ONE_SHOT);
 }
 
 void MainFrame::OnStateChange(UI::PlaybackStatus oldState, UI::PlaybackStatus newState) {
-    // Update UI based on state change
     m_stateUpdater->UpdateUI();
     
-    // Log state transition for debugging
-    // LOG("State transition: " + std::to_string((int)oldState) + " -> " + std::to_string((int)newState));
+    if (newState == UI::PlaybackStatus::Idle && oldState != UI::PlaybackStatus::Idle) {
+        StartHelpScroll();
+    } else if (newState != UI::PlaybackStatus::Idle && oldState == UI::PlaybackStatus::Idle) {
+        StopHelpScroll();
+    }
 }
 
 void MainFrame::UpdateWindowList() {
@@ -1958,7 +2029,9 @@ void MainFrame::LoadGlobalConfig() {
     m_modeBtn->SetLabel(m_play_mode);
 
     m_decompose_chords = decompose;
-    m_decomposeBtn->SetValue(decompose);
+    m_decomposeBtn->SetLabel(decompose 
+        ? wxString::FromUTF8("和弦分解") 
+        : wxString::FromUTF8("普通模式"));
     m_engine.set_decompose(decompose);
 
     if (m_latencyCompCtrl) {
@@ -2322,9 +2395,12 @@ void MainFrame::LoadFileConfig(const wxString& filename) {
         int selWin = c.windowChoice->GetSelection();
         if (selWin != wxNOT_FOUND && selWin != 0) { // 0 is "None"
                 void* clientData = c.windowChoice->GetClientData(selWin);
-                if (clientData != nullptr) {
+                if (clientData != nullptr && IsWindow(static_cast<HWND>(clientData))) {
                     m_engine.set_channel_window(c.channelIndex, clientData);
                 } else {
+                    if (clientData != nullptr) {
+                        LOG_WARN("LoadFileConfig: 通道 " << c.channelIndex << " 窗口句柄已失效，重置为空");
+                    }
                     m_engine.set_channel_window(c.channelIndex, nullptr);
                 }
         } else {
@@ -2536,5 +2612,41 @@ void MainFrame::SwitchToPlaylist(int index) {
         ? m_playlistManager.GetCurrentPlaylist()->name 
         : wxString::FromUTF8("播放列表");
     UpdateStatusText(wxString::FromUTF8("已切换到: ") + playlistName);
+}
+
+void MainFrame::InitHelpMessages() {
+    m_helpMessages = {
+        UIConstants::AUTHOR_SIGNATURE,
+        wxString::FromUTF8("F12: 全局播放/暂停"),
+        wxString::FromUTF8("右键进度条: 设置 AB 循环点"),
+        wxString::FromUTF8("Shift+右键 AB 点: 拖动调整位置"),
+        wxString::FromUTF8("第三次右键: 清除 AB 循环点"),
+        wxString::FromUTF8("点击模式按钮: 切换播放方式"),
+        wxString::FromUTF8("点击「和弦分解」: 切换普通/分解模式"),
+    };
+    m_helpMessageIndex = m_helpMessages.size() - 1;
+}
+
+void MainFrame::StartHelpScroll() {
+    if (m_helpMessages.empty()) return;
+    m_helpScrollActive = true;
+    m_helpScrollTimer.Start(50, wxTIMER_ONE_SHOT);
+}
+
+void MainFrame::StopHelpScroll() {
+    m_helpScrollActive = false;
+    m_helpScrollTimer.Stop();
+}
+
+void MainFrame::OnHelpScrollTimer(wxTimerEvent& event) {
+    if (!m_stateMachine.IsIdle() || !m_helpScrollActive || m_helpMessages.empty()) {
+        StopHelpScroll();
+        return;
+    }
+    
+    m_helpMessageIndex = (m_helpMessageIndex + 1) % m_helpMessages.size();
+    SetStatusText(m_helpMessages[m_helpMessageIndex], 0);
+    
+    m_helpScrollTimer.Start(5000, wxTIMER_ONE_SHOT);
 }
 
