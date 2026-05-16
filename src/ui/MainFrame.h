@@ -63,7 +63,8 @@ enum {
     ID_PLAYBACK_TIMER = 2001,
     ID_STATUS_TIMER,
     ID_NTP_TIMER,
-    ID_SCHEDULE_TRIGGER
+    ID_SCHEDULE_TRIGGER,
+    ID_HELP_SCROLL_TIMER
 };
 
 // Structure to hold controls for a single channel
@@ -80,6 +81,7 @@ class MainFrame : public wxFrame {
 public:
     MainFrame();
     ~MainFrame();
+    friend class MidiDropTarget;
     
 private:
     // UI Initialization
@@ -150,6 +152,7 @@ private:
     // Timer Events
     void OnTimer(wxTimerEvent& event);
     void OnStatusTimer(wxTimerEvent& event);
+    void OnHelpScrollTimer(wxTimerEvent& event);
 
     // Helpers
     void UpdateStatusText(const wxString& text);
@@ -157,6 +160,12 @@ private:
     void UpdateChannelUI(int channelIndex, bool enabled);
     void UpdateWindowList();
     void UpdateTrackList(); // Updates track choices in all channel configs
+    void ImportFiles(const wxArrayString& paths);
+    
+    // Help text scrolling
+    void StartHelpScroll();
+    void StopHelpScroll();
+    void InitHelpMessages();
     
     // 多播放列表辅助函数
     void RefreshPlaylistUI();                           // 刷新文件列表UI
@@ -251,6 +260,10 @@ private:
     wxString m_current_path;
     wxTimer m_timer;
     wxTimer m_statusTimer;
+    wxTimer m_helpScrollTimer;
+    std::vector<wxString> m_helpMessages;
+    size_t m_helpMessageIndex = 0;
+    bool m_helpScrollActive = false;
     
 
     
