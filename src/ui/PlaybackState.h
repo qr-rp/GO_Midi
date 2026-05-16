@@ -3,6 +3,7 @@
 #include <wx/wx.h>
 #include <string>
 #include <functional>
+#include "UIHelpers.h"
 
 namespace UI {
 

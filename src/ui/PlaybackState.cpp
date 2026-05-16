@@ -35,10 +35,10 @@ wxString PlaybackStateMachine::GetStateText() const {
         case PlaybackStatus::Idle:
         case PlaybackStatus::Playing:
         case PlaybackStatus::Stopped:
-            m_cachedStateText = wxString::FromUTF8("By:最终幻想14水晶世界_黄金谷_吸溜");
+            m_cachedStateText = UIConstants::AUTHOR_SIGNATURE;
             break;
         case PlaybackStatus::Paused:
-            m_cachedStateText = wxString::FromUTF8("已暂停");
+            m_cachedStateText = UIConstants::STATUS_PAUSED;
             break;
         case PlaybackStatus::Scheduled:
             m_cachedStateText = wxString::FromUTF8("定时: ") + m_contextInfo;
