@@ -90,7 +90,7 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_BUTTON(ID_STOP_BTN, MainFrame::OnStop)
     EVT_BUTTON(ID_NEXT_BTN, MainFrame::OnNext)
     EVT_BUTTON(ID_MODE_BTN, MainFrame::OnModeClick)
-    EVT_TOGGLEBUTTON(ID_DECOMPOSE_BTN, MainFrame::OnDecomposeToggle)
+    EVT_BUTTON(ID_DECOMPOSE_BTN, MainFrame::OnDecomposeClick)
     
     // Slider events
     EVT_MODERN_SLIDER_THUMBTRACK(ID_PROGRESS_SLIDER, MainFrame::OnSliderTrack)
@@ -413,7 +413,7 @@ void MainFrame::InitControlPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     m_stopBtn = new wxButton(panel, ID_STOP_BTN, wxString::FromUTF8("停止"));
     m_nextBtn = new wxButton(panel, ID_NEXT_BTN, wxString::FromUTF8("下一曲"));
     m_modeBtn = new wxButton(panel, ID_MODE_BTN, UIConstants::MODE_SINGLE);
-    m_decomposeBtn = new wxToggleButton(panel, ID_DECOMPOSE_BTN, wxString::FromUTF8("和弦分解"));
+    m_decomposeBtn = new wxButton(panel, ID_DECOMPOSE_BTN, wxString::FromUTF8("普通模式"));
     m_decomposeBtn->SetMinSize(wxSize(80, 25));
     
     btnSizer->Add(m_prevBtn, 0, wxALL, 2);
@@ -1272,9 +1272,12 @@ void MainFrame::OnModeClick(wxCommandEvent& event) {
     SaveGlobalConfig();
 }
 
-void MainFrame::OnDecomposeToggle(wxCommandEvent& event) {
-    m_decompose_chords = m_decomposeBtn->GetValue();
+void MainFrame::OnDecomposeClick(wxCommandEvent& event) {
+    m_decompose_chords = !m_decompose_chords;
     m_engine.set_decompose(m_decompose_chords);
+    m_decomposeBtn->SetLabel(m_decompose_chords 
+        ? wxString::FromUTF8("和弦分解") 
+        : wxString::FromUTF8("普通模式"));
     SaveGlobalConfig();
 }
 
@@ -2026,7 +2029,9 @@ void MainFrame::LoadGlobalConfig() {
     m_modeBtn->SetLabel(m_play_mode);
 
     m_decompose_chords = decompose;
-    m_decomposeBtn->SetValue(decompose);
+    m_decomposeBtn->SetLabel(decompose 
+        ? wxString::FromUTF8("和弦分解") 
+        : wxString::FromUTF8("普通模式"));
     m_engine.set_decompose(decompose);
 
     if (m_latencyCompCtrl) {
@@ -2614,11 +2619,10 @@ void MainFrame::InitHelpMessages() {
         UIConstants::AUTHOR_SIGNATURE,
         wxString::FromUTF8("F12: 全局播放/暂停"),
         wxString::FromUTF8("右键进度条: 设置 AB 循环点"),
-        wxString::FromUTF8("拖拽 MIDI 文件: 快速导入"),
-        wxString::FromUTF8("点击模式按钮: 切换播放方式"),
         wxString::FromUTF8("Shift+右键 AB 点: 拖动调整位置"),
         wxString::FromUTF8("第三次右键: 清除 AB 循环点"),
-        wxString::FromUTF8("F12 全局热键: 后台也能控制播放"),
+        wxString::FromUTF8("点击模式按钮: 切换播放方式"),
+        wxString::FromUTF8("点击「和弦分解」: 切换普通/分解模式"),
     };
     m_helpMessageIndex = m_helpMessages.size() - 1;
 }

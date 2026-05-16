@@ -114,7 +114,7 @@ private:
     void OnPrev(wxCommandEvent& event);
     void OnNext(wxCommandEvent& event);
     void OnModeClick(wxCommandEvent& event);
-    void OnDecomposeToggle(wxCommandEvent& event);
+    void OnDecomposeClick(wxCommandEvent& event);
     
     void OnSliderTrack(wxCommandEvent& event);
     void OnSliderRelease(wxCommandEvent& event);
@@ -225,7 +225,7 @@ private:
     wxButton* m_stopBtn;
     wxButton* m_nextBtn;
     wxButton* m_modeBtn;
-    wxToggleButton* m_decomposeBtn;
+    wxButton* m_decomposeBtn;
     
     wxStaticText* m_currentTimeLabel;
     wxStaticText* m_totalTimeLabel;
