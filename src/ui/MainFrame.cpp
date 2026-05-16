@@ -19,11 +19,12 @@ static void AllowDragDropForAdmin(HWND hwnd) {
         GetProcAddress(hUser32, "ChangeWindowMessageFilterEx"));
     if (!pfn) return;
     
-    const DWORD MSGFLT_ALLOW = 1;
+    // MSGFLT_ALLOW is already defined as 1 in newer SDKs, use raw value
+    const DWORD kAllow = 1;
     
-    pfn(hwnd, WM_DROPFILES,       MSGFLT_ALLOW, nullptr);
-    pfn(hwnd, WM_COPYDATA,        MSGFLT_ALLOW, nullptr);
-    pfn(hwnd, WM_COPYGLOBALDATA,  MSGFLT_ALLOW, nullptr);
+    pfn(hwnd, WM_DROPFILES,       kAllow, nullptr);
+    pfn(hwnd, WM_COPYDATA,        kAllow, nullptr);
+    pfn(hwnd, 0x0049,             kAllow, nullptr);  // WM_COPYGLOBALDATA
 }
 #endif
 
