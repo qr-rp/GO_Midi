@@ -61,7 +61,7 @@ jobs:
       run: |
         $tag = "${{ github.ref_name }}"
         $version = $tag -replace '^dev-v', ''
-        $exeName = "GO_MIDI_$version.exe"
+        $exeName = "GO_MIDI!_${version}-dev.exe"
         Copy-Item "build\Release\GO_MIDI!.exe" $exeName
         Write-Host "Output: $exeName"
         Add-Content -Path $env:GITHUB_OUTPUT -Value "exe_name=$exeName"

@@ -9,7 +9,7 @@
 #include <vector>
 #include <set>
 #include <memory>
-#include <unordered_set>
+#include <unordered_map>
 
 // 项目头文件
 #include "../midi/MidiParser.h"
@@ -44,7 +44,7 @@ namespace Core {
         std::atomic<int> track_index{-1};  ///< -1 表示所有轨道
     };
 
-    using ActiveKeySet = std::unordered_set<std::pair<int, void*>, ActiveKeyHash>;
+    using ActiveKeySet = std::unordered_map<std::pair<int, void*>, int, ActiveKeyHash>;
 
     class PlaybackEngine {
     public:
@@ -55,6 +55,7 @@ namespace Core {
         void play();
         void pause();
         void stop();
+        void shutdown();    ///< 停止播放并退出播放线程（仅关闭时调用）
         void seek(double time_s);
         
         /// 配置接口
@@ -103,6 +104,12 @@ namespace Core {
         void rebuild_events(const std::vector<Midi::RawNote>& input_notes,
                             const std::vector<std::vector<float>>& track_hists,
                             const std::vector<float>& global_hist);
+
+        /// 释放所有活跃按键（stop/pause 共用）
+        void release_all_keys();
+        /// 在锁外重建事件列表，成功后更新 m_built_version
+        /// 调用时需持有 m_mutex（方法内会临时解锁再重锁）
+        bool try_rebuild_events(std::unique_lock<std::mutex>& lock);
 
         /// 核心数据：持久化持有
         std::vector<Midi::RawNote> m_all_notes;

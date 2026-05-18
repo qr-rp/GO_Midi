@@ -71,6 +71,7 @@ private:
 };
 
 wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
+    EVT_CLOSE(MainFrame::OnClose)
     EVT_BUTTON(ID_IMPORT_BTN, MainFrame::OnImportFile)
     EVT_BUTTON(ID_REMOVE_BTN, MainFrame::OnRemoveFile)
     EVT_BUTTON(ID_CLEAR_BTN, MainFrame::OnClearList)
@@ -193,24 +194,34 @@ MainFrame::~MainFrame() {
     // Unregister Global Hook
     UninstallGlobalHook();
 
-    // 设置关闭标志
+    LOG_INFO("MainFrame 已销毁");
+}
+
+void MainFrame::OnClose(wxCloseEvent& event)
+{
+    LOG_INFO("窗口关闭中...");
+
+    // 设置关闭标志，阻止新后台任务启动
     m_isShuttingDown = true;
 
-    // 强制关闭NTP客户端以确保快速关闭
+    // 停止播放引擎（释放按键等）
+    m_engine.stop();
+
+    // 强制关闭NTP客户端
     Util::NtpClient::ForceShutdown();
-    
+
     // 保存最后选中的文件
     SaveLastSelectedFile();
-    
+
     // 停止定时器
     m_timer.Stop();
     m_statusTimer.Stop();
     m_helpScrollTimer.Stop();
-    
-    // 停止播放引擎
-    m_engine.stop();
-    
-    // 等待所有后台线程完成
+
+    // 关闭播放引擎线程（立即通知退出 + join）
+    m_engine.shutdown();
+
+    // 等待所有后台线程完成（带超时，避免卡死）
     std::vector<std::future<void>> pending;
     {
         std::lock_guard<std::mutex> lock(m_threadMutex);
@@ -218,9 +229,15 @@ MainFrame::~MainFrame() {
     }
     for (auto& fut : pending) {
         if (fut.valid()) {
-            fut.wait();
+            auto status = fut.wait_for(std::chrono::milliseconds(100));
+            if (status != std::future_status::ready) {
+                LOG_WARN("后台线程未在 100ms 内退出，强制关闭");
+            }
         }
     }
+
+    LOG_INFO("关闭完成，销毁窗口");
+    event.Skip();  // 继续默认关闭流程，触发析构
 }
 
 void MainFrame::InitUI() {
@@ -328,7 +345,8 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
 
     m_keymapChoice = new wxChoice(panel, ID_KEYMAP_CHOICE);
     m_keymapChoice->SetMinSize(wxSize(80, -1));
-    m_keymapChoice->Append(UIConstants::DEFAULT_KEYMAP);  // 内置默认键位
+    m_keymapChoice->Append(UIConstants::DEFAULT_KEYMAP);  // index 0: 内置 FF14
+    m_keymapChoice->Append(UIConstants::KEYMAP_YYSLS);    // index 1: 内置燕云十六声
 
     m_loadKeymapBtn = new wxButton(panel, ID_LOAD_KEYMAP_BTN, wxString::FromUTF8("导入"));
     m_loadKeymapBtn->SetMinSize(wxSize(45, -1));
@@ -1408,10 +1426,17 @@ void MainFrame::OnKeymapChoice(wxCommandEvent& event) {
         m_engine.get_key_manager().reset_to_default();
         m_currentKeymapPath.clear();
         UpdateStatusText(wxString::FromUTF8("已切换到默认键位"));
-    } else if (sel > 0 && sel <= (int)m_keymapFiles.size()) {
-        // 选择导入的键位映射
-        const wxString& path = m_keymapFiles[sel - 1];
-        LoadKeymapFile(path);
+    } else if (sel == 1) {
+        // 选择内置燕云十六声键位
+        m_engine.get_key_manager().load_yysls_preset();
+        m_currentKeymapPath.clear();
+        UpdateStatusText(wxString::FromUTF8("已切换到燕云十六声键位"));
+    } else if (sel >= 2) {
+        int fileIdx = sel - 2;
+        if (fileIdx < (int)m_keymapFiles.size()) {
+            const wxString& path = m_keymapFiles[fileIdx];
+            LoadKeymapFile(path);
+        }
     }
     m_engine.notify_keymap_changed();
     SaveKeymapConfig();
@@ -1467,18 +1492,25 @@ void MainFrame::OnSaveKeymap(wxCommandEvent& event) {
 void MainFrame::OnDeleteKeymap(wxCommandEvent& event) {
     int sel = m_keymapChoice->GetSelection();
     if (sel == 0) {
-        // 内置 FF14 键位，无法删除，只能重置
+        // 内置 FF14 键位，重置
         m_engine.get_key_manager().reset_to_default();
         UpdateStatusText(wxString::FromUTF8("已重置为默认键位"));
-    } else if (sel > 0 && sel <= (int)m_keymapFiles.size()) {
-        // 删除选中的导入键位
-        m_keymapFiles.erase(m_keymapFiles.begin() + sel - 1);
-        m_keymapChoice->Delete(sel);
-        // 切换回内置 FF14
-        m_keymapChoice->SetSelection(0);
-        m_engine.get_key_manager().reset_to_default();
-        m_currentKeymapPath.clear();
-        UpdateStatusText(wxString::FromUTF8("键位映射已删除"));
+    } else if (sel == 1) {
+        // 内置燕云十六声键位，重置
+        m_engine.get_key_manager().load_yysls_preset();
+        UpdateStatusText(wxString::FromUTF8("已重置为燕云十六声键位"));
+    } else if (sel >= 2) {
+        int fileIdx = sel - 2;
+        if (fileIdx < (int)m_keymapFiles.size()) {
+            // 删除选中的导入键位
+            m_keymapFiles.erase(m_keymapFiles.begin() + fileIdx);
+            m_keymapChoice->Delete(sel);
+            // 切换回内置默认
+            m_keymapChoice->SetSelection(0);
+            m_engine.get_key_manager().reset_to_default();
+            m_currentKeymapPath.clear();
+            UpdateStatusText(wxString::FromUTF8("键位映射已删除"));
+        }
     }
     m_engine.notify_keymap_changed();
     SaveKeymapConfig();
@@ -1839,9 +1871,24 @@ void MainFrame::OnTimer(wxTimerEvent& event) {
                 wxCommandEvent dummy;
                 OnStop(dummy);
             } else {
-                // List modes
-                wxCommandEvent dummy;
-                OnNext(dummy);
+                // 检查当前文件是否还在当前播放列表中（切换过列表则可能不在）
+                bool fileInCurrentPlaylist = false;
+                for (const auto& f : m_playlist_files) {
+                    if (f == m_current_path) {
+                        fileInCurrentPlaylist = true;
+                        break;
+                    }
+                }
+
+                if (!fileInCurrentPlaylist) {
+                    // 播放列表已切换，停止播放
+                    wxCommandEvent dummy;
+                    OnStop(dummy);
+                } else {
+                    // List modes
+                    wxCommandEvent dummy;
+                    OnNext(dummy);
+                }
             }
         }
     } else if (m_stateMachine.IsActive()) {
@@ -2108,7 +2155,7 @@ void MainFrame::LoadKeymapConfig() {
         // 查找并选中（Windows 路径不区分大小写）
         for (size_t i = 0; i < m_keymapFiles.size(); ++i) {
             if (m_keymapFiles[i].CmpNoCase(currentKeymap) == 0) {
-                m_keymapChoice->SetSelection(static_cast<int>(i + 1));
+                m_keymapChoice->SetSelection(static_cast<int>(i + 2));
                 LoadKeymapFile(currentKeymap);
                 break;
             }
@@ -2183,7 +2230,8 @@ void MainFrame::UpdateKeymapChoice() {
 
     // 清空并重建列表
     m_keymapChoice->Clear();
-    m_keymapChoice->Append(UIConstants::DEFAULT_KEYMAP);  // 内置默认键位
+    m_keymapChoice->Append(UIConstants::DEFAULT_KEYMAP);  // index 0: 内置 FF14
+    m_keymapChoice->Append(UIConstants::KEYMAP_YYSLS);    // index 1: 内置燕云十六声
 
     // 添加导入的键位映射文件
     for (const auto& path : m_keymapFiles) {

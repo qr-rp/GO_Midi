@@ -6,4 +6,7 @@ APP_ICON ICON "assets/icon.ico"
 // Manifest ID 1 is for the executable, 2 is for the installer
 1 RT_MANIFEST "Win32.manifest"
 
+// Prevent wxWidgets from embedding its own manifest (asInvoker),
+// which would override our requireAdministrator setting.
+#define wxUSE_NO_MANIFEST 1
 #include <wx/msw/wx.rc>

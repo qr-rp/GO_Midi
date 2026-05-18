@@ -50,15 +50,34 @@ namespace Core
     {
         LOG_ENTRY();
 
-        stop();
+        shutdown();
+
+        LOG_INFO("PlaybackEngine 已销毁");
+    }
+
+    void PlaybackEngine::shutdown()
+    {
+        LOG_ENTRY();
+
+        if (!m_running.load())
+        {
+            LOG_WARN("PlaybackEngine::shutdown() 被多次调用，跳过");
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_playing = false;
+            m_paused = false;
+        }
+
         m_running = false;
         m_cv.notify_all();
+
         if (m_thread.joinable())
         {
             m_thread.join();
         }
-
-        LOG_INFO("PlaybackEngine 已销毁");
     }
 
     void PlaybackEngine::load_midi(const Midi::MidiFile &midi_file)
@@ -69,8 +88,6 @@ namespace Core
         stop();
 
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_playing = false;
-        m_paused = false;
         m_current_time = 0.0;
         m_total_duration = midi_file.length;
 
@@ -239,20 +256,12 @@ namespace Core
     {
         LOG_ENTRY();
 
-        std::vector<std::pair<int, void *>> keys_to_release;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_paused = true;
-            // 将活动按键转移到临时变量，准备释放
-            keys_to_release.assign(m_active_keys.begin(), m_active_keys.end());
-            m_active_keys.clear();
         }
 
-        // 在锁外释放按键，避免长时间持有锁
-        for (const auto &key : keys_to_release)
-        {
-            m_simulator.send_key_up(key.first, 0, key.second);
-        }
+        release_all_keys();
 
         LOG_INFO("播放暂停，当前时间=" << m_current_time << "s");
     }
@@ -261,23 +270,14 @@ namespace Core
     {
         LOG_ENTRY();
 
-        std::vector<std::pair<int, void *>> keys_to_release;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_playing = false;
             m_paused = false;
             m_current_time = 0.0;
-
-            // 将活动按键转移到临时变量，准备释放
-            keys_to_release.assign(m_active_keys.begin(), m_active_keys.end());
-            m_active_keys.clear();
         }
 
-        // 在锁外释放按键，避免阻塞其他线程
-        for (const auto &key : keys_to_release)
-        {
-            m_simulator.send_key_up(key.first, 0, key.second);
-        }
+        release_all_keys();
 
         // 额外的安全释放：释放常见修饰键以防卡住
         HWND foreground = GetForegroundWindow();
@@ -306,11 +306,45 @@ namespace Core
         LOG_INFO("播放停止");
     }
 
+    void PlaybackEngine::release_all_keys()
+    {
+        std::vector<std::pair<int, void *>> keys;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (m_active_keys.empty())
+                return;
+            keys.reserve(m_active_keys.size());
+            for (const auto &[k, count] : m_active_keys)
+                keys.push_back(k);
+            m_active_keys.clear();
+        }
+        m_simulator.release_keys(keys);
+    }
+
+    bool PlaybackEngine::try_rebuild_events(std::unique_lock<std::mutex>& lock)
+    {
+        // 在锁内快照共享数据，离开锁后执行重建，避免长时间持锁阻塞 UI 线程
+        std::vector<Midi::RawNote> notes_snapshot = m_all_notes;
+        std::vector<std::vector<float>> track_hists_snapshot = m_track_pitch_histograms;
+        std::vector<float> global_hist_snapshot = m_global_histogram;
+        int notes_gen = m_all_notes_generation.load(std::memory_order_acquire);
+        lock.unlock();
+
+        rebuild_events(notes_snapshot, track_hists_snapshot, global_hist_snapshot);
+
+        lock.lock();
+        if (m_all_notes_generation.load(std::memory_order_acquire) == notes_gen) {
+            m_built_version = m_config_version.load();
+            return true;
+        }
+        // 数据已过期，在下一轮循环检测到版本变化后会再次重建
+        return false;
+    }
+
     void PlaybackEngine::seek(double time_s)
     {
         LOG_DEBUG("跳转播放位置: " << time_s << "s");
 
-        std::vector<std::pair<int, void *>> keys_to_release;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_current_time = time_s;
@@ -319,17 +353,9 @@ namespace Core
                 m_current_time = 0;
             if (m_current_time > m_total_duration)
                 m_current_time = m_total_duration;
-
-            // Clear active keys on seek - 先复制到临时变量，减少锁持有时间
-            keys_to_release.assign(m_active_keys.begin(), m_active_keys.end());
-            m_active_keys.clear();
         }
 
-        // 在锁外释放按键，避免长时间持有锁
-        for (const auto &key : keys_to_release)
-        {
-            m_simulator.send_key_up(key.first, 0, key.second);
-        }
+        release_all_keys();
 
         LOG_DEBUG("跳转完成，当前位置=" << m_current_time << "s");
     }
@@ -927,24 +953,7 @@ namespace Core
             // Check for config changes or new file
             if (m_config_version != m_built_version)
             {
-                // Save current playback position relative to events?
-                // Actually if we rebuild, the indices change.
-                // We should re-find the index based on time.
-                // 在锁内快照共享数据，离开锁后执行重建，避免长时间持锁阻塞 UI 线程
-                std::vector<Midi::RawNote> notes_snapshot = m_all_notes;
-                std::vector<std::vector<float>> track_hists_snapshot = m_track_pitch_histograms;
-                std::vector<float> global_hist_snapshot = m_global_histogram;
-                int notes_gen = m_all_notes_generation.load(std::memory_order_acquire);
-                lock.unlock();
-
-                rebuild_events(notes_snapshot, track_hists_snapshot, global_hist_snapshot);
-
-                lock.lock();
-                // 重建期间 m_all_notes 未被 load_midi() 修改，版本号有效
-                if (m_all_notes_generation.load(std::memory_order_acquire) == notes_gen) {
-                    m_built_version = m_config_version.load();
-                }
-                // 否则：数据已过期，在下一轮循环检测到版本变化后会再次重建
+                try_rebuild_events(lock);
 
                 // Reset index based on current time (Binary search for efficiency)
                 auto it = std::lower_bound(m_events.begin(), m_events.end(), m_current_time.load(),
@@ -964,18 +973,7 @@ namespace Core
                 // If seeked/unpaused, update index
                 if (m_config_version != m_built_version)
                 {
-                    std::vector<Midi::RawNote> notes_snapshot = m_all_notes;
-                    std::vector<std::vector<float>> track_hists_snapshot = m_track_pitch_histograms;
-                    std::vector<float> global_hist_snapshot = m_global_histogram;
-                    int notes_gen = m_all_notes_generation.load(std::memory_order_acquire);
-                    lock.unlock();
-
-                    rebuild_events(notes_snapshot, track_hists_snapshot, global_hist_snapshot);
-
-                    lock.lock();
-                    if (m_all_notes_generation.load(std::memory_order_acquire) == notes_gen) {
-                        m_built_version = m_config_version.load();
-                    }
+                    try_rebuild_events(lock);
                 }
 
                 // Re-sync index
@@ -1001,6 +999,8 @@ namespace Core
                                                return evt.time < time;
                                            });
                 next_event_idx = std::distance(m_events.begin(), it);
+                // 重置计时器，避免 seek 后 m_current_time 多跳一个 dt
+                last_loop_time = std::chrono::high_resolution_clock::now();
             }
 
             // Lock is still held here
@@ -1025,14 +1025,21 @@ namespace Core
                 // 收集事件
                 m_key_event_buffer.push_back({evt.is_note_on, evt.vk_code, evt.modifier, evt.window_handle});
 
-                // 更新 active_keys：使用 unordered_set O(1) 操作
+                // 更新 active_keys：引用计数，防止同一按键多次 Note On 后单次 Note Off 提前释放
                 if (evt.is_note_on)
                 {
-                    m_active_keys.insert(std::make_pair(evt.vk_code, evt.window_handle));
+                    auto [it, inserted] = m_active_keys.try_emplace(std::make_pair(evt.vk_code, evt.window_handle), 1);
+                    if (!inserted)
+                        it->second++;  // 已存在，引用计数 +1
                 }
                 else
                 {
-                    m_active_keys.erase(std::make_pair(evt.vk_code, evt.window_handle));
+                    auto it = m_active_keys.find(std::make_pair(evt.vk_code, evt.window_handle));
+                    if (it != m_active_keys.end())
+                    {
+                        if (--it->second == 0)
+                            m_active_keys.erase(it);  // 引用计数归零才真正移除
+                    }
                 }
 
                 next_event_idx++;
@@ -1040,6 +1047,14 @@ namespace Core
 
             // 在锁外执行按键发送，减少锁持有时间
             lock.unlock();
+
+            // 二次检查：如果在收集事件期间有 stop/pause/seek 清空了按键，
+            // 丢弃已收集的陈旧事件，避免发送被 release_all_keys() 盖过的按键
+            {
+                std::lock_guard<std::mutex> check_lock(m_mutex);
+                if (!m_playing || m_paused || m_seek_triggered)
+                    m_key_event_buffer.clear();
+            }
 
             for (const auto& evt : m_key_event_buffer)
             {
@@ -1079,27 +1094,34 @@ namespace Core
 
             // 注意：锁已经在上面的事件处理部分释放了
 
-            if (sleep_ms >= 1.0)
+            // 使用条件变量实现可中断的睡眠，shutdown() 调用 notify_all 后可立即唤醒线程
             {
-                // 使用 sleep_for，Windows 在 timeBeginPeriod(1) 后精度约 1ms
-                // 减去 0.5ms 作为安全边界，避免过睡
-                double actual_sleep = sleep_ms - 0.5;
-                if (actual_sleep > 0)
+                std::unique_lock<std::mutex> sleep_lock(m_mutex);
+                if (sleep_ms >= 1.0)
                 {
-                    std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(actual_sleep));
+                    double actual_sleep = sleep_ms - 0.5;
+                    if (actual_sleep > 0)
+                    {
+                        m_cv.wait_for(sleep_lock,
+                            std::chrono::duration<double, std::milli>(actual_sleep),
+                            [this] { return !m_running; });
+                    }
+                }
+                else if (sleep_ms > 0)
+                {
+                    // 极短等待（< 1ms）：用 wait_for 替代 sleep_for
+                    m_cv.wait_for(sleep_lock, std::chrono::microseconds(500),
+                        [this] { return !m_running; });
+                }
+                else
+                {
+                    // 无需等待：短暂等待以让出 CPU，同时保持可中断
+                    m_cv.wait_for(sleep_lock, std::chrono::microseconds(1),
+                        [this] { return !m_running; });
                 }
             }
-            else if (sleep_ms > 0)
-            {
-                // 极短等待（< 1ms）：使用 sleep_for 而非 busy-wait
-                // 虽然可能略有过睡，但避免 CPU 空转
-                std::this_thread::sleep_for(std::chrono::microseconds(500));
-            }
-            else
-            {
-                // 无需等待：yield 让出 CPU
-                std::this_thread::yield();
-            }
+            if (!m_running)
+                break;
         }
 
         timeEndPeriod(1);

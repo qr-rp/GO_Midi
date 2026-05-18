@@ -2,25 +2,17 @@
 #include "../util/Logger.h"
 #include <psapi.h>
 #include <iostream>
+#include <unordered_map>
 
 namespace Core
 {
 
-    // Helper to cache scan codes and reduce system calls
-    static UINT GetCachedScanCode(int vk)
+    // 获取按键扫描码（无缓存，线程安全）
+    static UINT GetScanCode(int vk)
     {
-        static UINT codes[256] = {0};
-        static bool valid[256] = {false};
-
         if (vk < 0 || vk > 255)
-            return MapVirtualKey(vk, MAPVK_VK_TO_VSC);
-
-        if (!valid[vk])
-        {
-            codes[vk] = MapVirtualKey(vk, MAPVK_VK_TO_VSC);
-            valid[vk] = true;
-        }
-        return codes[vk];
+            return MapVirtualKeyW(vk, MAPVK_VK_TO_VSC);
+        return MapVirtualKeyW(vk, MAPVK_VK_TO_VSC);
     }
 
     KeyboardSimulator::KeyboardSimulator()
@@ -48,20 +40,10 @@ namespace Core
 
             input.type = INPUT_KEYBOARD;
             input.ki.wVk = static_cast<WORD>(vk);
+            input.ki.dwFlags = 0;
 
-            // 尝试映射扫描码以提高兼容性
-            UINT scanCode = GetCachedScanCode(vk);
-            if (scanCode > 0)
-            {
-                input.ki.wScan = static_cast<WORD>(scanCode);
-                input.ki.dwFlags = KEYEVENTF_SCANCODE;
-            }
-
-            // 处理扩展键
-            if ((vk >= VK_PRIOR && vk <= VK_DOWN) || vk == VK_INSERT || vk == VK_DELETE)
-            {
-                input.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
-            }
+            // 使用 vk 码而非扫描码，避免 KEYEVENTF_SCANCODE + KEYEVENTF_EXTENDEDKEY 冲突
+            // 同时省去扫描码查找开销，天然线程安全
 
             if (up)
             {
@@ -119,7 +101,7 @@ namespace Core
 
             auto send_msg = [&](int vk, bool up)
             {
-                UINT scanCode = GetCachedScanCode(vk);
+                UINT scanCode = GetScanCode(vk);
                 LPARAM lParam = 1; // 重复计数 1
                 lParam |= (scanCode << 16);
 
@@ -172,7 +154,7 @@ namespace Core
 
             auto send_msg = [&](int vk)
             {
-                UINT scanCode = GetCachedScanCode(vk);
+                UINT scanCode = GetScanCode(vk);
                 LPARAM lParam = 1;
                 lParam |= (scanCode << 16);
 
@@ -200,6 +182,57 @@ namespace Core
         {
             send_input(vk_code, modifier, true);
         }
+    }
+
+    void KeyboardSimulator::release_keys(const std::vector<std::pair<int, void*>>& keys)
+    {
+        // 按窗口句柄分组，对每个窗口批量 PostMessage，无窗口的合并 SendInput
+        std::unordered_map<void*, std::vector<int>> groups;
+        for (const auto& [vk, hwnd] : keys)
+            groups[hwnd].push_back(vk);
+
+        // 栈数组缓存 INPUT，避免每次分配
+        INPUT inputs[256] = {};
+        int input_count = 0;
+
+        for (const auto& [hwnd, vk_list] : groups)
+        {
+            if (hwnd)
+            {
+                // 有目标窗口 → PostMessage 批量释放，不等待
+                HWND h = static_cast<HWND>(hwnd);
+                for (int vk : vk_list)
+                {
+                    UINT scanCode = MapVirtualKeyW(vk, MAPVK_VK_TO_VSC);
+                    LPARAM lParam = 1 | (scanCode << 16)
+                                  | ((LPARAM)1 << 30)
+                                  | ((LPARAM)1 << 31);
+                    if ((vk >= VK_PRIOR && vk <= VK_DOWN) || vk == VK_INSERT || vk == VK_DELETE)
+                        lParam |= ((LPARAM)1 << 24);
+                    PostMessage(h, WM_KEYUP, static_cast<WPARAM>(vk), lParam);
+                }
+            }
+            else
+            {
+                // 无目标窗口 → 合并到 SendInput 批处理
+                for (int vk : vk_list)
+                {
+                    if (input_count + 1 > 256) {
+                        // 缓冲区满，先发一次
+                        SendInput(static_cast<UINT>(input_count), inputs, sizeof(INPUT));
+                        input_count = 0;
+                    }
+                    inputs[input_count].type = INPUT_KEYBOARD;
+                    inputs[input_count].ki.wVk = static_cast<WORD>(vk);
+                    inputs[input_count].ki.dwFlags = KEYEVENTF_KEYUP;
+                    input_count++;
+                }
+            }
+        }
+
+        // 发送余下的 SendInput
+        if (input_count > 0)
+            SendInput(static_cast<UINT>(input_count), inputs, sizeof(INPUT));
     }
 
     // 辅助函数：宽字符串转 UTF-8
