@@ -1058,6 +1058,14 @@ namespace Core
             // 在锁外执行按键发送，减少锁持有时间
             lock.unlock();
 
+            // 二次检查：如果在收集事件期间有 stop/pause/seek 清空了按键，
+            // 丢弃已收集的陈旧事件，避免发送被 release_all_keys() 盖过的按键
+            {
+                std::lock_guard<std::mutex> check_lock(m_mutex);
+                if (!m_playing || m_paused || m_seek_triggered)
+                    m_key_event_buffer.clear();
+            }
+
             for (const auto& evt : m_key_event_buffer)
             {
                 if (evt.is_note_on)
