@@ -105,6 +105,9 @@ namespace Core {
                             const std::vector<std::vector<float>>& track_hists,
                             const std::vector<float>& global_hist);
 
+        /// 释放所有活跃按键（stop/pause 共用）
+        void release_all_keys();
+
         /// 核心数据：持久化持有
         std::vector<Midi::RawNote> m_all_notes;
         std::vector<ProcessedEvent> m_events;

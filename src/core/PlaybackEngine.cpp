@@ -258,20 +258,12 @@ namespace Core
     {
         LOG_ENTRY();
 
-        std::vector<std::pair<int, void *>> keys_to_release;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_paused = true;
-            // 将活动按键转移到临时变量，准备释放
-            keys_to_release.assign(m_active_keys.begin(), m_active_keys.end());
-            m_active_keys.clear();
         }
 
-        // 在锁外释放按键，避免长时间持有锁
-        for (const auto &key : keys_to_release)
-        {
-            m_simulator.send_key_up(key.first, 0, key.second);
-        }
+        release_all_keys();
 
         LOG_INFO("播放暂停，当前时间=" << m_current_time << "s");
     }
@@ -280,23 +272,14 @@ namespace Core
     {
         LOG_ENTRY();
 
-        std::vector<std::pair<int, void *>> keys_to_release;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_playing = false;
             m_paused = false;
             m_current_time = 0.0;
-
-            // 将活动按键转移到临时变量，准备释放
-            keys_to_release.assign(m_active_keys.begin(), m_active_keys.end());
-            m_active_keys.clear();
         }
 
-        // 在锁外释放按键，避免阻塞其他线程
-        for (const auto &key : keys_to_release)
-        {
-            m_simulator.send_key_up(key.first, 0, key.second);
-        }
+        release_all_keys();
 
         // 额外的安全释放：释放常见修饰键以防卡住
         HWND foreground = GetForegroundWindow();
@@ -325,11 +308,23 @@ namespace Core
         LOG_INFO("播放停止");
     }
 
+    void PlaybackEngine::release_all_keys()
+    {
+        std::vector<std::pair<int, void *>> keys;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (m_active_keys.empty())
+                return;
+            keys.assign(m_active_keys.begin(), m_active_keys.end());
+            m_active_keys.clear();
+        }
+        m_simulator.release_keys(keys);
+    }
+
     void PlaybackEngine::seek(double time_s)
     {
         LOG_DEBUG("跳转播放位置: " << time_s << "s");
 
-        std::vector<std::pair<int, void *>> keys_to_release;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_current_time = time_s;
@@ -338,17 +333,9 @@ namespace Core
                 m_current_time = 0;
             if (m_current_time > m_total_duration)
                 m_current_time = m_total_duration;
-
-            // Clear active keys on seek - 先复制到临时变量，减少锁持有时间
-            keys_to_release.assign(m_active_keys.begin(), m_active_keys.end());
-            m_active_keys.clear();
         }
 
-        // 在锁外释放按键，避免长时间持有锁
-        for (const auto &key : keys_to_release)
-        {
-            m_simulator.send_key_up(key.first, 0, key.second);
-        }
+        release_all_keys();
 
         LOG_DEBUG("跳转完成，当前位置=" << m_current_time << "s");
     }

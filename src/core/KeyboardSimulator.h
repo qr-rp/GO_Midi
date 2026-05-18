@@ -17,6 +17,9 @@ namespace Core {
         void send_key_down(int vk_code, int modifier = 0, void* hwnd = nullptr);
         void send_key_up(int vk_code, int modifier = 0, void* hwnd = nullptr);
 
+        /// 批量释放按键（按窗口分组，比逐个 send_key_up 更高效）
+        void release_keys(const std::vector<std::pair<int, void*>>& keys);
+
         /// 窗口信息结构
         struct WindowInfo {
             HWND hwnd;
