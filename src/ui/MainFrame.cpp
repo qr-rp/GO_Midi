@@ -71,6 +71,7 @@ private:
 };
 
 wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
+    EVT_CLOSE(MainFrame::OnClose)
     EVT_BUTTON(ID_IMPORT_BTN, MainFrame::OnImportFile)
     EVT_BUTTON(ID_REMOVE_BTN, MainFrame::OnRemoveFile)
     EVT_BUTTON(ID_CLEAR_BTN, MainFrame::OnClearList)
@@ -193,24 +194,34 @@ MainFrame::~MainFrame() {
     // Unregister Global Hook
     UninstallGlobalHook();
 
-    // 设置关闭标志
+    LOG_INFO("MainFrame 已销毁");
+}
+
+void MainFrame::OnClose(wxCloseEvent& event)
+{
+    LOG_INFO("窗口关闭中...");
+
+    // 设置关闭标志，阻止新后台任务启动
     m_isShuttingDown = true;
 
-    // 强制关闭NTP客户端以确保快速关闭
+    // 停止播放引擎（释放按键等）
+    m_engine.stop();
+
+    // 强制关闭NTP客户端
     Util::NtpClient::ForceShutdown();
-    
+
     // 保存最后选中的文件
     SaveLastSelectedFile();
-    
+
     // 停止定时器
     m_timer.Stop();
     m_statusTimer.Stop();
     m_helpScrollTimer.Stop();
-    
-    // 停止播放引擎
-    m_engine.stop();
-    
-    // 等待所有后台线程完成
+
+    // 关闭播放引擎线程（立即通知退出 + join）
+    m_engine.shutdown();
+
+    // 等待所有后台线程完成（带超时，避免卡死）
     std::vector<std::future<void>> pending;
     {
         std::lock_guard<std::mutex> lock(m_threadMutex);
@@ -218,9 +229,15 @@ MainFrame::~MainFrame() {
     }
     for (auto& fut : pending) {
         if (fut.valid()) {
-            fut.wait();
+            auto status = fut.wait_for(std::chrono::milliseconds(100));
+            if (status != std::future_status::ready) {
+                LOG_WARN("后台线程未在 100ms 内退出，强制关闭");
+            }
         }
     }
+
+    LOG_INFO("关闭完成，销毁窗口");
+    event.Skip();  // 继续默认关闭流程，触发析构
 }
 
 void MainFrame::InitUI() {

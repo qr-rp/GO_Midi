@@ -55,6 +55,7 @@ namespace Core {
         void play();
         void pause();
         void stop();
+        void shutdown();    ///< 停止播放并退出播放线程（仅关闭时调用）
         void seek(double time_s);
         
         /// 配置接口

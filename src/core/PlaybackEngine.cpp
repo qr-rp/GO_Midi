@@ -50,15 +50,34 @@ namespace Core
     {
         LOG_ENTRY();
 
-        stop();
+        shutdown();
+
+        LOG_INFO("PlaybackEngine 已销毁");
+    }
+
+    void PlaybackEngine::shutdown()
+    {
+        LOG_ENTRY();
+
+        if (!m_running.load())
+        {
+            LOG_WARN("PlaybackEngine::shutdown() 被多次调用，跳过");
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_playing = false;
+            m_paused = false;
+        }
+
         m_running = false;
         m_cv.notify_all();
+
         if (m_thread.joinable())
         {
             m_thread.join();
         }
-
-        LOG_INFO("PlaybackEngine 已销毁");
     }
 
     void PlaybackEngine::load_midi(const Midi::MidiFile &midi_file)
@@ -1001,6 +1020,8 @@ namespace Core
                                                return evt.time < time;
                                            });
                 next_event_idx = std::distance(m_events.begin(), it);
+                // 重置计时器，避免 seek 后 m_current_time 多跳一个 dt
+                last_loop_time = std::chrono::high_resolution_clock::now();
             }
 
             // Lock is still held here

@@ -94,6 +94,7 @@ private:
     wxPanel* CreateChannelConfig(wxPanel* parent, int index);
 
     // Event Handlers
+    void OnClose(wxCloseEvent& event);
     void OnImportFile(wxCommandEvent& event);
     void OnRemoveFile(wxCommandEvent& event);
     void OnClearList(wxCommandEvent& event);
