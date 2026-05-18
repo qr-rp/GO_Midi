@@ -107,6 +107,9 @@ namespace Core {
 
         /// 释放所有活跃按键（stop/pause 共用）
         void release_all_keys();
+        /// 在锁外重建事件列表，成功后更新 m_built_version
+        /// 调用时需持有 m_mutex（方法内会临时解锁再重锁）
+        bool try_rebuild_events(std::unique_lock<std::mutex>& lock);
 
         /// 核心数据：持久化持有
         std::vector<Midi::RawNote> m_all_notes;

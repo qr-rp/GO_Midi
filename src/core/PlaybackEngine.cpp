@@ -88,8 +88,6 @@ namespace Core
         stop();
 
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_playing = false;
-        m_paused = false;
         m_current_time = 0.0;
         m_total_duration = midi_file.length;
 
@@ -321,6 +319,26 @@ namespace Core
             m_active_keys.clear();
         }
         m_simulator.release_keys(keys);
+    }
+
+    bool PlaybackEngine::try_rebuild_events(std::unique_lock<std::mutex>& lock)
+    {
+        // 在锁内快照共享数据，离开锁后执行重建，避免长时间持锁阻塞 UI 线程
+        std::vector<Midi::RawNote> notes_snapshot = m_all_notes;
+        std::vector<std::vector<float>> track_hists_snapshot = m_track_pitch_histograms;
+        std::vector<float> global_hist_snapshot = m_global_histogram;
+        int notes_gen = m_all_notes_generation.load(std::memory_order_acquire);
+        lock.unlock();
+
+        rebuild_events(notes_snapshot, track_hists_snapshot, global_hist_snapshot);
+
+        lock.lock();
+        if (m_all_notes_generation.load(std::memory_order_acquire) == notes_gen) {
+            m_built_version = m_config_version.load();
+            return true;
+        }
+        // 数据已过期，在下一轮循环检测到版本变化后会再次重建
+        return false;
     }
 
     void PlaybackEngine::seek(double time_s)
@@ -935,24 +953,7 @@ namespace Core
             // Check for config changes or new file
             if (m_config_version != m_built_version)
             {
-                // Save current playback position relative to events?
-                // Actually if we rebuild, the indices change.
-                // We should re-find the index based on time.
-                // 在锁内快照共享数据，离开锁后执行重建，避免长时间持锁阻塞 UI 线程
-                std::vector<Midi::RawNote> notes_snapshot = m_all_notes;
-                std::vector<std::vector<float>> track_hists_snapshot = m_track_pitch_histograms;
-                std::vector<float> global_hist_snapshot = m_global_histogram;
-                int notes_gen = m_all_notes_generation.load(std::memory_order_acquire);
-                lock.unlock();
-
-                rebuild_events(notes_snapshot, track_hists_snapshot, global_hist_snapshot);
-
-                lock.lock();
-                // 重建期间 m_all_notes 未被 load_midi() 修改，版本号有效
-                if (m_all_notes_generation.load(std::memory_order_acquire) == notes_gen) {
-                    m_built_version = m_config_version.load();
-                }
-                // 否则：数据已过期，在下一轮循环检测到版本变化后会再次重建
+                try_rebuild_events(lock);
 
                 // Reset index based on current time (Binary search for efficiency)
                 auto it = std::lower_bound(m_events.begin(), m_events.end(), m_current_time.load(),
@@ -972,18 +973,7 @@ namespace Core
                 // If seeked/unpaused, update index
                 if (m_config_version != m_built_version)
                 {
-                    std::vector<Midi::RawNote> notes_snapshot = m_all_notes;
-                    std::vector<std::vector<float>> track_hists_snapshot = m_track_pitch_histograms;
-                    std::vector<float> global_hist_snapshot = m_global_histogram;
-                    int notes_gen = m_all_notes_generation.load(std::memory_order_acquire);
-                    lock.unlock();
-
-                    rebuild_events(notes_snapshot, track_hists_snapshot, global_hist_snapshot);
-
-                    lock.lock();
-                    if (m_all_notes_generation.load(std::memory_order_acquire) == notes_gen) {
-                        m_built_version = m_config_version.load();
-                    }
+                    try_rebuild_events(lock);
                 }
 
                 // Re-sync index
