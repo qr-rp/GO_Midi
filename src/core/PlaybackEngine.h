@@ -9,7 +9,7 @@
 #include <vector>
 #include <set>
 #include <memory>
-#include <unordered_set>
+#include <unordered_map>
 
 // 项目头文件
 #include "../midi/MidiParser.h"
@@ -44,7 +44,7 @@ namespace Core {
         std::atomic<int> track_index{-1};  ///< -1 表示所有轨道
     };
 
-    using ActiveKeySet = std::unordered_set<std::pair<int, void*>, ActiveKeyHash>;
+    using ActiveKeySet = std::unordered_map<std::pair<int, void*>, int, ActiveKeyHash>;
 
     class PlaybackEngine {
     public:

@@ -315,7 +315,9 @@ namespace Core
             std::lock_guard<std::mutex> lock(m_mutex);
             if (m_active_keys.empty())
                 return;
-            keys.assign(m_active_keys.begin(), m_active_keys.end());
+            keys.reserve(m_active_keys.size());
+            for (const auto &[k, count] : m_active_keys)
+                keys.push_back(k);
             m_active_keys.clear();
         }
         m_simulator.release_keys(keys);
@@ -1033,14 +1035,21 @@ namespace Core
                 // 收集事件
                 m_key_event_buffer.push_back({evt.is_note_on, evt.vk_code, evt.modifier, evt.window_handle});
 
-                // 更新 active_keys：使用 unordered_set O(1) 操作
+                // 更新 active_keys：引用计数，防止同一按键多次 Note On 后单次 Note Off 提前释放
                 if (evt.is_note_on)
                 {
-                    m_active_keys.insert(std::make_pair(evt.vk_code, evt.window_handle));
+                    auto [it, inserted] = m_active_keys.try_emplace(std::make_pair(evt.vk_code, evt.window_handle), 1);
+                    if (!inserted)
+                        it->second++;  // 已存在，引用计数 +1
                 }
                 else
                 {
-                    m_active_keys.erase(std::make_pair(evt.vk_code, evt.window_handle));
+                    auto it = m_active_keys.find(std::make_pair(evt.vk_code, evt.window_handle));
+                    if (it != m_active_keys.end())
+                    {
+                        if (--it->second == 0)
+                            m_active_keys.erase(it);  // 引用计数归零才真正移除
+                    }
                 }
 
                 next_event_idx++;
