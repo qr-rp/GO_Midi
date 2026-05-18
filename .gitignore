@@ -42,3 +42,4 @@ memory_data/
 
 # Third-party libraries (use submodule instead)
 wxWidgets-*/
+wxWidgets-*.tar.bz2
