@@ -346,7 +346,7 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     m_keymapChoice = new wxChoice(panel, ID_KEYMAP_CHOICE);
     m_keymapChoice->SetMinSize(wxSize(80, -1));
     m_keymapChoice->Append(UIConstants::DEFAULT_KEYMAP);  // index 0: 内置 FF14
-    m_keymapChoice->Append(UIConstants::KEYMAP_YYJSS);    // index 1: 内置燕云十六声
+    m_keymapChoice->Append(UIConstants::KEYMAP_YYSLS);    // index 1: 内置燕云十六声
 
     m_loadKeymapBtn = new wxButton(panel, ID_LOAD_KEYMAP_BTN, wxString::FromUTF8("导入"));
     m_loadKeymapBtn->SetMinSize(wxSize(45, -1));
@@ -1428,7 +1428,7 @@ void MainFrame::OnKeymapChoice(wxCommandEvent& event) {
         UpdateStatusText(wxString::FromUTF8("已切换到默认键位"));
     } else if (sel == 1) {
         // 选择内置燕云十六声键位
-        m_engine.get_key_manager().load_yyjss_preset();
+        m_engine.get_key_manager().load_yysls_preset();
         m_currentKeymapPath.clear();
         UpdateStatusText(wxString::FromUTF8("已切换到燕云十六声键位"));
     } else if (sel >= 2) {
@@ -1497,7 +1497,7 @@ void MainFrame::OnDeleteKeymap(wxCommandEvent& event) {
         UpdateStatusText(wxString::FromUTF8("已重置为默认键位"));
     } else if (sel == 1) {
         // 内置燕云十六声键位，重置
-        m_engine.get_key_manager().load_yyjss_preset();
+        m_engine.get_key_manager().load_yysls_preset();
         UpdateStatusText(wxString::FromUTF8("已重置为燕云十六声键位"));
     } else if (sel >= 2) {
         int fileIdx = sel - 2;
@@ -2216,7 +2216,7 @@ void MainFrame::UpdateKeymapChoice() {
     // 清空并重建列表
     m_keymapChoice->Clear();
     m_keymapChoice->Append(UIConstants::DEFAULT_KEYMAP);  // index 0: 内置 FF14
-    m_keymapChoice->Append(UIConstants::KEYMAP_YYJSS);    // index 1: 内置燕云十六声
+    m_keymapChoice->Append(UIConstants::KEYMAP_YYSLS);    // index 1: 内置燕云十六声
 
     // 添加导入的键位映射文件
     for (const auto& path : m_keymapFiles) {

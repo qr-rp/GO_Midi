@@ -585,10 +585,10 @@ namespace Util
         init_default_map();
     }
 
-    void KeyManager::load_yyjss_preset()
+    void KeyManager::load_yysls_preset()
     {
         LOG_DEBUG("[KeyManager] 加载燕云十六声键位预设");
-        init_yyjss_map();
+        init_yysls_map();
     }
 
     void KeyManager::init_default_map()
@@ -653,7 +653,7 @@ namespace Util
         LOG_DEBUG("默认键位映射已加载: " << m_note_map.size() << " 个映射");
     }
 
-    void KeyManager::init_yyjss_map()
+    void KeyManager::init_yysls_map()
     {
         m_note_map.clear();
 

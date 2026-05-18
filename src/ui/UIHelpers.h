@@ -13,7 +13,7 @@ namespace UIConstants {
     const wxString DEFAULT_WINDOW = wxString::FromUTF8("未选择");
     const wxString DEFAULT_TRACK = wxString::FromUTF8("全部音轨");
     const wxString DEFAULT_KEYMAP = wxString::FromUTF8("默认键位");
-    const wxString KEYMAP_YYJSS = wxString::FromUTF8("燕云十六声");
+    const wxString KEYMAP_YYSLS = wxString::FromUTF8("燕云十六声");
     
     // 播放模式
     const wxString MODE_SINGLE = wxString::FromUTF8("单曲播放");

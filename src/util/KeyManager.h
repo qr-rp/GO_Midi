@@ -28,7 +28,7 @@ namespace Util {
         void set_map(const std::map<int, KeyMapping>& map);
         const std::map<int, KeyMapping>& get_map() const;
         void reset_to_default();
-        void load_yyjss_preset();
+        void load_yysls_preset();
 
     private:
         std::map<int, KeyMapping> m_note_map;
@@ -38,7 +38,7 @@ namespace Util {
         
         void rebuild_lookup_cache();
         void init_default_map();
-        void init_yyjss_map();
+        void init_yysls_map();
         std::string format_key_string(int vk, int modifier) const;
         bool parse_key_string(const std::string& key_str, int& vk, int& modifier) const;
         std::string get_note_name(int midi_pitch) const;
