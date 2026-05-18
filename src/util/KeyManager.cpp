@@ -585,6 +585,12 @@ namespace Util
         init_default_map();
     }
 
+    void KeyManager::load_yyjss_preset()
+    {
+        LOG_DEBUG("[KeyManager] 加载燕云十六声键位预设");
+        init_yyjss_map();
+    }
+
     void KeyManager::init_default_map()
     {
         m_note_map.clear();
@@ -645,6 +651,63 @@ namespace Util
         rebuild_lookup_cache();
 
         LOG_DEBUG("默认键位映射已加载: " << m_note_map.size() << " 个映射");
+    }
+
+    void KeyManager::init_yyjss_map()
+    {
+        m_note_map.clear();
+
+        LOG_DEBUG("加载燕云十六声键位映射");
+
+        // 音符 48-83 (C3-B5)，映射自 keymaps/燕云十六声默认键位.txt
+        // 排列顺序：下行左手区 (48-59)、中行右手区 (60-71)、上行右手区 (72-83)
+        //
+        // 修饰符: +=Shift(1), -=Ctrl(2)
+        // 下行左手区 (z/x/c/v/b/n/m)
+        m_note_map[48] = {'Z', 0};       // C3 → z
+        m_note_map[49] = {'Z', 1};       // C#3 → z+ (Shift)
+        m_note_map[50] = {'X', 0};       // D3 → x
+        m_note_map[51] = {'C', 2};       // D#3 → c- (Ctrl)
+        m_note_map[52] = {'C', 0};       // E3 → c
+        m_note_map[53] = {'V', 0};       // F3 → v
+        m_note_map[54] = {'V', 1};       // F#3 → v+ (Shift)
+        m_note_map[55] = {'B', 0};       // G3 → b
+        m_note_map[56] = {'B', 1};       // G#3 → b+ (Shift)
+        m_note_map[57] = {'N', 0};       // A3 → n
+        m_note_map[58] = {'M', 2};       // A#3 → m- (Ctrl)
+        m_note_map[59] = {'M', 0};       // B3 → m
+
+        // 中行主区 (a/s/d/f/g/h/j)
+        m_note_map[60] = {'A', 0};       // C4 → a
+        m_note_map[61] = {'A', 1};       // C#4 → a+ (Shift)
+        m_note_map[62] = {'S', 0};       // D4 → s
+        m_note_map[63] = {'D', 2};       // D#4 → d- (Ctrl)
+        m_note_map[64] = {'D', 0};       // E4 → d
+        m_note_map[65] = {'F', 0};       // F4 → f
+        m_note_map[66] = {'F', 1};       // F#4 → f+ (Shift)
+        m_note_map[67] = {'G', 0};       // G4 → g
+        m_note_map[68] = {'G', 1};       // G#4 → g+ (Shift)
+        m_note_map[69] = {'H', 0};       // A4 → h
+        m_note_map[70] = {'J', 2};       // A#4 → j- (Ctrl)
+        m_note_map[71] = {'J', 0};       // B4 → j
+
+        // 上行主区 (q/w/e/r/t/y/u)
+        m_note_map[72] = {'Q', 0};       // C5 → q
+        m_note_map[73] = {'Q', 1};       // C#5 → q+ (Shift)
+        m_note_map[74] = {'W', 0};       // D5 → w
+        m_note_map[75] = {'E', 2};       // D#5 → e- (Ctrl)
+        m_note_map[76] = {'E', 0};       // E5 → e
+        m_note_map[77] = {'R', 0};       // F5 → r
+        m_note_map[78] = {'R', 1};       // F#5 → r+ (Shift)
+        m_note_map[79] = {'T', 0};       // G5 → t
+        m_note_map[80] = {'T', 1};       // G#5 → t+ (Shift)
+        m_note_map[81] = {'Y', 0};       // A5 → y
+        m_note_map[82] = {'U', 2};       // A#5 → u- (Ctrl)
+        m_note_map[83] = {'U', 0};       // B5 → u
+
+        rebuild_lookup_cache();
+
+        LOG_DEBUG("燕云十六声键位映射已加载: " << m_note_map.size() << " 个映射");
     }
 
     void KeyManager::rebuild_lookup_cache()
