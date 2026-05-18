@@ -1094,27 +1094,34 @@ namespace Core
 
             // 注意：锁已经在上面的事件处理部分释放了
 
-            if (sleep_ms >= 1.0)
+            // 使用条件变量实现可中断的睡眠，shutdown() 调用 notify_all 后可立即唤醒线程
             {
-                // 使用 sleep_for，Windows 在 timeBeginPeriod(1) 后精度约 1ms
-                // 减去 0.5ms 作为安全边界，避免过睡
-                double actual_sleep = sleep_ms - 0.5;
-                if (actual_sleep > 0)
+                std::unique_lock<std::mutex> sleep_lock(m_mutex);
+                if (sleep_ms >= 1.0)
                 {
-                    std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(actual_sleep));
+                    double actual_sleep = sleep_ms - 0.5;
+                    if (actual_sleep > 0)
+                    {
+                        m_cv.wait_for(sleep_lock,
+                            std::chrono::duration<double, std::milli>(actual_sleep),
+                            [this] { return !m_running; });
+                    }
+                }
+                else if (sleep_ms > 0)
+                {
+                    // 极短等待（< 1ms）：用 wait_for 替代 sleep_for
+                    m_cv.wait_for(sleep_lock, std::chrono::microseconds(500),
+                        [this] { return !m_running; });
+                }
+                else
+                {
+                    // 无需等待：短暂等待以让出 CPU，同时保持可中断
+                    m_cv.wait_for(sleep_lock, std::chrono::microseconds(1),
+                        [this] { return !m_running; });
                 }
             }
-            else if (sleep_ms > 0)
-            {
-                // 极短等待（< 1ms）：使用 sleep_for 而非 busy-wait
-                // 虽然可能略有过睡，但避免 CPU 空转
-                std::this_thread::sleep_for(std::chrono::microseconds(500));
-            }
-            else
-            {
-                // 无需等待：yield 让出 CPU
-                std::this_thread::yield();
-            }
+            if (!m_running)
+                break;
         }
 
         timeEndPeriod(1);
