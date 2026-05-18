@@ -1871,9 +1871,24 @@ void MainFrame::OnTimer(wxTimerEvent& event) {
                 wxCommandEvent dummy;
                 OnStop(dummy);
             } else {
-                // List modes
-                wxCommandEvent dummy;
-                OnNext(dummy);
+                // 检查当前文件是否还在当前播放列表中（切换过列表则可能不在）
+                bool fileInCurrentPlaylist = false;
+                for (const auto& f : m_playlist_files) {
+                    if (f == m_current_path) {
+                        fileInCurrentPlaylist = true;
+                        break;
+                    }
+                }
+
+                if (!fileInCurrentPlaylist) {
+                    // 播放列表已切换，停止播放
+                    wxCommandEvent dummy;
+                    OnStop(dummy);
+                } else {
+                    // List modes
+                    wxCommandEvent dummy;
+                    OnNext(dummy);
+                }
             }
         }
     } else if (m_stateMachine.IsActive()) {
