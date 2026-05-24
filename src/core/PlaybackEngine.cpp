@@ -141,6 +141,33 @@ namespace Core
                 }
             }
         }
+        // 加权偏态系数：负值表示音符偏左分布（高音稀疏），正值表示偏右分布（高音密集）
+        auto compute_skewness = [](const std::vector<float>& hist, int low, int high) -> float {
+            double sum_w = 0.0, sum_pw = 0.0;
+            for (int p = low; p <= high; ++p) {
+                if (hist[p] > 0.0f) {
+                    double w = hist[p];
+                    sum_w += w;
+                    sum_pw += static_cast<double>(p) * w;
+                }
+            }
+            if (sum_w < 1e-10) return 0.0f;
+            double mean = sum_pw / sum_w;
+            double var = 0.0, skew = 0.0;
+            for (int p = low; p <= high; ++p) {
+                if (hist[p] > 0.0f) {
+                    double d = static_cast<double>(p) - mean;
+                    double w = hist[p];
+                    var += d * d * w;
+                    skew += d * d * d * w;
+                }
+            }
+            var /= sum_w;
+            if (var < 1e-10) return 0.0f;
+            double sigma = std::sqrt(var);
+            skew /= sum_w;
+            return static_cast<float>(skew / (sigma * sigma * sigma));
+        };
 
         // 最高音加固参数（命名常量，便于调试和调整）
         constexpr float kHighNoteBaseBoost = 1.2f;   // 最高音加固基准系数
@@ -175,7 +202,13 @@ namespace Core
                 }
             }
             int pitch_range = highest_pitch - lowest_pitch;
-            int boost_depth = std::max(kMinBoostDepth, pitch_range * kBoostDepthPercent / 100);
+
+            // 基于分布偏态自适应调整加固深度：负偏态（高音稀疏）→ 加强保护
+            float skewness = compute_skewness(hist, lowest_pitch, highest_pitch);
+            float skew_adjust = 1.0f + std::clamp(-skewness * 0.12f, -0.3f, 0.5f);
+
+            int boost_depth = std::max(kMinBoostDepth, static_cast<int>(pitch_range * kBoostDepthPercent / 100 * skew_adjust));
+            float base_boost = 1.0f + (kHighNoteBaseBoost - 1.0f) * skew_adjust;
 
             // Apply highest pitch boost: protect melody high points from being transposed out of range
             int start_pitch = highest_pitch - boost_depth + 1;
@@ -185,7 +218,7 @@ namespace Core
                 if (hist[p] > 0.0f)
                 {
                     float distance = static_cast<float>(highest_pitch - p);
-                    float boost = kHighNoteBaseBoost - kHighNoteStepDecay * distance;
+                    float boost = base_boost - kHighNoteStepDecay * distance;
                     if (boost > 1.0f)
                         hist[p] *= boost;
                 }
@@ -215,7 +248,13 @@ namespace Core
                 }
             }
             int pitch_range = highest_pitch - lowest_pitch;
-            int boost_depth = std::max(kMinBoostDepth, pitch_range * kBoostDepthPercent / 100);
+
+            // 全局直方图的偏态自适应加固
+            float skewness = compute_skewness(m_global_histogram, lowest_pitch, highest_pitch);
+            float skew_adjust = 1.0f + std::clamp(-skewness * 0.12f, -0.3f, 0.5f);
+
+            int boost_depth = std::max(kMinBoostDepth, static_cast<int>(pitch_range * kBoostDepthPercent / 100 * skew_adjust));
+            float base_boost = 1.0f + (kHighNoteBaseBoost - 1.0f) * skew_adjust;
 
             int start_pitch = highest_pitch - boost_depth + 1;
             if (start_pitch < 0) start_pitch = 0;
@@ -224,7 +263,7 @@ namespace Core
                 if (m_global_histogram[p] > 0.0f)
                 {
                     float distance = static_cast<float>(highest_pitch - p);
-                    float boost = kHighNoteBaseBoost - kHighNoteStepDecay * distance;
+                    float boost = base_boost - kHighNoteStepDecay * distance;
                     if (boost > 1.0f)
                         m_global_histogram[p] *= boost;
                 }
@@ -606,9 +645,12 @@ namespace Core
                         {
                             float mapped = static_cast<float>(p + shift);
                             float dist = std::abs(mapped - center);
-                            float weight = 1.0f - dist / half_range;
-                            if (weight > 0.0f)
-                                score += hist[p] * weight;
+                            // Gaussian 加权：音域中心权重 1.0，向边缘平滑衰减至趋于 0
+                            // 相比线性衰减，Gaussian 在中心附近更平缓、在边界更陡峭，
+                            // 避免移调结果将音符挤在键盘最边缘
+                            const float sigma = half_range * 0.4f;
+                            float weight = std::exp(-0.5f * (dist / sigma) * (dist / sigma));
+                            score += hist[p] * weight;
                         }
                     }
                 }
