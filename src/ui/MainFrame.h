@@ -200,6 +200,7 @@ private:
     void SaveKeymapConfig();
     void UpdateKeymapChoice();
     void LoadKeymapFile(const wxString& path);
+    void load_builtin_preset(int idx);
     void LoadLastSelectedFile();
     void SaveLastSelectedFile();
     std::unique_ptr<wxConfigBase> m_config;

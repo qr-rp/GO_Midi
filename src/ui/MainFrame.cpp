@@ -1418,23 +1418,18 @@ void MainFrame::OnPitchRangeChange(wxSpinEvent& event) {
     m_engine.set_pitch_range(minP, maxP);
     SaveGlobalConfig();
 }
-
 void MainFrame::OnKeymapChoice(wxCommandEvent& event) {
+
     int sel = m_keymapChoice->GetSelection();
-    if (sel == 0) {
-        // 选择内置 FF14 键位
-        m_engine.get_key_manager().reset_to_default();
-        m_currentKeymapPath.clear();
-        UpdateStatusText(wxString::FromUTF8("已切换到默认键位"));
-    } else if (sel == 1) {
-        // 选择内置燕云十六声键位
-        m_engine.get_key_manager().load_yysls_preset();
-        m_currentKeymapPath.clear();
-        UpdateStatusText(wxString::FromUTF8("已切换到燕云十六声键位"));
-    } else if (sel >= 2) {
+    if (sel >= 0 && sel < 2) {
+        // 内置预设
+        load_builtin_preset(sel);
+        m_currentKeymapPath = wxString::Format("@builtin_%d", sel);
+    } else {
         int fileIdx = sel - 2;
-        if (fileIdx < (int)m_keymapFiles.size()) {
+        if (fileIdx >= 0 && fileIdx < (int)m_keymapFiles.size()) {
             const wxString& path = m_keymapFiles[fileIdx];
+            m_currentKeymapPath = path;
             LoadKeymapFile(path);
         }
     }
@@ -1491,14 +1486,9 @@ void MainFrame::OnSaveKeymap(wxCommandEvent& event) {
 
 void MainFrame::OnDeleteKeymap(wxCommandEvent& event) {
     int sel = m_keymapChoice->GetSelection();
-    if (sel == 0) {
-        // 内置 FF14 键位，重置
-        m_engine.get_key_manager().reset_to_default();
-        UpdateStatusText(wxString::FromUTF8("已重置为默认键位"));
-    } else if (sel == 1) {
-        // 内置燕云十六声键位，重置
-        m_engine.get_key_manager().load_yysls_preset();
-        UpdateStatusText(wxString::FromUTF8("已重置为燕云十六声键位"));
+    if (sel == 0 || sel == 1) {
+        // 内置预设，重置
+        load_builtin_preset(sel);
     } else if (sel >= 2) {
         int fileIdx = sel - 2;
         if (fileIdx < (int)m_keymapFiles.size()) {
@@ -1507,12 +1497,11 @@ void MainFrame::OnDeleteKeymap(wxCommandEvent& event) {
             m_keymapChoice->Delete(sel);
             // 切换回内置默认
             m_keymapChoice->SetSelection(0);
-            m_engine.get_key_manager().reset_to_default();
-            m_currentKeymapPath.clear();
+            load_builtin_preset(0);
+            m_currentKeymapPath = wxString::Format("@builtin_%d", 0);
             UpdateStatusText(wxString::FromUTF8("键位映射已删除"));
         }
     }
-    m_engine.notify_keymap_changed();
     SaveKeymapConfig();
 }
 void MainFrame::OnSchedule(wxCommandEvent& event) {
@@ -2152,12 +2141,22 @@ void MainFrame::LoadKeymapConfig() {
     wxString currentKeymap;
     m_config->Read("/Global/CurrentKeymap", &currentKeymap, "");
     if (!currentKeymap.empty()) {
-        // 查找并选中（Windows 路径不区分大小写）
-        for (size_t i = 0; i < m_keymapFiles.size(); ++i) {
-            if (m_keymapFiles[i].CmpNoCase(currentKeymap) == 0) {
-                m_keymapChoice->SetSelection(static_cast<int>(i + 2));
-                LoadKeymapFile(currentKeymap);
-                break;
+        // 内置预设哨兵：@builtin_0, @builtin_1, ...
+        if (currentKeymap.StartsWith("@builtin_")) {
+            long idx;
+            int builtinCount = m_keymapChoice->GetCount() - (int)m_keymapFiles.size();
+            if (currentKeymap.Mid(9).ToLong(&idx) && idx >= 0 && idx < builtinCount) {
+                m_keymapChoice->SetSelection(static_cast<int>(idx));
+                load_builtin_preset(static_cast<int>(idx));
+            }
+        } else {
+            // 导入的键位文件：查找并选中（Windows 路径不区分大小写）
+            for (size_t i = 0; i < m_keymapFiles.size(); ++i) {
+                if (m_keymapFiles[i].CmpNoCase(currentKeymap) == 0) {
+                    m_keymapChoice->SetSelection(static_cast<int>(i + 2));
+                    LoadKeymapFile(currentKeymap);
+                    break;
+                }
             }
         }
     }
@@ -2257,6 +2256,22 @@ void MainFrame::LoadKeymapFile(const wxString& path) {
     } else {
         UpdateStatusText(wxString::FromUTF8("键位加载失败"));
     }
+}
+
+void MainFrame::load_builtin_preset(int idx)
+{
+    switch (idx) {
+        case 0:
+            m_engine.get_key_manager().reset_to_default();
+            UpdateStatusText(wxString::FromUTF8("已切换到默认键位"));
+            break;
+        case 1:
+            m_engine.get_key_manager().load_yysls_preset();
+            UpdateStatusText(wxString::FromUTF8("已切换到燕云十六声键位"));
+            break;
+        // 新增内置预设在此添加
+    }
+    m_engine.notify_keymap_changed();
 }
 
 void MainFrame::LoadLastSelectedFile() {
