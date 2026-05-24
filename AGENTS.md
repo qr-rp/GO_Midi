@@ -111,25 +111,24 @@ cmake --build . --config Release
 
 ### Naming
 
-| 类别 | 规则 | 示例 |
-|------|------|------|
-| **类** | PascalCase | `PlaybackEngine`, `KeyManager` |
-| **方法/函数** | snake_case | `load_midi()`, `set_channel_transpose()` |
-| **成员变量** | `m_` 前缀 + snake_case | `m_current_time`, `m_config_version` |
-| **常量** | `kCamelCase` | `kCamelCase` 推荐 |
-| **枚举值** | `UPPER_CASE` | `enum class LogLevel { DEBUG, INFO, WARN, ERROR, FATAL }` |
-| **命名空间** | PascalCase | `Core::`, `Midi::`, `UI::`, `Util::` |
-| **文件名** | PascalCase | `PlaybackEngine.cpp`, `MidiParser.h` |
-| **结构体** | PascalCase | `struct ChannelSettings` |
-| **事件处理** | `On` + PascalCase | `OnImportFile`, `OnPlay`, `OnModeClick`, `OnSliderChange` |
+|类别|规则|示例|
+|---|---|---|
+|**类**|PascalCase|`PlaybackEngine`, `KeyManager`|
+|**方法/函数**|snake_case|`load_midi()`, `set_channel_transpose()`|
+|**成员变量**|`m_` 前缀 + snake_case|`m_current_time`, `m_config_version`|
+|**常量**|`kCamelCase`|`kHighNoteBaseBoost`, `kMinBoostDepth`|
+|**枚举值**|`UPPER_CASE`|`enum class LogLevel { DEBUG, INFO, WARN, ERROR, FATAL }`|
+|**命名空间**|PascalCase|`Core::`, `Midi::`, `UI::`, `Util::`|
+|**文件名**|PascalCase|`PlaybackEngine.cpp`, `MidiParser.h`|
+|**事件处理**|`On` + PascalCase|`OnImportFile`, `OnPlay`, `OnModeClick`|
 
 ### Formatting
 
 - 缩进: 4 空格
 - 大括号: `namespace` / `class` / 函数单独一行，`if` / `for` / `while` 同行
 - 类/结构体成员每个用分号换行，最后一个也要
-- 类型别名：`using` 而非 `typedef`
-- 头文件保护：`#pragma once`
+- 类型别名: `using` 而非 `typedef`
+- 头文件保护: `#pragma once`
 
 ### Include Order
 
@@ -190,13 +189,15 @@ namespace UIConstants {
 - 线程安全：`std::atomic<T>` 跨线程共享标量，`std::mutex` 保护复合数据
 - 智能指针：`std::unique_ptr` 首选，`std::shared_ptr` 仅在共享所有权时用
 - 键位映射查找：O(1) `unordered_map` + 缓存
+- 堆分配优化：热路径使用栈数组（`INPUT[8]`, `INPUT[256]`），避免频繁分配
+- 内存回收：4× 容量阈值触发 `shrink_to_fit()`
 
 ### Playback Engine Patterns
 
 - **状态机**: `PlaybackStateMachine` (Idle / Playing / Paused / Stopped / Scheduled / Error)
 - **配置热更新**: 原子版本号 `m_config_version` + `std::condition_variable` 通知播放线程
 - **活跃按键追踪**: `ActiveKeySet` (`unordered_set<pair<int, void*>>`) + 引用计数防止卡键
-- **智能移调**: 基于音高直方图自动计算最佳移调量
+- **智能移调**: 基于音高直方图自动计算最佳移调量（Gaussian 加权、偏态自适应最高音保护）
 - **AB 循环**: 进度条右键设 A/B 点，循环播放，第三次右键清除
 - **键盘模拟**: `SendInput`（推荐）和 `PostMessage`（备选）双路径
 - **时间同步**: NTP 客户端用于定时播放的精确时间
@@ -210,29 +211,29 @@ namespace UIConstants {
 
 ### Comments
 
-注释用中文写，代码标识符用英文。
+注释用中文写，代码标识符用英文。大量中文注释解释算法原理（如偏态自适应、Gaussian 加权、和弦重叠解决）。
 
 ## Important Files
 
-| 文件 | 作用 |
-|------|------|
-| `src/App.cpp` | wxWidgets 入口 `OnInit()` / `OnExit()` |
-| `src/core/PlaybackEngine.cpp/h` | 播放引擎核心（~39KB），线程调度、配置热更新 |
-| `src/core/KeyboardSimulator.cpp/h` | Win32 键盘模拟（SendInput/PostMessage） |
-| `src/midi/MidiParser.cpp/h` | MIDI 解析（Format 0/1，~23KB） |
-| `src/ui/MainFrame.cpp/h` | 主窗口（~95KB，项目最大文件），所有控件和事件 |
-| `src/ui/PlaybackState.cpp/h` | 状态机实现 |
-| `src/ui/UIHelpers.cpp/h` | UI 字符串常量和辅助函数 |
-| `src/ui/Widgets.cpp/h` | 自定义控件（ModernSlider, ScrollingText） |
-| `src/util/KeyManager.cpp/h` | 键位映射管理（~28KB） |
-| `src/util/Logger.cpp/h` | 线程安全日志系统 |
-| `src/util/NtpClient.cpp/h` | NTP 时间同步 |
-| `src/util/PlaylistManager.cpp/h` | 播放列表管理 |
-| `CMakeLists.txt` | 构建配置（wxWidgets 特征开关） |
-| `mingw-toolchain.cmake` | MinGW 交叉编译工具链定义 |
-| `build_mingw.bat` | MinGW 一键构建脚本 |
-| `.github/workflows/dev.yml` | 开发版 CI |
-| `.github/workflows/release.yml` | 正式版 CI |
+|文件|作用|
+|---|---|
+|`src/App.cpp`|wxWidgets 入口 `OnInit()` / `OnExit()`|
+|`src/core/PlaybackEngine.cpp/h`|播放引擎核心（~39KB），线程调度、配置热更新|
+|`src/core/KeyboardSimulator.cpp/h`|Win32 键盘模拟（SendInput/PostMessage）|
+|`src/midi/MidiParser.cpp/h`|MIDI 解析（Format 0/1，~23KB）|
+|`src/ui/MainFrame.cpp/h`|主窗口（~95KB，项目最大文件），所有控件和事件|
+|`src/ui/PlaybackState.cpp/h`|状态机实现|
+|`src/ui/UIHelpers.cpp/h`|UI 字符串常量和辅助函数|
+|`src/ui/Widgets.cpp/h`|自定义控件（ModernSlider, ScrollingText）|
+|`src/util/KeyManager.cpp/h`|键位映射管理（~28KB）|
+|`src/util/Logger.cpp/h`|线程安全日志系统|
+|`src/util/NtpClient.cpp/h`|NTP 时间同步|
+|`src/util/PlaylistManager.cpp/h`|播放列表管理|
+|`CMakeLists.txt`|构建配置（wxWidgets 特征开关）|
+|`mingw-toolchain.cmake`|MinGW 交叉编译工具链定义|
+|`build_mingw.bat`|MinGW 一键构建脚本|
+|`.github/workflows/dev.yml`|开发版 CI|
+|`.github/workflows/release.yml`|正式版 CI|
 
 ## Runtime/Tooling Preferences
 
@@ -241,9 +242,8 @@ namespace UIConstants {
 - **包管理**: 无包管理器；wxWidgets 通过源码 `add_subdirectory` 集成
 - **wxWidgets 版本**: 3.3.1，静态链接，~40 个不需要的特性被禁用以减少体积
 - **编译器 flags**:
-  - MSVC Release: `/O1 /GL /LTCG /OPT:REF /OPT:ICF`
-  - MinGW Release: `-Os -DNDEBUG -ffunction-sections -fdata-sections -s -Wl,--gc-sections`
-  - MinGW: `-static-libgcc -static-libstdc++ -static`
+  - MSVC Release: `/O1 /GL /LTCG /OPT:REF /OPT:ICF /MANIFEST:NO` + `/MT`（静态 VC++ 运行时）
+  - MinGW Release: `-Os -DNDEBUG -ffunction-sections -fdata-sections -s -Wl,--gc-sections` + `-static-libgcc -static-libstdc++ -static`
 - **Windows 链接库**: `winmm`, `ws2_32`, `gdi32`, `user32`, `kernel32`, `shell32`, `ole32`, `comctl32`, `uxtheme`, `oleacc`, `gdiplus` 等（~25 个）
 - **配置文件**: `config.ini`（wxConfig INI 格式），自动生成/读取
 - **热键**: F12 全局播放/暂停
