@@ -18,6 +18,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
@@ -66,11 +68,39 @@ jobs:
         Write-Host "Output: $exeName"
         Add-Content -Path $env:GITHUB_OUTPUT -Value "exe_name=$exeName"
 
+    - name: Generate Release Notes
+      id: notes
+      shell: pwsh
+      run: |
+        $tag = "${{ github.ref_name }}"
+        $prevTag = git tag --list 'v*' --sort=-v:refname | Select-Object -First 1 -Skip 1
+        if (-not $prevTag) { $prevTag = $tag }
+        $log = git log "$prevTag..$tag" --no-merges --pretty="format:%s"
+        $features = @(); $fixes = @(); $docs = @(); $refactors = @(); $other = @()
+        foreach ($line in $log) {
+            $clean = $line.Trim()
+            if ($clean -match '^feat[:(]') { $features += ($clean -replace '^feat[:(]?\s*', '') }
+            elseif ($clean -match '^fix[:(]') { $fixes += ($clean -replace '^fix[:(]?\s*', '') }
+            elseif ($clean -match '^docs[:(]') { $docs += ($clean -replace '^docs[:(]?\s*', '') }
+            elseif ($clean -match '^refactor[:(]') { $refactors += ($clean -replace '^refactor[:(]?\s*', '') }
+            else { $other += $clean }
+        }
+        $body = @()
+        $body += "# $tag Release Notes"; $body += ""
+        if ($features) { $body += "## 🚀 新功能"; $body += ($features | ForEach-Object { "- $_" }); $body += "" }
+        if ($fixes) { $body += "## 🐛 Bug Fixes"; $body += ($fixes | ForEach-Object { "- $_" }); $body += "" }
+        if ($refactors) { $body += "## 🔧 重构"; $body += ($refactors | ForEach-Object { "- $_" }); $body += "" }
+        if ($docs) { $body += "## 📄 文档"; $body += ($docs | ForEach-Object { "- $_" }); $body += "" }
+        if ($other) { $body += "## 🧩 其他"; $body += ($other | ForEach-Object { "- $_" }); $body += "" }
+        # 写入临时文件，供 body_path 使用
+        $bodyText = ($body -join "`r`n")
+        Set-Content -Path "$env:RUNNER_TEMP\release_body.md" -Value $bodyText
+
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: ${{ steps.prepare.outputs.exe_name }}
-        generate_release_notes: true
+        body_path: ${{ runner.temp }}\release_body.md
         prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
