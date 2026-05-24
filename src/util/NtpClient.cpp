@@ -443,42 +443,21 @@ namespace Util
         }
         s_auto_sync_running.store(false);
     }
-
     void NtpClient::ForceShutdown()
     {
-        LOG_DEBUG("[NtpClient] 强制关闭");
 
-        s_auto_sync_stop.store(true);
-        s_cv.notify_all();
+    s_auto_sync_stop.store(true);
+    s_cv.notify_all();
 
-        if (s_auto_thread.joinable())
-        {
-            // 重试等待线程结束，最多 2000ms（4次 × 500ms），避免过早 detach 导致资源泄漏
-            bool joined = false;
-            for (int attempt = 0; attempt < 4; ++attempt)
-            {
-                if (!s_auto_thread.joinable())
-                {
-                    joined = true;
-                    break;
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            }
+    if (s_auto_thread.joinable())
+    {
+        // 线程使用 wait_for + predicate，收到信号后应立即退出
+        // 直接 join，与 PlaybackEngine::shutdown() 同理
+        s_auto_thread.join();
+    }
 
-            if (!joined && s_auto_thread.joinable())
-            {
-                // 如果仍未退出，才分离线程
-                LOG_ERROR("NTP 同步线程在 2000ms 内未响应，强制分离（可能导致资源泄漏）");
-                s_auto_thread.detach();
-            }
-            else if (!joined)
-            {
-                s_auto_thread.join();
-            }
-        }
-
-        s_auto_sync_running.store(false);
-        s_synced.store(false);
+    s_auto_sync_running.store(false);
+    s_synced.store(false);
     }
 
     void NtpClient::AutoSyncThread()
