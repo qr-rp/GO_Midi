@@ -5,7 +5,6 @@
 #include <cstdlib>
 #include <wx/fileconf.h>
 #include <wx/filename.h>
-#include <wx/sysopt.h>
 #include <wx/stdpaths.h>
 
 #include <windows.h>
@@ -79,8 +78,6 @@ bool App::OnInit()
 
     // 初始化随机种子
     srand(static_cast<unsigned int>(time(nullptr)));
-    // 屏蔽 wxWidgets Common Controls v6 manifest 运行时检查（MinGW 交叉编译兼容性）
-    wxSystemOptions::SetOption("msw.no-manifest-check", "1");
 
     MainFrame *frame = new MainFrame();
     frame->Show(true);

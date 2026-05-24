@@ -4,7 +4,7 @@ APP_ICON ICON "assets/icon.ico"
 
 // Embed the application manifest for administrator privileges
 // Manifest ID 1 is for the executable, 2 is for the installer
-1 RT_MANIFEST "Win32.manifest"
+1 24 "Win32.manifest"
 
 // Prevent wxWidgets from embedding its own manifest (asInvoker),
 // which would override our requireAdministrator setting.
