@@ -157,7 +157,8 @@ private:
 
     // Helpers
     void UpdateStatusText(const wxString& text);
-    void PlayIndex(int viewIndex, bool autoPlay = true);
+    bool PlayIndex(int viewIndex, bool autoPlay = true, bool showDialog = true);
+    bool SkipToNextValid(int startIndex, int direction, int maxRetries);
     void UpdateChannelUI(int channelIndex, bool enabled);
     void UpdateWindowList();
     void UpdateTrackList(); // Updates track choices in all channel configs

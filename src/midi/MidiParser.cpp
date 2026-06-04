@@ -1,5 +1,4 @@
 #include "MidiParser.h"
-#include <stdexcept>
 #include <cstring>
 #include <tuple>
 #include <unordered_map>
@@ -21,7 +20,8 @@ namespace Midi
         if (!file.is_open())
         {
             LOG_ERROR("无法打开文件 (宽字符路径)");
-            throw std::runtime_error("Failed to open file (wstring path)");
+            m_error_msg = "无法打开文件 (宽字符路径)";
+            return;
         }
 
         std::streamsize size = file.tellg();
@@ -31,24 +31,38 @@ namespace Midi
         if (!file.read(reinterpret_cast<char *>(m_data.data()), size))
         {
             LOG_ERROR("无法读取文件 (宽字符路径)");
-            throw std::runtime_error("Failed to read file (wstring path)");
+            m_error_msg = "无法读取文件 (宽字符路径)";
+            return;
         }
 
         LOG_DEBUG("文件大小: " << size << " 字节");
-        parse();
+        if (!parse()) {
+            return;
+        }
+        m_valid = true;
     }
 
     uint16_t MidiFile::readU16(size_t offset)
     {
-        if (offset + 2 > m_data.size())
-            throw std::out_of_range("Offset out of range");
+        if (!m_valid) return 0;
+        if (offset + 2 > m_data.size()) {
+            LOG_ERROR("无效的 MIDI 数据偏移量");
+            m_valid = false;
+            m_error_msg = "无效的 MIDI 数据偏移量";
+            return 0;
+        }
         return (static_cast<uint16_t>(m_data[offset]) << 8) | m_data[offset + 1];
     }
 
     uint32_t MidiFile::readU32(size_t offset)
     {
-        if (offset + 4 > m_data.size())
-            throw std::out_of_range("Offset out of range");
+        if (!m_valid) return 0;
+        if (offset + 4 > m_data.size()) {
+            LOG_ERROR("无效的 MIDI 数据偏移量");
+            m_valid = false;
+            m_error_msg = "无效的 MIDI 数据偏移量";
+            return 0;
+        }
         return (static_cast<uint32_t>(m_data[offset]) << 24) |
                (static_cast<uint32_t>(m_data[offset + 1]) << 16) |
                (static_cast<uint32_t>(m_data[offset + 2]) << 8) |
@@ -57,9 +71,14 @@ namespace Midi
 
     std::pair<uint32_t, size_t> MidiFile::readVarLen(size_t offset)
     {
+        if (!m_valid) return {0, 0};
         size_t n = m_data.size();
-        if (offset >= n)
-            throw std::out_of_range("Unexpected EOF in varlen");
+        if (offset >= n) {
+            LOG_ERROR("MIDI 数据意外结束");
+            m_valid = false;
+            m_error_msg = "MIDI 数据意外结束";
+            return {0, 0};
+        }
 
         uint8_t b0 = m_data[offset];
         if ((b0 & 0x80) == 0)
@@ -71,8 +90,12 @@ namespace Midi
         offset++;
         for (int i = 0; i < 3; ++i)
         {
-            if (offset >= n)
-                throw std::out_of_range("Unexpected EOF in varlen");
+            if (offset >= n) {
+                LOG_ERROR("MIDI 数据意外结束");
+                m_valid = false;
+                m_error_msg = "MIDI 数据意外结束";
+                return {0, 0};
+            }
             uint8_t b = m_data[offset];
             value = (value << 7) | (b & 0x7F);
             offset++;
@@ -82,14 +105,21 @@ namespace Midi
             }
         }
 
-        if (offset >= n)
-            throw std::out_of_range("Unexpected EOF in varlen");
+        if (offset >= n) {
+            LOG_ERROR("MIDI 数据意外结束");
+            m_valid = false;
+            m_error_msg = "MIDI 数据意外结束";
+            return {0, 0};
+        }
         uint8_t b = m_data[offset];
         value = (value << 7) | (b & 0x7F);
         offset++;
         if ((b & 0x80) != 0)
         {
-            throw std::runtime_error("Varlen too long");
+            LOG_ERROR("变长数值过长");
+            m_valid = false;
+            m_error_msg = "变长数值过长";
+            return {0, 0};
         }
         return {value, offset};
     }
@@ -101,31 +131,41 @@ namespace Midi
         return std::string(reinterpret_cast<char *>(m_data.data() + start), len);
     }
 
-    void MidiFile::parse()
+    bool MidiFile::parse()
     {
         LOG_ENTRY();
 
         if (m_data.size() < 14)
         {
             LOG_ERROR("无效的 MIDI 文件: 文件太小");
-            throw std::runtime_error("Invalid MIDI file");
+            m_valid = false;
+            m_error_msg = "无效的 MIDI 文件: 文件太小";
+            return false;
         }
         if (memcmp(m_data.data(), "MThd", 4) != 0)
         {
             LOG_ERROR("无效的 MIDI 文件: 缺少 MThd 头");
-            throw std::runtime_error("Invalid MIDI header");
+            m_valid = false;
+            m_error_msg = "无效的 MIDI 文件: 缺少 MThd 头";
+            return false;
         }
 
         uint32_t header_len = readU32(4);
+        if (!m_valid) return false;
         if (header_len < 6)
         {
             LOG_ERROR("无效的 MIDI 头长度: " << header_len);
-            throw std::runtime_error("Invalid MIDI header length");
+            m_valid = false;
+            m_error_msg = "无效的 MIDI 头长度";
+            return false;
         }
 
         format = readU16(8);
+        if (!m_valid) return false;
         int track_count = readU16(10);
+        if (!m_valid) return false;
         division = readU16(12);
+        if (!m_valid) return false;
 
         LOG_DEBUG("MIDI 格式: " << format << ", 音轨数: " << track_count << ", 分辨率: " << division);
 
@@ -162,19 +202,25 @@ namespace Midi
             if (memcmp(m_data.data() + pos, "MTrk", 4) != 0)
             {
                 LOG_ERROR("无效的音轨块头，位置: " << pos);
-                throw std::runtime_error("Invalid track chunk header");
+                m_valid = false;
+                m_error_msg = "无效的音轨块头";
+                return false;
             }
 
             uint32_t chunk_len = readU32(pos + 4);
+            if (!m_valid) return false;
             size_t chunk_start = pos + 8;
             size_t chunk_end = chunk_start + chunk_len;
             if (chunk_end > m_data.size())
             {
                 LOG_ERROR("音轨块长度无效: " << chunk_len << ", 位置: " << pos);
-                throw std::runtime_error("Invalid track chunk length");
+                m_valid = false;
+                m_error_msg = "音轨块长度无效";
+                return false;
             }
 
             auto res = parse_track(chunk_start, chunk_len, i);
+            if (!m_valid) return false;
             tracks.push_back(std::move(res.track));
             parsed_notes_by_track.push_back(std::move(res.notes));
             all_tempo_events.insert(all_tempo_events.end(), res.tempo_events.begin(), res.tempo_events.end());
@@ -259,12 +305,16 @@ namespace Midi
                                         << ", 总音符=" << total_notes
                                         << ", 时长=" << length << "s"
                                         << ", 初始BPM=" << get_initial_bpm());
+        return true;
     }
 
     MidiFile::TrackParseResult MidiFile::parse_track(size_t start, size_t len, int track_index)
     {
         TrackParseResult res;
         res.track.name = "";
+        if (!m_valid) {
+            return res;
+        }
 
         // Estimate capacity to avoid reallocations (approx 4 bytes per event)
         res.notes.reserve(len / 4);
@@ -292,6 +342,7 @@ namespace Midi
         while (pos < end_pos)
         {
             auto vl = readVarLen(pos);
+            if (!m_valid) break;
             int delta = static_cast<int>(vl.first);
             pos = vl.second;
             abs_tick += delta;
@@ -319,6 +370,7 @@ namespace Midi
                 uint8_t meta_type = m_data[pos];
                 pos++;
                 auto vl_meta = readVarLen(pos);
+                if (!m_valid) break;
                 uint32_t length = vl_meta.first;
                 pos = vl_meta.second;
                 size_t meta_end = pos + length;
@@ -358,6 +410,7 @@ namespace Midi
             if (status == 0xF0 || status == 0xF7)
             { // SysEx
                 auto vl_sysex = readVarLen(pos);
+                if (!m_valid) break;
                 pos = vl_sysex.second + vl_sysex.first;
                 running_status = 0;
                 continue;

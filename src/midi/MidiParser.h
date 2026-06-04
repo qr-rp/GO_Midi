@@ -43,7 +43,12 @@ namespace Midi {
         double get_initial_bpm() const;
         std::pair<int, int> get_initial_time_signature() const;
 
+        bool is_valid() const { return m_valid; }
+        const std::string& error_msg() const { return m_error_msg; }
+
     private:
+        bool m_valid{false};
+        std::string m_error_msg;
         std::vector<uint8_t> m_data;
         std::vector<std::pair<int, int>> m_tempo_events;  ///< tick, tempo_us
         std::vector<std::pair<int, std::pair<int, int>>> m_time_sig_events;  ///< tick, (nn, dd)
@@ -54,7 +59,7 @@ namespace Midi {
         std::vector<int> m_tempo_values;  ///< 每拍微秒数
         double m_smpte_ticks_per_second{0.0};
 
-        void parse();
+        bool parse();
         std::pair<uint32_t, size_t> readVarLen(size_t offset);
         double tick_to_seconds(int tick);
         void init_tempo_map(const std::vector<std::pair<int, int>>& tempo_events);

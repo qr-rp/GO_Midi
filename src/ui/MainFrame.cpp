@@ -984,12 +984,12 @@ void MainFrame::OnPlaylistEndDrag(wxMouseEvent& event) {
     SavePlaylistConfig();
 }
 
-void MainFrame::PlayIndex(int viewIndex, bool autoPlay) {
+bool MainFrame::PlayIndex(int viewIndex, bool autoPlay, bool showDialog) {
     LOG("PlayIndex called with viewIndex: " + std::to_string(viewIndex));
     
     if (!m_playlistCtrl) {
         LOG("ERROR: m_playlistCtrl is null");
-        return;
+        return false;
     }
 
     int count = m_playlistCtrl->GetItemCount();
@@ -997,7 +997,7 @@ void MainFrame::PlayIndex(int viewIndex, bool autoPlay) {
 
     if (viewIndex < 0 || viewIndex >= count) {
         LOG("Invalid viewIndex: " + std::to_string(viewIndex));
-        return;
+        return false;
     }
     
     long modelIndex = m_playlistCtrl->GetItemData(viewIndex);
@@ -1005,7 +1005,7 @@ void MainFrame::PlayIndex(int viewIndex, bool autoPlay) {
 
     if (modelIndex < 0 || modelIndex >= m_playlist_files.size()) {
         LOG("Invalid modelIndex. Files size: " + std::to_string(m_playlist_files.size()));
-        return;
+        return false;
     }
     
     wxString path = m_playlist_files[modelIndex];
@@ -1023,96 +1023,87 @@ void MainFrame::PlayIndex(int viewIndex, bool autoPlay) {
     
     // Reload if different
     if (path != m_current_path) {
-         try {
-            LOG("Loading file from path...");
-            LOG("Path to load: " + std::string(path.ToUTF8()));
-            
-            m_current_path = path;
-            
-            // Stop engine first
-            LOG("Stopping engine...");
-            m_engine.stop();
-            LOG("Engine stopped.");
+        LOG("Loading file from path...");
+        LOG("Path to load: " + std::string(path.ToUTF8()));
+        
+        m_current_path = path;
+        
+        // Stop engine first
+        LOG("Stopping engine...");
+        m_engine.stop();
+        LOG("Engine stopped.");
 
-            // 清除 AB 点循环
-            m_abLoopEnabled = false;
-            m_abPointA_ms = -1.0;
-            m_abPointB_ms = -1.0;
-            m_progressSlider->ClearABPoints();
+        // 清除 AB 点循环
+        m_abLoopEnabled = false;
+        m_abPointA_ms = -1.0;
+        m_abPointB_ms = -1.0;
+        m_progressSlider->ClearABPoints();
 
-            LOG("Creating MidiFile...");
-            m_current_midi = std::make_unique<Midi::MidiFile>(path.ToStdWstring());
-            if (!m_current_midi) {
-                LOG("ERROR: Failed to create MidiFile object (null)");
-                throw std::runtime_error("Failed to create MidiFile object");
-            }
-
-            LOG("Midi parsed successfully. Length: " + std::to_string(m_current_midi->length));
-            
-            LOG("Loading midi into engine...");
-            m_engine.load_midi(*m_current_midi);
-            LOG("Engine loaded midi.");
-
-
-            
-            // 优化：引擎已复制所有音符数据，释放 MidiFile 中的冗余副本
-            m_current_midi->raw_notes_by_track.clear();
-            m_current_midi->raw_notes_by_track.shrink_to_fit();
-            
-            m_progressSlider->SetRange(0, static_cast<int>(m_current_midi->length * 1000));
-            
-            wxString filename = path.AfterLast('\\');
-            m_currentFileLabel->SetLabel(filename);
-            
-            int totalSec = static_cast<int>(m_current_midi->length);
-            m_totalTimeLabel->SetLabel(UI::UIHelpers::FormatTime(totalSec));
-            
-            // First update track list to populate choices with correct data
-            // LOG("Updating track list...");
-            UpdateTrackList(); 
-            // LOG("Track list updated.");
-
-            // LOG("Loading file config...");
-            LoadFileConfig(filename);
-            // LOG("Config loaded.");
-
-            // Update BPM and Time Signature
-            double bpm = m_current_midi->get_initial_bpm();
-            std::pair<int, int> timeSig = m_current_midi->get_initial_time_signature();
-            
-            wxString statusText;
-            if (bpm > 0) {
-                statusText = wxString::Format("BPM: %.0f", bpm);
-            } else {
-                statusText = "BPM: --";
-            }
-            
-            if (timeSig.first > 0) {
-                statusText += wxString::Format(" | %d/%d", timeSig.first, timeSig.second);
-            } else {
-                statusText += " | 4/4";
-            }
-            GetStatusBar()->SetStatusText(statusText, 1);
-
-            m_stateMachine.SetContextInfo(filename);
-            m_stateMachine.TransitionTo(UI::PlaybackStatus::Idle);
-            UpdateStatusText(UIConstants::STATUS_LOADED);
-        } catch (const std::exception& e) {
-            wxString msg = wxString::Format(wxString::FromUTF8("加载失败: %s"), e.what());
-            LOG("Exception in PlayIndex: " + std::string(e.what()));
-            wxMessageBox(msg, wxString::FromUTF8("错误"), wxICON_ERROR);
-            m_current_path = ""; // Reset current path on failure
-            m_stateMachine.SetContextInfo(msg);
+        LOG("Creating MidiFile...");
+        m_current_midi = std::make_unique<Midi::MidiFile>(path.ToStdWstring());
+        if (!m_current_midi->is_valid()) {
+            LOG("MIDI 加载失败: " + m_current_midi->error_msg());
+            wxString errMsg = wxString::FromUTF8("加载失败: " + m_current_midi->error_msg());
+            m_current_path = "";
+            m_stateMachine.SetContextInfo(errMsg);
             m_stateMachine.TransitionTo(UI::PlaybackStatus::Error);
-            return;
-        } catch (...) {
-            LOG("Unknown error during loading in PlayIndex");
-            wxMessageBox(wxString::FromUTF8("加载失败: 未知错误"), wxString::FromUTF8("错误"), wxICON_ERROR);
-            m_current_path = ""; // Reset current path on failure
-            m_stateMachine.SetContextInfo(wxString::FromUTF8("未知错误"));
-            m_stateMachine.TransitionTo(UI::PlaybackStatus::Error);
-            return;
+            if (showDialog) {
+                wxMessageBox(errMsg, wxString::FromUTF8("错误"), wxICON_ERROR);
+            }
+            m_current_midi.reset();
+            return false;
         }
+
+        LOG("Midi parsed successfully. Length: " + std::to_string(m_current_midi->length));
+        
+        LOG("Loading midi into engine...");
+        m_engine.load_midi(*m_current_midi);
+        LOG("Engine loaded midi.");
+
+
+        
+        // 优化：引擎已复制所有音符数据，释放 MidiFile 中的冗余副本
+        m_current_midi->raw_notes_by_track.clear();
+        m_current_midi->raw_notes_by_track.shrink_to_fit();
+        
+        m_progressSlider->SetRange(0, static_cast<int>(m_current_midi->length * 1000));
+        
+        wxString filename = path.AfterLast('\\');
+        m_currentFileLabel->SetLabel(filename);
+        
+        int totalSec = static_cast<int>(m_current_midi->length);
+        m_totalTimeLabel->SetLabel(UI::UIHelpers::FormatTime(totalSec));
+        
+        // First update track list to populate choices with correct data
+        // LOG("Updating track list...");
+        UpdateTrackList(); 
+        // LOG("Track list updated.");
+
+        // LOG("Loading file config...");
+        LoadFileConfig(filename);
+        // LOG("Config loaded.");
+
+        // Update BPM and Time Signature
+        double bpm = m_current_midi->get_initial_bpm();
+        std::pair<int, int> timeSig = m_current_midi->get_initial_time_signature();
+        
+        wxString statusText;
+        if (bpm > 0) {
+            statusText = wxString::Format("BPM: %.0f", bpm);
+        } else {
+            statusText = "BPM: --";
+        }
+        
+        if (timeSig.first > 0) {
+            statusText += wxString::Format(" | %d/%d", timeSig.first, timeSig.second);
+        } else {
+            statusText += " | 4/4";
+        }
+        GetStatusBar()->SetStatusText(statusText, 1);
+
+        m_stateMachine.SetContextInfo(filename);
+        m_stateMachine.TransitionTo(UI::PlaybackStatus::Idle);
+        UpdateStatusText(UIConstants::STATUS_LOADED);
     } else {
         // LOG("Path is same as current, skipping load.");
     }
@@ -1132,6 +1123,7 @@ void MainFrame::PlayIndex(int viewIndex, bool autoPlay) {
         m_stateMachine.TransitionTo(UI::PlaybackStatus::Playing);
     }
     // LOG("PlayIndex finished.");
+    return true;
 }
 
 void MainFrame::OnPlay(wxCommandEvent& event) {
@@ -1219,55 +1211,94 @@ void MainFrame::ResetRandomSequence() {
     m_shuffle_indices.clear();
 }
 
+bool MainFrame::SkipToNextValid(int startIndex, int direction, int maxRetries) {
+    if (!m_playlistCtrl || m_playlistCtrl->GetItemCount() == 0) {
+        return false;
+    }
+
+    int count = m_playlistCtrl->GetItemCount();
+
+    for (int i = 0; i < maxRetries && i < count; ++i) {
+        int index = startIndex + direction * i;
+        if (index < 0) {
+            index += count;
+        } else if (index >= count) {
+            index -= count;
+        }
+
+        if (index < 0 || index >= count) {
+            break;
+        }
+
+        if (PlayIndex(index, true, false)) {
+            return true;
+        }
+
+        LOG_WARN("跳过无法加载的文件，索引: " + std::to_string(index));
+    }
+
+    wxString errMsg = wxString::FromUTF8("播放列表中的文件均无法加载");
+    wxMessageBox(errMsg, wxString::FromUTF8("错误"), wxICON_ERROR);
+    m_stateMachine.SetContextInfo(errMsg);
+    m_stateMachine.TransitionTo(UI::PlaybackStatus::Error);
+    return false;
+}
+
 void MainFrame::OnPrev(wxCommandEvent& event) {
     if (m_playlistCtrl->GetItemCount() == 0) return;
-    
-    int nextIndex = -1;
-    
+
     if (m_play_mode == UIConstants::MODE_RANDOM) {
-        // For previous in random mode, we reset and get a new random song
         ResetRandomSequence();
-        nextIndex = GetNextRandomIndex();
-    } else {
-        nextIndex = m_current_play_index - 1;
-        if (nextIndex < 0) {
-            if (m_play_mode == UIConstants::MODE_LIST_LOOP) {
-                nextIndex = m_playlistCtrl->GetItemCount() - 1;
-            } else {
-                nextIndex = 0; // Stop or stay at start?
-            }
+        int nextIndex = GetNextRandomIndex();
+        if (nextIndex >= 0) {
+            SkipToNextValid(nextIndex, 1, m_playlistCtrl->GetItemCount());
         }
-    }
-    
-    if (nextIndex >= 0) {
-        PlayIndex(nextIndex);
+    } else if (m_play_mode == UIConstants::MODE_LIST_LOOP) {
+        int prevIndex = (m_current_play_index - 1 + m_playlistCtrl->GetItemCount()) % m_playlistCtrl->GetItemCount();
+        SkipToNextValid(prevIndex, -1, m_playlistCtrl->GetItemCount());
+    } else if (m_play_mode == UIConstants::MODE_LIST) {
+        int prevIndex = m_current_play_index - 1;
+        if (prevIndex < 0) {
+            prevIndex = 0;
+        }
+        PlayIndex(prevIndex);
+    } else {
+        int prevIndex = m_current_play_index - 1;
+        if (prevIndex < 0) {
+            prevIndex = 0;
+        }
+        PlayIndex(prevIndex);
     }
 }
 
 void MainFrame::OnNext(wxCommandEvent& event) {
     if (m_playlistCtrl->GetItemCount() == 0) return;
-    
-    int nextIndex = -1;
-    
+
     if (m_play_mode == UIConstants::MODE_RANDOM) {
-        nextIndex = GetNextRandomIndex();
-    } else {
-        nextIndex = m_current_play_index + 1;
-        if (nextIndex >= m_playlistCtrl->GetItemCount()) {
-            if (m_play_mode == UIConstants::MODE_LIST_LOOP) {
-                nextIndex = 0;
-            } else {
-                // End of list, stop if playing
-                if (m_engine.is_playing()) {
-                    wxCommandEvent dummy;
-                    OnStop(dummy);
-                }
-                return;
-            }
+        int nextIndex = GetNextRandomIndex();
+        if (nextIndex >= 0) {
+            SkipToNextValid(nextIndex, 1, m_playlistCtrl->GetItemCount());
         }
-    }
-    
-    if (nextIndex >= 0) {
+    } else if (m_play_mode == UIConstants::MODE_LIST_LOOP) {
+        int nextIndex = (m_current_play_index + 1) % m_playlistCtrl->GetItemCount();
+        SkipToNextValid(nextIndex, 1, m_playlistCtrl->GetItemCount());
+    } else if (m_play_mode == UIConstants::MODE_LIST) {
+        int nextIndex = m_current_play_index + 1;
+        if (nextIndex >= m_playlistCtrl->GetItemCount()) {
+            wxCommandEvent dummy;
+            OnStop(dummy);
+            return;
+        }
+        SkipToNextValid(nextIndex, 1, m_playlistCtrl->GetItemCount() - nextIndex);
+    } else {
+        int nextIndex = m_current_play_index + 1;
+        if (nextIndex >= m_playlistCtrl->GetItemCount()) {
+            if (m_engine.is_playing()) {
+                wxCommandEvent dummy;
+                OnStop(dummy);
+            }
+            return;
+        }
         PlayIndex(nextIndex);
     }
 }
