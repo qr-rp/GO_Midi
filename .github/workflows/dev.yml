@@ -64,7 +64,9 @@ jobs:
         $tag = "${{ github.ref_name }}"
         $version = $tag -replace '^dev-v', ''
         $exeName = "GO_MIDI!_${version}-dev.exe"
-        Copy-Item "build\Release\GO_MIDI!.exe" $exeName
+        # Ninja outputs to build/, MSBuild outputs to build/Release/
+        $exePath = if (Test-Path "build\GO_MIDI!.exe") { "build\GO_MIDI!.exe" } else { "build\Release\GO_MIDI!.exe" }
+        Copy-Item $exePath $exeName
         Write-Host "Output: $exeName"
         Add-Content -Path $env:GITHUB_OUTPUT -Value "exe_name=$exeName"
 
