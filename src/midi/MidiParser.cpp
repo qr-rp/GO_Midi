@@ -36,6 +36,7 @@ namespace Midi
         }
 
         LOG_DEBUG("文件大小: " << size << " 字节");
+        m_valid = true;
         if (!parse()) {
             return;
         }
