@@ -50,9 +50,25 @@ jobs:
     - name: Configure and Build
       shell: pwsh
       run: |
+        # Auto-detect VS generator
+        $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        $vsPath = if (Test-Path $vsWhere) { & $vsWhere -latest -property installationPath } else { $null }
+        if ($vsPath -and (Test-Path $vsPath)) {
+          $year = [regex]::Match($vsPath, '(\d{4})').Groups[1].Value
+          $gen = switch ($year) {
+            "2022" { "Visual Studio 17 2022" }
+            "2025" { "Visual Studio 17 2022" }
+            "2026" { "Visual Studio 18 2026" }
+            default { "Visual Studio 17 2022" }
+          }
+          Write-Host "Detected VS $year at $vsPath, using generator: $gen"
+        } else {
+          $gen = "Visual Studio 17 2022"
+          Write-Host "vswhere not found, using default generator: $gen"
+        }
         mkdir build -Force
         cd build
-        cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
+        cmake .. -G "$gen" -A x64 -DCMAKE_BUILD_TYPE=Release
         cmake --build . --config Release -j ${{ steps.cpu.outputs.count }}
 
     - name: Prepare Release Asset
