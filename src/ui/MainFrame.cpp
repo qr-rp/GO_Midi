@@ -124,7 +124,7 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
 wxEND_EVENT_TABLE()
 
 MainFrame::MainFrame()
-    : wxFrame(nullptr, wxID_ANY, "GO_Midi!", wxDefaultPosition, wxDefaultSize, wxDEFAULT_FRAME_STYLE & ~(wxRESIZE_BORDER | wxMAXIMIZE_BOX))
+    : wxFrame(nullptr, wxID_ANY, "GO_Midi!")
 {
     // DPI 感知窗口尺寸
     wxSize baseSize = FromDIP(wxSize(500, 700));
