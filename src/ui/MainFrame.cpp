@@ -276,7 +276,7 @@ void MainFrame::InitUI() {
     statusBar->SetStatusText(UIConstants::BPM_PLACEHOLDER, 1);
 
     // 设置状态栏字段宽度：第一字段自动(-1)，第二字段固定75px用于BPM显示
-    const int BPM_FIELD_WIDTH = 75;
+    const int BPM_FIELD_WIDTH = FromDIP(75);
     int widths[] = {-1, BPM_FIELD_WIDTH};
     statusBar->SetStatusWidths(2, widths);
 
@@ -326,14 +326,14 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     wxBoxSizer* leftSizer = new wxBoxSizer(wxHORIZONTAL);
 
     m_playlistChoice = new wxChoice(panel, ID_PLAYLIST_CHOICE);
-    m_playlistChoice->SetMinSize(wxSize(80, -1));
+    m_playlistChoice->SetMinSize(FromDIP(wxSize(80, -1)));
 
     m_addPlaylistBtn = new wxButton(panel, ID_ADD_PLAYLIST_BTN, wxString::FromUTF8("新建"));
-    m_addPlaylistBtn->SetMinSize(wxSize(45, -1));
+    m_addPlaylistBtn->SetMinSize(FromDIP(wxSize(45, -1)));
     m_deletePlaylistBtn = new wxButton(panel, ID_DELETE_PLAYLIST_BTN, wxString::FromUTF8("删除"));
-    m_deletePlaylistBtn->SetMinSize(wxSize(45, -1));
+    m_deletePlaylistBtn->SetMinSize(FromDIP(wxSize(45, -1)));
     m_renamePlaylistBtn = new wxButton(panel, ID_RENAME_PLAYLIST_BTN, wxString::FromUTF8("重命名"));
-    m_renamePlaylistBtn->SetMinSize(wxSize(55, -1));
+    m_renamePlaylistBtn->SetMinSize(FromDIP(wxSize(55, -1)));
 
     leftSizer->Add(m_playlistChoice, 1, wxALL | wxEXPAND | wxALIGN_CENTER_VERTICAL, 2);
     leftSizer->Add(m_addPlaylistBtn, 0, wxALL, 2);
@@ -343,22 +343,22 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     playlistSizer->Add(leftSizer, 1, wxEXPAND, 0);
 
     // 分隔线
-    playlistSizer->Add(new wxStaticLine(panel, wxID_ANY, wxDefaultPosition, wxSize(2, 20), wxLI_VERTICAL), 0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 4);
+    playlistSizer->Add(new wxStaticLine(panel, wxID_ANY, wxDefaultPosition, FromDIP(wxSize(2, 20)), wxLI_VERTICAL), 0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 4);
 
     // 右侧区域：键位映射选择器
     wxBoxSizer* rightSizer = new wxBoxSizer(wxHORIZONTAL);
 
     m_keymapChoice = new wxChoice(panel, ID_KEYMAP_CHOICE);
-    m_keymapChoice->SetMinSize(wxSize(80, -1));
+    m_keymapChoice->SetMinSize(FromDIP(wxSize(80, -1)));
     m_keymapChoice->Append(UIConstants::DEFAULT_KEYMAP);  // index 0: 内置 FF14
     m_keymapChoice->Append(UIConstants::KEYMAP_YYSLS);    // index 1: 内置燕云十六声
 
     m_loadKeymapBtn = new wxButton(panel, ID_LOAD_KEYMAP_BTN, wxString::FromUTF8("导入"));
-    m_loadKeymapBtn->SetMinSize(wxSize(45, -1));
+    m_loadKeymapBtn->SetMinSize(FromDIP(wxSize(45, -1)));
     m_saveKeymapBtn = new wxButton(panel, ID_SAVE_KEYMAP_BTN, wxString::FromUTF8("导出"));
-    m_saveKeymapBtn->SetMinSize(wxSize(45, -1));
+    m_saveKeymapBtn->SetMinSize(FromDIP(wxSize(45, -1)));
     m_deleteKeymapBtn = new wxButton(panel, ID_DELETE_KEYMAP_BTN, wxString::FromUTF8("删除"));
-    m_deleteKeymapBtn->SetMinSize(wxSize(45, -1));
+    m_deleteKeymapBtn->SetMinSize(FromDIP(wxSize(45, -1)));
 
     rightSizer->Add(m_keymapChoice, 1, wxALL | wxEXPAND | wxALIGN_CENTER_VERTICAL, 2);
     rightSizer->Add(m_loadKeymapBtn, 0, wxALL, 2);
@@ -377,7 +377,7 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     m_clearBtn = new wxButton(panel, ID_CLEAR_BTN, wxString::FromUTF8("清空列表"));
     m_searchCtrl = new wxTextCtrl(panel, ID_SEARCH_CTRL, "", wxDefaultPosition, wxDefaultSize, wxTE_PROCESS_ENTER);
     m_searchCtrl->SetHint(wxString::FromUTF8("搜索..."));
-    m_searchCtrl->SetMinSize(wxSize(-1, 26));
+    m_searchCtrl->SetMinSize(FromDIP(wxSize(-1, 26)));
     
     toolbarSizer->Add(m_importBtn, 0, wxALL, 2);
     toolbarSizer->Add(m_removeBtn, 0, wxALL, 2);
@@ -416,7 +416,7 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     font.SetPointSize(10);
     m_playlistCtrl->SetFont(font);
     
-    m_playlistCtrl->SetMinSize(wxSize(-1, 145)); // 略微减小高度以容纳播放列表选择器
+    m_playlistCtrl->SetMinSize(FromDIP(wxSize(-1, 145))); // 略微减小高度以容纳播放列表选择器
     
     sizer->Add(m_playlistCtrl, 1, wxALL | wxEXPAND, 2);
     
@@ -437,7 +437,7 @@ void MainFrame::InitControlPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     m_nextBtn = new wxButton(panel, ID_NEXT_BTN, wxString::FromUTF8("下一曲"));
     m_modeBtn = new wxButton(panel, ID_MODE_BTN, UIConstants::MODE_SINGLE);
     m_decomposeBtn = new wxButton(panel, ID_DECOMPOSE_BTN, wxString::FromUTF8("普通模式"));
-    m_decomposeBtn->SetMinSize(wxSize(80, 25));
+    m_decomposeBtn->SetMinSize(FromDIP(wxSize(80, 25)));
     
     btnSizer->Add(m_prevBtn, 0, wxALL, 2);
     btnSizer->Add(m_playBtn, 0, wxALL, 2);
@@ -472,7 +472,7 @@ void MainFrame::InitControlPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     // Use SpinCtrlDouble for unlimited speed adjustment
     m_speedCtrl = new wxSpinCtrlDouble(speedPanel, ID_SPEED_CTRL, "1.0", wxDefaultPosition, wxDefaultSize, wxSP_ARROW_KEYS, 0.1, 100.0, 1.0, 0.1);
     m_speedCtrl->SetDigits(2);
-    m_speedCtrl->SetMinSize(wxSize(60, 22));
+    m_speedCtrl->SetMinSize(FromDIP(wxSize(60, 22)));
     
     speedSizer->Add(speedLabel, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     speedSizer->Add(m_speedCtrl, 0, wxALL, 2);
@@ -488,8 +488,8 @@ void MainFrame::InitControlPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     m_minPitchCtrl = new wxSpinCtrl(rangePanel, ID_MIN_PITCH_CTRL, "48", wxDefaultPosition, wxDefaultSize, wxSP_ARROW_KEYS | wxTE_CENTRE, 0, 127, 48);
     m_maxPitchCtrl = new wxSpinCtrl(rangePanel, ID_MAX_PITCH_CTRL, "84", wxDefaultPosition, wxDefaultSize, wxSP_ARROW_KEYS | wxTE_CENTRE, 0, 127, 84);
     
-    m_minPitchCtrl->SetMinSize(wxSize(50, 20));
-    m_maxPitchCtrl->SetMinSize(wxSize(50, 20));
+    m_minPitchCtrl->SetMinSize(FromDIP(wxSize(50, 20)));
+    m_maxPitchCtrl->SetMinSize(FromDIP(wxSize(50, 20)));
     
     rangeSizer->Add(rangeLabel, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     rangeSizer->Add(m_minPitchCtrl, 0, wxALL, 2);
@@ -540,7 +540,7 @@ wxPanel* MainFrame::CreateChannelConfig(wxPanel* parent, int index) {
     
     wxString label = wxString::Format(wxString::FromUTF8("通道 %d"), index + 1);
     wxToggleButton* enableBtn = new wxToggleButton(panel, wxID_ANY, label);
-    enableBtn->SetMinSize(wxSize(50, -1));
+    enableBtn->SetMinSize(FromDIP(wxSize(50, -1)));
     
     wxChoice* windowChoice = new wxChoice(panel, wxID_ANY);
     windowChoice->Append(UIConstants::DEFAULT_WINDOW);
@@ -555,7 +555,7 @@ wxPanel* MainFrame::CreateChannelConfig(wxPanel* parent, int index) {
     wxBoxSizer* row2 = new wxBoxSizer(wxHORIZONTAL);
     
     wxSpinCtrl* transposeCtrl = new wxSpinCtrl(panel, wxID_ANY, "0", wxDefaultPosition, wxDefaultSize, wxSP_ARROW_KEYS | wxTE_CENTRE, -24, 24, 0);
-    transposeCtrl->SetMinSize(wxSize(50, -1));
+    transposeCtrl->SetMinSize(FromDIP(wxSize(50, -1)));
     
 
     
@@ -672,7 +672,7 @@ void MainFrame::InitKeymapPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
 
     // 游戏网络延迟补偿（左侧）
     contentSizer->Add(new wxStaticText(panel, wxID_ANY, wxString::FromUTF8("网络延迟补偿:")), 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
-    m_latencyCompCtrl = new wxSpinCtrl(panel, wxID_ANY, "0", wxDefaultPosition, wxSize(55, -1), wxSP_ARROW_KEYS | wxTE_CENTRE, 0, INT_MAX, 0);
+    m_latencyCompCtrl = new wxSpinCtrl(panel, wxID_ANY, "0", wxDefaultPosition, FromDIP(wxSize(55, -1)), wxSP_ARROW_KEYS | wxTE_CENTRE, 0, INT_MAX, 0);
     m_latencyCompCtrl->SetToolTip(wxString::FromUTF8("请输入游戏内ping值，单人演奏可以忽略"));
     m_latencyCompCtrl->Bind(wxEVT_SPINCTRL, [this](wxSpinEvent& event) {
         m_latency_comp_us.store(static_cast<long long>(event.GetPosition()) * 1000LL);
@@ -688,21 +688,21 @@ void MainFrame::InitKeymapPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     contentSizer->Add(m_latencyCompCtrl, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     contentSizer->Add(new wxStaticText(panel, wxID_ANY, "ms"), 0, wxALL | wxALIGN_CENTER_VERTICAL, 0);
 
-    contentSizer->Add(new wxStaticLine(panel, wxID_ANY, wxDefaultPosition, wxSize(2, 20), wxLI_VERTICAL), 0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 4);
+    contentSizer->Add(new wxStaticLine(panel, wxID_ANY, wxDefaultPosition, FromDIP(wxSize(2, 20)), wxLI_VERTICAL), 0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 4);
 
     // NTP 时间（中间）
-    m_ntpLabel = new wxStaticText(panel, wxID_ANY, "--:--", wxDefaultPosition, wxSize(45, -1), wxALIGN_CENTER);
+    m_ntpLabel = new wxStaticText(panel, wxID_ANY, "--:--", wxDefaultPosition, FromDIP(wxSize(45, -1)), wxALIGN_CENTER);
     contentSizer->Add(m_ntpLabel, 0, wxALIGN_CENTER_VERTICAL, 0);
 
-    contentSizer->Add(new wxStaticLine(panel, wxID_ANY, wxDefaultPosition, wxSize(2, 20), wxLI_VERTICAL), 0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 4);
+    contentSizer->Add(new wxStaticLine(panel, wxID_ANY, wxDefaultPosition, FromDIP(wxSize(2, 20)), wxLI_VERTICAL), 0, wxLEFT | wxRIGHT | wxALIGN_CENTER_VERTICAL, 4);
 
     // 定时（右侧）
-    m_schedMin = new wxSpinCtrl(panel, wxID_ANY, "0", wxDefaultPosition, wxSize(45, -1), wxSP_ARROW_KEYS | wxTE_CENTRE, 0, 59, 0);
+    m_schedMin = new wxSpinCtrl(panel, wxID_ANY, "0", wxDefaultPosition, FromDIP(wxSize(45, -1)), wxSP_ARROW_KEYS | wxTE_CENTRE, 0, 59, 0);
     contentSizer->Add(m_schedMin, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
 
     contentSizer->Add(new wxStaticText(panel, wxID_ANY, ":"), 0, wxALL | wxALIGN_CENTER_VERTICAL, 0);
 
-    m_schedSec = new wxSpinCtrl(panel, wxID_ANY, "0", wxDefaultPosition, wxSize(45, -1), wxSP_ARROW_KEYS | wxTE_CENTRE, 0, 59, 0);
+    m_schedSec = new wxSpinCtrl(panel, wxID_ANY, "0", wxDefaultPosition, FromDIP(wxSize(45, -1)), wxSP_ARROW_KEYS | wxTE_CENTRE, 0, 59, 0);
     contentSizer->Add(m_schedSec, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
 
     m_scheduleBtn = new wxButton(panel, ID_SCHEDULE_BTN, wxString::FromUTF8("定时"));

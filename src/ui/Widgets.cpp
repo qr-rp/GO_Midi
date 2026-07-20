@@ -44,12 +44,12 @@ ModernSlider::ModernSlider(wxWindow* parent, wxWindowID id, int value, int minVa
     m_bPointColor = wxColour(100, 255, 100);    // 绿色
     m_abRangeColor = wxColour(255, 200, 100, 80); // 半透明橙色
 
-    m_trackHeight = 4.0;
-    m_thumbRadius = 6.0;
-    m_thumbRadiusHover = 8.0;
+    m_trackHeight = static_cast<double>(FromDIP(4));
+    m_thumbRadius = static_cast<double>(FromDIP(6));
+    m_thumbRadiusHover = static_cast<double>(FromDIP(8));
 
     SetBackgroundStyle(wxBG_STYLE_PAINT);
-    SetMinSize(wxSize(100, 24));
+    SetMinSize(FromDIP(wxSize(100, 24)));
 }
 
 ModernSlider::~ModernSlider() {}
@@ -99,7 +99,7 @@ int ModernSlider::PosFromValue(int value) {
     int width, height;
     GetClientSize(&width, &height);
 
-    double padding = m_thumbRadiusHover + 2;
+    double padding = m_thumbRadiusHover + static_cast<double>(FromDIP(2));
     double trackWidth = width - 2 * padding;
     double rangeVal = m_maxValue - m_minValue;
 
@@ -112,13 +112,13 @@ int ModernSlider::PosFromValue(int value) {
 bool ModernSlider::IsNearAPoint(int x) {
     if (m_aPoint < 0) return false;
     int aPos = PosFromValue(m_aPoint);
-    return std::abs(x - aPos) < 10;
+    return std::abs(x - aPos) < FromDIP(10);
 }
 
 bool ModernSlider::IsNearBPoint(int x) {
     if (m_bPoint < 0) return false;
     int bPos = PosFromValue(m_bPoint);
-    return std::abs(x - bPos) < 10;
+    return std::abs(x - bPos) < FromDIP(10);
 }
 
 void ModernSlider::OnPaint(wxPaintEvent& event) {
@@ -139,7 +139,7 @@ void ModernSlider::OnPaint(wxPaintEvent& event) {
     dc.Clear();
 
     // Calculate coordinates
-    double padding = m_thumbRadiusHover + 2;
+    double padding = m_thumbRadiusHover + static_cast<double>(FromDIP(2));
     double trackWidth = width - 2 * padding;
     double trackY = std::floor(height / 2.0);
 
@@ -183,7 +183,7 @@ void ModernSlider::OnPaint(wxPaintEvent& event) {
     if (m_aPoint >= 0) {
         double aPct = (double)(m_aPoint - m_minValue) / rangeVal;
         double aX = std::round(padding + trackWidth * aPct);
-        double markerRadius = 5.0;
+        double markerRadius = static_cast<double>(FromDIP(5));
 
         // A point triangle marker (pointing down)
         gc->SetBrush(wxBrush(m_aPointColor));
@@ -208,7 +208,7 @@ void ModernSlider::OnPaint(wxPaintEvent& event) {
     if (m_bPoint >= 0) {
         double bPct = (double)(m_bPoint - m_minValue) / rangeVal;
         double bX = std::round(padding + trackWidth * bPct);
-        double markerRadius = 5.0;
+        double markerRadius = static_cast<double>(FromDIP(5));
 
         // B point triangle marker (pointing down)
         gc->SetBrush(wxBrush(m_bPointColor));
@@ -259,7 +259,7 @@ int ModernSlider::ValueFromPos(int x) {
     int width, height;
     GetClientSize(&width, &height);
 
-    double padding = m_thumbRadiusHover + 2;
+    double padding = m_thumbRadiusHover + static_cast<double>(FromDIP(2));
     double trackWidth = width - 2 * padding;
 
     if (trackWidth <= 0) return m_minValue;
@@ -469,7 +469,7 @@ ScrollingText::ScrollingText(wxWindow* parent, wxWindowID id, const wxString& te
       m_timer(this), m_delayTimer(this)
 {
     SetBackgroundStyle(wxBG_STYLE_PAINT);
-    SetMinSize(wxSize(-1, 26));
+    SetMinSize(FromDIP(wxSize(-1, 26)));
     
     // Bind timers using their specific IDs
     this->Bind(wxEVT_TIMER, &ScrollingText::OnTimer, this, m_timer.GetId());
@@ -508,7 +508,7 @@ void ScrollingText::CheckScrolling() {
     int clientW = GetClientSize().GetWidth();
 
     // Ensure min height
-    SetMinSize(wxSize(-1, textSize.GetHeight() + 4));
+    SetMinSize(FromDIP(wxSize(-1, textSize.GetHeight() + 4)));
 
     if (textSize.GetWidth() > clientW && clientW > 10) {
         if (!m_timer.IsRunning() && !m_delayTimer.IsRunning()) {
