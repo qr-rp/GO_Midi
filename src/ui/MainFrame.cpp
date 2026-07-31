@@ -30,6 +30,7 @@ static void AllowDragDropForAdmin(HWND hwnd) {
 
 #include <wx/filedlg.h>
 #include <wx/aboutdlg.h>
+#include <wx/display.h>
 #include <thread>
 #include <random>
 #include <sstream>
@@ -117,6 +118,7 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     // Custom events
     EVT_COMMAND(ID_NTP_TIMER, wxEVT_COMMAND_BUTTON_CLICKED, MainFrame::OnNtpSyncComplete)
     EVT_COMMAND(ID_SCHEDULE_TRIGGER, wxEVT_COMMAND_BUTTON_CLICKED, MainFrame::OnScheduleTrigger)
+    EVT_DPI_CHANGED(MainFrame::OnDPIChanged)
     
     EVT_TIMER(ID_PLAYBACK_TIMER, MainFrame::OnTimer)
     EVT_TIMER(ID_STATUS_TIMER, MainFrame::OnStatusTimer)
@@ -217,6 +219,9 @@ void MainFrame::OnClose(wxCloseEvent& event)
 
     // 保存最后选中的文件
     SaveLastSelectedFile();
+
+    // 保存窗口大小和位置
+    SaveWindowGeometry();
 
     // 停止定时器
     m_timer.Stop();
@@ -410,6 +415,24 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     });
 
     m_playlistCtrl->Bind(wxEVT_LEFT_UP, &MainFrame::OnPlaylistEndDrag, this);
+
+    // 长文件名 tooltip：悬停时显示完整路径（列宽=客户区宽会截断，这里补全）
+    m_playlistCtrl->Bind(wxEVT_MOTION, [this](wxMouseEvent& event) {
+        int flags = 0;
+        long item = m_playlistCtrl->HitTest(event.GetPosition(), flags);
+        wxString fullPath;
+        if (item != wxNOT_FOUND && (flags & wxLIST_HITTEST_ONITEM)) {
+            long modelIdx = m_playlistCtrl->GetItemData(item);
+            if (modelIdx >= 0 && modelIdx < static_cast<long>(m_playlist_files.size())) {
+                fullPath = m_playlist_files[modelIdx];
+            }
+        }
+        if (fullPath != m_lastHoverTooltip) {
+            m_lastHoverTooltip = fullPath;
+            m_playlistCtrl->SetToolTip(fullPath.IsEmpty() ? wxString() : fullPath);
+        }
+        event.Skip();
+    });
     
     // Adjust font size
     wxFont font = m_playlistCtrl->GetFont();
@@ -1681,6 +1704,21 @@ void MainFrame::OnNtpSyncComplete(wxCommandEvent& event) {
     }
 }
 
+void MainFrame::OnDPIChanged(wxDPIChangedEvent& event) {
+    // 跨屏拖动到不同 DPI 显示器时，手动刷新状态栏字段宽度和自定义控件缓存尺寸
+    // （wx 3.3.1 会自动重算 sizer/min size 和字体，这里只补框架管不到的部分）
+    if (GetStatusBar()) {
+        const int BPM_FIELD_WIDTH = FromDIP(75);
+        int widths[] = {-1, BPM_FIELD_WIDTH};
+        GetStatusBar()->SetStatusWidths(2, widths);
+    }
+    if (m_progressSlider) {
+        m_progressSlider->RefreshDPIMetrics();
+    }
+    Layout();
+    event.Skip(); // 让 wxWidgets 完成默认的 DPI 处理
+}
+
 void MainFrame::OnScheduleTrigger(wxCommandEvent& event) {
     if (m_isShuttingDown.load()) {
         return;
@@ -2092,7 +2130,29 @@ void MainFrame::LoadGlobalConfig() {
     int latencyComp = 0;
     m_config->Read("LatencyComp", &latencyComp, 0);
 
+    // 窗口几何恢复（0 表示从未保存过，跳过）
+    int winW = 0, winH = 0, winX = 0, winY = 0;
+    m_config->Read("WinW", &winW, 0);
+    m_config->Read("WinH", &winH, 0);
+    m_config->Read("WinX", &winX, 0);
+    m_config->Read("WinY", &winY, 0);
+
     m_config->SetPath("/");
+
+    // 恢复窗口大小和位置（仅在有效且可见时应用）
+    if (winW >= 400 && winH >= 300) {
+        wxRect savedRect(winX, winY, winW, winH);
+        bool visible = false;
+        for (int d = 0; d < wxDisplay::GetCount(); ++d) {
+            if (wxDisplay(d).GetGeometry().Intersects(savedRect)) {
+                visible = true;
+                break;
+            }
+        }
+        if (visible) {
+            SetSize(savedRect);
+        }
+    }
 
     m_minPitchCtrl->SetValue(minPitch);
     m_maxPitchCtrl->SetValue(maxPitch);
@@ -2127,6 +2187,21 @@ void MainFrame::SaveGlobalConfig() {
         m_config->Write("LatencyComp", m_latencyCompCtrl->GetValue());
     }
 
+    m_config->SetPath("/");
+    m_config->Flush();
+}
+
+void MainFrame::SaveWindowGeometry() {
+    if (!m_config) return;
+
+    wxSize sz = GetSize();
+    wxPoint pos = GetPosition();
+
+    m_config->SetPath("/Global");
+    m_config->Write("WinW", sz.GetWidth());
+    m_config->Write("WinH", sz.GetHeight());
+    m_config->Write("WinX", pos.x);
+    m_config->Write("WinY", pos.y);
     m_config->SetPath("/");
     m_config->Flush();
 }

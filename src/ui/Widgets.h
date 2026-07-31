@@ -53,6 +53,9 @@ public:
     int GetAPoint() const { return m_aPoint; }
     int GetBPoint() const { return m_bPoint; }
 
+    // DPI 变化时重新计算缓存尺寸（跨屏拖动由 MainFrame 调用）
+    void RefreshDPIMetrics();
+
 private:
     void OnPaint(wxPaintEvent& event);
     void OnSize(wxSizeEvent& event);

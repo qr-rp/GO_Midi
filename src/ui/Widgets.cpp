@@ -44,12 +44,18 @@ ModernSlider::ModernSlider(wxWindow* parent, wxWindowID id, int value, int minVa
     m_bPointColor = wxColour(100, 255, 100);    // 绿色
     m_abRangeColor = wxColour(255, 200, 100, 80); // 半透明橙色
 
+    SetBackgroundStyle(wxBG_STYLE_PAINT);
+    SetMinSize(FromDIP(wxSize(100, 24)));
+
+    RefreshDPIMetrics();
+}
+
+// DPI 变化时重新计算所有缓存尺寸（跨屏拖动时由 MainFrame 调用）
+void ModernSlider::RefreshDPIMetrics() {
     m_trackHeight = static_cast<double>(FromDIP(4));
     m_thumbRadius = static_cast<double>(FromDIP(6));
     m_thumbRadiusHover = static_cast<double>(FromDIP(8));
-
-    SetBackgroundStyle(wxBG_STYLE_PAINT);
-    SetMinSize(FromDIP(wxSize(100, 24)));
+    Refresh();
 }
 
 ModernSlider::~ModernSlider() {}

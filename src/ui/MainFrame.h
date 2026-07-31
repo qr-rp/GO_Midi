@@ -139,6 +139,7 @@ private:
     // Custom event handlers
     void OnNtpSyncComplete(wxCommandEvent& event);
     void OnScheduleTrigger(wxCommandEvent& event);
+    void OnDPIChanged(wxDPIChangedEvent& event);
     
     // Global Hook
     void InstallGlobalHook();
@@ -195,6 +196,7 @@ private:
     void SaveFileConfig();
     void LoadGlobalConfig();
     void SaveGlobalConfig();
+    void SaveWindowGeometry();
     void LoadPlaylistConfig();
     void SavePlaylistConfig();
     void LoadKeymapConfig();
@@ -278,6 +280,7 @@ private:
     bool m_is_dragging_slider = false;
     bool m_is_programmatic_selection = false;
     bool m_is_dragging_playlist = false;
+    wxString m_lastHoverTooltip;  // 上次悬停的完整路径，避免重复设置 tooltip
 
     // AB Point Loop State
     double m_abPointA_ms = -1.0;       // A点位置（毫秒），-1表示未设置
