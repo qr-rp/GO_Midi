@@ -300,6 +300,9 @@ namespace Core
             m_paused = true;
         }
 
+        // 唤醒播放线程，让 A1 的可中断睡眠立即响应暂停
+        m_cv.notify_all();
+
         release_all_keys();
 
         LOG_INFO("播放暂停，当前时间=" << m_current_time << "s");
@@ -315,6 +318,9 @@ namespace Core
             m_paused = false;
             m_current_time = 0.0;
         }
+
+        // 唤醒播放线程，让 A1 的可中断睡眠立即响应停止
+        m_cv.notify_all();
 
         release_all_keys();
 
@@ -393,6 +399,9 @@ namespace Core
             if (m_current_time > m_total_duration)
                 m_current_time = m_total_duration;
         }
+
+        // 唤醒播放线程，让 A1 的可中断睡眠立即响应跳转
+        m_cv.notify_all();
 
         release_all_keys();
 
@@ -1098,21 +1107,15 @@ namespace Core
                     m_key_event_buffer.clear();
             }
 
-            for (const auto& evt : m_key_event_buffer)
+            // A2: 整帧按键合并为单次批量发送（无目标窗口 → 单次 SendInput，有窗口 → PostMessage）
+            if (!m_key_event_buffer.empty())
             {
-                if (evt.is_note_on)
-                {
-                    m_simulator.send_key_down(evt.vk_code, evt.modifier, evt.window_handle);
-                }
-                else
-                {
-                    m_simulator.send_key_up(evt.vk_code, evt.modifier, evt.window_handle);
-                }
+                m_simulator.send_key_events(m_key_event_buffer);
             }
 
-            // Calculate dynamic sleep time
-            double sleep_ms = 15.0; // Default max sleep for UI responsiveness
-
+            // A1: 绝对 deadline + 尾段忙等
+            // 计算到下一事件的墙钟等待时间（上限 15ms，保证 UI 轮询到的时间刷新频率）
+            double wall_ms_until_next = 15.0;
             if (next_event_idx < m_events.size())
             {
                 double time_to_next = m_events[next_event_idx].time - m_current_time;
@@ -1120,48 +1123,49 @@ namespace Core
                 {
                     // Convert to wall time
                     double wall_ms = (time_to_next / m_playback_speed) * 1000.0;
-                    if (wall_ms < sleep_ms)
+                    if (wall_ms < wall_ms_until_next)
                     {
-                        sleep_ms = wall_ms;
+                        wall_ms_until_next = wall_ms;
                     }
                 }
                 else
                 {
-                    sleep_ms = 0; // Catch up immediately
+                    wall_ms_until_next = 0.0; // Catch up immediately
                 }
             }
 
-            // Ensure minimum sleep to yield CPU, but allow 0 if we are behind
-            // if (sleep_ms < 1.0 && sleep_ms > 0.001) sleep_ms = 1.0;
+            // 尾段忙等时长：wait_for 的唤醒延迟有抖动（可达数 ms），
+            // 只靠 -0.5ms 经验补偿是开环修正。改为：睡到 (deadline - 尾段)，
+            // 最后一段用 QPC 忙等到绝对 deadline，把音符触发抖动压到微秒级。
+            const double kSpinMarginMs = 1.5;
 
-            // 注意：锁已经在上面的事件处理部分释放了
+            auto deadline = std::chrono::steady_clock::now()
+                          + std::chrono::duration<double, std::milli>(wall_ms_until_next);
 
-            // 使用条件变量实现可中断的睡眠，shutdown() 调用 notify_all 后可立即唤醒线程
+            // 使用条件变量实现可中断的睡眠，shutdown()/pause()/stop()/seek() notify 后可立即唤醒线程
+            if (wall_ms_until_next > kSpinMarginMs)
             {
-                std::unique_lock<std::mutex> sleep_lock(m_mutex);
-                if (sleep_ms >= 1.0)
+                const double sleep_ms = wall_ms_until_next - kSpinMarginMs;
                 {
-                    double actual_sleep = sleep_ms - 0.5;
-                    if (actual_sleep > 0)
-                    {
-                        m_cv.wait_for(sleep_lock,
-                            std::chrono::duration<double, std::milli>(actual_sleep),
-                            [this] { return !m_running; });
-                    }
-                }
-                else if (sleep_ms > 0)
-                {
-                    // 极短等待（< 1ms）：用 wait_for 替代 sleep_for
-                    m_cv.wait_for(sleep_lock, std::chrono::microseconds(500),
+                    std::unique_lock<std::mutex> sleep_lock(m_mutex);
+                    m_cv.wait_for(sleep_lock,
+                        std::chrono::duration<double, std::milli>(sleep_ms),
                         [this] { return !m_running; });
                 }
-                else
-                {
-                    // 无需等待：短暂等待以让出 CPU，同时保持可中断
-                    m_cv.wait_for(sleep_lock, std::chrono::microseconds(1),
-                        [this] { return !m_running; });
-                }
+                if (!m_running)
+                    break;
+
+                // 睡眠被暂停/停止/跳转打断：不忙等，直接回到循环顶部处理新状态
+                if (!m_playing || m_paused || m_seek_triggered)
+                    continue;
             }
+
+            // 尾段忙等至绝对 deadline（≤ kSpinMarginMs，通常 ≤1.5ms），消除唤醒抖动
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                YieldProcessor();
+            }
+
             if (!m_running)
                 break;
         }

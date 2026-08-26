@@ -184,6 +184,65 @@ namespace Core
         }
     }
 
+    void KeyboardSimulator::send_key_events(const std::vector<KeyInputEvent>& events)
+    {
+        if (events.empty())
+            return;
+
+        // A2: 无目标窗口的按键合并为单次 SendInput。
+        // 栈数组缓存 INPUT，避免重复分配（同 release_keys 的 256 上限）。
+        INPUT inputs[256] = {};
+        int input_count = 0;
+
+        auto flush = [&]() {
+            if (input_count > 0) {
+                SendInput(static_cast<UINT>(input_count), inputs, sizeof(INPUT));
+                input_count = 0;
+            }
+        };
+
+        // 追加单个 INPUT 项，缓冲区满时先 flush
+        auto add_input = [&](int vk, bool up) {
+            if (input_count >= 256)
+                flush();
+            INPUT& input = inputs[input_count++];
+            input.type = INPUT_KEYBOARD;
+            input.ki.wVk = static_cast<WORD>(vk);
+            input.ki.dwFlags = up ? KEYEVENTF_KEYUP : 0;
+        };
+
+        for (const auto& evt : events) {
+            if (evt.window_handle != nullptr) {
+                // 有目标窗口：保持原 PostMessage 路径（先清空待发的 SendInput 批，保证发送顺序）
+                flush();
+                if (evt.is_note_on)
+                    send_key_down(evt.vk_code, evt.modifier, evt.window_handle);
+                else
+                    send_key_up(evt.vk_code, evt.modifier, evt.window_handle);
+                continue;
+            }
+
+            // 无目标窗口：合并进批处理，保持逐键的修饰键包裹语义
+            if (evt.is_note_on) {
+                if (evt.modifier == 1) add_input(VK_SHIFT, false);
+                if (evt.modifier == 2) add_input(VK_CONTROL, false);
+
+                add_input(evt.vk_code, false);
+
+                if (evt.modifier == 1) add_input(VK_SHIFT, true);
+                if (evt.modifier == 2) add_input(VK_CONTROL, true);
+            } else {
+                add_input(evt.vk_code, true);
+
+                // 同时释放修饰键（安全措施，与 send_key_up 一致）
+                if (evt.modifier == 1) add_input(VK_SHIFT, true);
+                if (evt.modifier == 2) add_input(VK_CONTROL, true);
+            }
+        }
+
+        flush();
+    }
+
     void KeyboardSimulator::release_keys(const std::vector<std::pair<int, void*>>& keys)
     {
         // 按窗口句柄分组，对每个窗口批量 PostMessage，无窗口的合并 SendInput

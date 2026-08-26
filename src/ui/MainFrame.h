@@ -64,7 +64,8 @@ enum {
     ID_STATUS_TIMER,
     ID_NTP_TIMER,
     ID_SCHEDULE_TRIGGER,
-    ID_HELP_SCROLL_TIMER
+    ID_HELP_SCROLL_TIMER,
+    ID_CONFIG_SAVE_TIMER
 };
 
 // Structure to hold controls for a single channel
@@ -84,6 +85,12 @@ public:
     friend class MidiDropTarget;
     
 private:
+    // 配置写入类型（B1 去抖用）
+    enum class ConfigSaveKind {
+        File,      // 通道配置（SaveFileConfig）
+        Global,    // 全局配置（SaveGlobalConfig）
+    };
+
     // UI Initialization
     void InitUI();
     void InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer);
@@ -155,6 +162,11 @@ private:
     void OnTimer(wxTimerEvent& event);
     void OnStatusTimer(wxTimerEvent& event);
     void OnHelpScrollTimer(wxTimerEvent& event);
+
+    // 配置写入去抖（B1）
+    void RequestConfigSave(ConfigSaveKind kind);
+    void OnConfigSaveTimer(wxTimerEvent& event);
+    void FlushConfigSave();
 
     // Helpers
     void UpdateStatusText(const wxString& text);
@@ -266,6 +278,9 @@ private:
     wxTimer m_timer;
     wxTimer m_statusTimer;
     wxTimer m_helpScrollTimer;
+    wxTimer m_configSaveTimer;
+    bool m_configSavePending = false;
+    ConfigSaveKind m_configSaveKind = ConfigSaveKind::File;
     std::vector<wxString> m_helpMessages;
     size_t m_helpMessageIndex = 0;
     bool m_helpScrollActive = false;
