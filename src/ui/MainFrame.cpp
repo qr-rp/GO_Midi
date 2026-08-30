@@ -30,6 +30,7 @@ static void AllowDragDropForAdmin(HWND hwnd) {
 
 #include <wx/filedlg.h>
 #include <wx/aboutdlg.h>
+#include <wx/display.h>
 #include <thread>
 #include <random>
 #include <sstream>
@@ -117,10 +118,12 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     // Custom events
     EVT_COMMAND(ID_NTP_TIMER, wxEVT_COMMAND_BUTTON_CLICKED, MainFrame::OnNtpSyncComplete)
     EVT_COMMAND(ID_SCHEDULE_TRIGGER, wxEVT_COMMAND_BUTTON_CLICKED, MainFrame::OnScheduleTrigger)
+    EVT_DPI_CHANGED(MainFrame::OnDPIChanged)
     
     EVT_TIMER(ID_PLAYBACK_TIMER, MainFrame::OnTimer)
     EVT_TIMER(ID_STATUS_TIMER, MainFrame::OnStatusTimer)
     EVT_TIMER(ID_HELP_SCROLL_TIMER, MainFrame::OnHelpScrollTimer)
+    EVT_TIMER(ID_CONFIG_SAVE_TIMER, MainFrame::OnConfigSaveTimer)
 wxEND_EVENT_TABLE()
 
 MainFrame::MainFrame()
@@ -161,6 +164,7 @@ MainFrame::MainFrame()
     
     m_statusTimer.SetOwner(this, ID_STATUS_TIMER);
     m_helpScrollTimer.SetOwner(this, ID_HELP_SCROLL_TIMER);
+    m_configSaveTimer.SetOwner(this, ID_CONFIG_SAVE_TIMER);
     InitHelpMessages();
 
     Util::NtpClient::StartAutoSync();
@@ -209,6 +213,9 @@ void MainFrame::OnClose(wxCloseEvent& event)
     // 设置关闭标志，阻止新后台任务启动
     m_isShuttingDown = true;
 
+    // 冲刷去抖期间尚未落盘的配置（B1）
+    FlushConfigSave();
+
     // 停止播放引擎（释放按键等）
     m_engine.stop();
 
@@ -217,6 +224,9 @@ void MainFrame::OnClose(wxCloseEvent& event)
 
     // 保存最后选中的文件
     SaveLastSelectedFile();
+
+    // 保存窗口大小和位置
+    SaveWindowGeometry();
 
     // 停止定时器
     m_timer.Stop();
@@ -410,6 +420,24 @@ void MainFrame::InitPlaylistPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
     });
 
     m_playlistCtrl->Bind(wxEVT_LEFT_UP, &MainFrame::OnPlaylistEndDrag, this);
+
+    // 长文件名 tooltip：悬停时显示完整路径（列宽=客户区宽会截断，这里补全）
+    m_playlistCtrl->Bind(wxEVT_MOTION, [this](wxMouseEvent& event) {
+        int flags = 0;
+        long item = m_playlistCtrl->HitTest(event.GetPosition(), flags);
+        wxString fullPath;
+        if (item != wxNOT_FOUND && (flags & wxLIST_HITTEST_ONITEM)) {
+            long modelIdx = m_playlistCtrl->GetItemData(item);
+            if (modelIdx >= 0 && modelIdx < static_cast<long>(m_playlist_files.size())) {
+                fullPath = m_playlist_files[modelIdx];
+            }
+        }
+        if (fullPath != m_lastHoverTooltip) {
+            m_lastHoverTooltip = fullPath;
+            m_playlistCtrl->SetToolTip(fullPath.IsEmpty() ? wxString() : fullPath);
+        }
+        event.Skip();
+    });
     
     // Adjust font size
     wxFont font = m_playlistCtrl->GetFont();
@@ -581,7 +609,7 @@ wxPanel* MainFrame::CreateChannelConfig(wxPanel* parent, int index) {
         bool enabled = e.IsChecked();
         UpdateChannelUI(index, enabled);
         m_engine.set_channel_enable(index, enabled);
-        SaveFileConfig();
+        RequestConfigSave(ConfigSaveKind::File);
     });
 
 
@@ -606,13 +634,13 @@ wxPanel* MainFrame::CreateChannelConfig(wxPanel* parent, int index) {
         } else {
             m_engine.set_channel_window(index, nullptr);
         }
-        SaveFileConfig();
+        RequestConfigSave(ConfigSaveKind::File);
     });
     
     transposeCtrl->Bind(wxEVT_SPINCTRL, [this, index, transposeCtrl](wxSpinEvent& e) {
         int val = e.GetValue();
         m_engine.set_channel_transpose(index, val);
-        SaveFileConfig();
+        RequestConfigSave(ConfigSaveKind::File);
         if (val > 0) {
             transposeCtrl->SetValue(wxString::Format("+%d", val));
         }
@@ -621,7 +649,7 @@ wxPanel* MainFrame::CreateChannelConfig(wxPanel* parent, int index) {
     transposeCtrl->Bind(wxEVT_TEXT_ENTER, [this, index, transposeCtrl](wxCommandEvent& e) {
         int val = transposeCtrl->GetValue();
         m_engine.set_channel_transpose(index, val);
-        SaveFileConfig();
+        RequestConfigSave(ConfigSaveKind::File);
         if (val > 0) {
             transposeCtrl->SetValue(wxString::Format("+%d", val));
         }
@@ -640,7 +668,7 @@ wxPanel* MainFrame::CreateChannelConfig(wxPanel* parent, int index) {
                  m_engine.set_channel_track(index, -1);
              }
         }
-        SaveFileConfig();
+        RequestConfigSave(ConfigSaveKind::File);
     });
     
     // Initialize state
@@ -1452,7 +1480,8 @@ void MainFrame::OnPitchRangeChange(wxSpinEvent& event) {
     }
     
     m_engine.set_pitch_range(minP, maxP);
-    SaveGlobalConfig();
+    // 音域 spin 拖拽会连续触发，走去抖（B1）
+    RequestConfigSave(ConfigSaveKind::Global);
 }
 void MainFrame::OnKeymapChoice(wxCommandEvent& event) {
 
@@ -1602,6 +1631,10 @@ void MainFrame::OnSchedule(wxCommandEvent& event) {
 
             // 在进入循环前，先存入原始目标时间（不含补偿）
             // 这样 OnScheduleTrigger 可以根据最新的 latency_comp 实时计算抖动
+            //
+            // 注意（A3 约束）：网络延迟补偿只对【定时播放】生效——
+            // 通过提前触发（target - latency）抵消网络延迟，让音符按 NTP 墙钟准时到达游戏。
+            // 手动播放【不】应用该补偿，保持原样；此路径是唯一读取 m_latency_comp_us 的地方。
             m_schedule_target_epoch_us.store(
                 (long long)std::chrono::duration_cast<std::chrono::microseconds>(target_tp.time_since_epoch()).count()
             );
@@ -1679,6 +1712,21 @@ void MainFrame::OnNtpSyncComplete(wxCommandEvent& event) {
         
         delete data; // 清理动态分配的数据
     }
+}
+
+void MainFrame::OnDPIChanged(wxDPIChangedEvent& event) {
+    // 跨屏拖动到不同 DPI 显示器时，手动刷新状态栏字段宽度和自定义控件缓存尺寸
+    // （wx 3.3.1 会自动重算 sizer/min size 和字体，这里只补框架管不到的部分）
+    if (GetStatusBar()) {
+        const int BPM_FIELD_WIDTH = FromDIP(75);
+        int widths[] = {-1, BPM_FIELD_WIDTH};
+        GetStatusBar()->SetStatusWidths(2, widths);
+    }
+    if (m_progressSlider) {
+        m_progressSlider->RefreshDPIMetrics();
+    }
+    Layout();
+    event.Skip(); // 让 wxWidgets 完成默认的 DPI 处理
 }
 
 void MainFrame::OnScheduleTrigger(wxCommandEvent& event) {
@@ -1991,6 +2039,32 @@ void MainFrame::UpdateWindowList() {
     }
 }
 
+// B1: 配置写入去抖——高频控件变更（通道/音域拖拽）不再每次立即写盘，
+// 而是实现尾沿去抖：持续变更期间不断重启 300ms 单发定时器，
+// 直到用户停顿 300ms 才合并落盘一次，避免拖拽滑块时连续文件 I/O。
+void MainFrame::RequestConfigSave(ConfigSaveKind kind) {
+    m_configSavePending = true;
+    m_configSaveKind = kind; // 去抖窗口内的多次请求以最后一次类型为准
+    m_configSaveTimer.Start(300, wxTIMER_ONE_SHOT);
+}
+
+void MainFrame::OnConfigSaveTimer(wxTimerEvent& event) {
+    FlushConfigSave();
+}
+
+void MainFrame::FlushConfigSave() {
+    if (!m_configSavePending) return;
+    m_configSavePending = false;
+    switch (m_configSaveKind) {
+        case ConfigSaveKind::File:
+            SaveFileConfig();
+            break;
+        case ConfigSaveKind::Global:
+            SaveGlobalConfig();
+            break;
+    }
+}
+
 void MainFrame::SaveFileConfig() {
     if (m_current_path.IsEmpty()) return;
     
@@ -2092,7 +2166,29 @@ void MainFrame::LoadGlobalConfig() {
     int latencyComp = 0;
     m_config->Read("LatencyComp", &latencyComp, 0);
 
+    // 窗口几何恢复（0 表示从未保存过，跳过）
+    int winW = 0, winH = 0, winX = 0, winY = 0;
+    m_config->Read("WinW", &winW, 0);
+    m_config->Read("WinH", &winH, 0);
+    m_config->Read("WinX", &winX, 0);
+    m_config->Read("WinY", &winY, 0);
+
     m_config->SetPath("/");
+
+    // 恢复窗口大小和位置（仅在有效且可见时应用）
+    if (winW >= 400 && winH >= 300) {
+        wxRect savedRect(winX, winY, winW, winH);
+        bool visible = false;
+        for (int d = 0; d < wxDisplay::GetCount(); ++d) {
+            if (wxDisplay(d).GetGeometry().Intersects(savedRect)) {
+                visible = true;
+                break;
+            }
+        }
+        if (visible) {
+            SetSize(savedRect);
+        }
+    }
 
     m_minPitchCtrl->SetValue(minPitch);
     m_maxPitchCtrl->SetValue(maxPitch);
@@ -2127,6 +2223,21 @@ void MainFrame::SaveGlobalConfig() {
         m_config->Write("LatencyComp", m_latencyCompCtrl->GetValue());
     }
 
+    m_config->SetPath("/");
+    m_config->Flush();
+}
+
+void MainFrame::SaveWindowGeometry() {
+    if (!m_config) return;
+
+    wxSize sz = GetSize();
+    wxPoint pos = GetPosition();
+
+    m_config->SetPath("/Global");
+    m_config->Write("WinW", sz.GetWidth());
+    m_config->Write("WinH", sz.GetHeight());
+    m_config->Write("WinX", pos.x);
+    m_config->Write("WinY", pos.y);
     m_config->SetPath("/");
     m_config->Flush();
 }

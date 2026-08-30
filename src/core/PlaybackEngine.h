@@ -29,12 +29,8 @@ namespace Core {
     };
 
     /// 按键事件结构（用于播放线程）
-    struct KeyEvent {
-        bool is_note_on;
-        int vk_code;
-        int modifier;
-        void* window_handle;
-    };
+    /// 与 KeyboardSimulator 的 KeyInputEvent 同构，直接复用批量发送 API（A2）
+    using KeyEvent = KeyInputEvent;
 
     /// 通道设置 (0-15)
     struct ChannelSettings {
