@@ -22,9 +22,9 @@ public:
     std::function<void(const wxString&)> onStatus;
 
     /// 内容总尺寸(供外部参考; 实际滚动在控件内部)
-    wxSize GetTotalSize() const { return wxSize(ContentWidth(), kWhiteH); }
+    wxSize GetTotalSize() const { return wxSize(ContentWidth(), m_whiteH); }
     /// 内容宽度(显示范围白键数 × 键宽)
-    int ContentWidth() const { return WhiteCount() * kWhiteW; }
+    int ContentWidth() const { return WhiteCount() * m_whiteW; }
     /// 设置可视宽度(固定, 超出部分内部横向滚动)
     void SetViewWidth(int w);
 
@@ -35,11 +35,13 @@ public:
     bool InAudioRange(int note) const { return note >= m_minPitch && note <= m_maxPitch; }
 
 private:
-    static constexpr int kWhiteW = 30;   // 白键宽
-    static constexpr int kWhiteH = 92;   // 白键高
-    static constexpr int kBlackW = 20;   // 黑键宽
-    static constexpr int kBlackH = 56;   // 黑键高
-    static constexpr int kScrollH = 6;   // 底部自绘滚动条高度
+    // 尺寸常量改为成员, 构造时 FromDIP 缩放(与全项目 DPI 惯例一致):
+    // 白键宽 30 / 白键高 92 / 黑键宽 20 / 黑键高 56 / 滚动条高 6
+    int m_whiteW;
+    int m_whiteH;
+    int m_blackW;
+    int m_blackH;
+    int m_scrollH;
 
     int m_minPitch;
     int m_maxPitch;

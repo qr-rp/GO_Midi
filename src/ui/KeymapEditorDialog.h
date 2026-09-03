@@ -40,6 +40,7 @@ private:
     wxStaticText* m_hint = nullptr;
     wxSpinCtrl* m_minSpin = nullptr;   // 目标音域下界
     wxSpinCtrl* m_maxSpin = nullptr;   // 目标音域上界
+    wxTimer m_pitchSaveTimer;          // 音域写 config 去抖(300ms 尾沿)
 
     int m_minPitch = 48;  // 默认 C3
     int m_maxPitch = 84;  // 默认 C6
@@ -48,11 +49,14 @@ private:
     void SyncChoice();                // 重建下拉(内置2 + 自定义)
     void SyncRoll();                  // 把 KeyManager 当前 map 刷到钢琴卷
     void Notify();                    // 通知 MainFrame(引擎+下拉+配置)
+    void RestorePitchRange();         // 按当前方案恢复音域(spins+钢琴卷)
     wxString VkName(int vk, int mod) const;
     void SetStatus(const wxString& text);
 
     void OnChoice(wxCommandEvent& event);
-    void OnPitchChange(wxSpinEvent& event);  // 音域调整 → 写当前方案
+    void OnPitchChange(wxSpinEvent& event);  // 音域调整 → 去抖写当前方案
+    void OnPitchSaveTimer(wxTimerEvent& event); // 音域写盘(去抖落盘)
+    void OnDialogClose(wxCloseEvent& event);   // 关闭时冲刷未落盘音域
     void OnNew(wxCommandEvent& event);     // ＋ 新建键位方案(复制当前键位存 config)
     void OnRename(wxCommandEvent& event);  // 重命名当前自定义方案
     void OnDelete(wxCommandEvent& event);  // － 删除当前自定义方案

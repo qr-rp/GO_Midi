@@ -19,11 +19,15 @@ wxBEGIN_EVENT_TABLE(PianoRollCtrl, wxWindow)
 wxEND_EVENT_TABLE()
 
 PianoRollCtrl::PianoRollCtrl(wxWindow* parent, int minPitch, int maxPitch)
-    : wxWindow(parent, wxID_ANY), m_minPitch(minPitch), m_maxPitch(maxPitch),
-      m_displayMin(minPitch), m_displayMax(maxPitch) {
+    : wxWindow(parent, wxID_ANY),
+      m_whiteW(FromDIP(30)), m_whiteH(FromDIP(92)),
+      m_blackW(FromDIP(20)), m_blackH(FromDIP(56)), m_scrollH(FromDIP(6)),
+      m_minPitch(minPitch), m_maxPitch(maxPitch),
+      m_displayMin(minPitch), m_displayMax(maxPitch),
+      m_viewW(FromDIP(700)) {
     SetBackgroundStyle(wxBG_STYLE_PAINT);
     m_lastHint = wxString::FromUTF8("点击琴键 → 按下新键即绑定 (Esc 取消/关闭)");
-    SetMinSize(wxSize(m_viewW, kWhiteH));
+    SetMinSize(wxSize(m_viewW, m_whiteH));
     SetFocus();
 }
 
@@ -41,7 +45,7 @@ void PianoRollCtrl::UpdateSize() {
     ClampScroll();
     // 高度 = 琴键高 + (仅当需要滚动时才 + 滚动条高, 否则不留深色预留条)
     int needScroll = content > m_viewW;
-    int h = needScroll ? kWhiteH + kScrollH + 2 : kWhiteH;
+    int h = needScroll ? m_whiteH + m_scrollH + 2 : m_whiteH;
     SetMinSize(wxSize(m_viewW, h));
     SetSize(wxSize(m_viewW, h));
     InvalidateBestSize();
@@ -58,7 +62,7 @@ void PianoRollCtrl::ClampScroll() {
 }
 
 wxRect PianoRollCtrl::ScrollBarRect() const {
-    return wxRect(2, kWhiteH + 2, m_viewW - 4, kScrollH);
+    return wxRect(2, m_whiteH + 2, m_viewW - 4, m_scrollH);
 }
 
 wxRect PianoRollCtrl::ScrollThumbRect() const {
@@ -119,16 +123,16 @@ int PianoRollCtrl::NoteToWhiteIndex(int note) const {
 
 wxRect PianoRollCtrl::KeyRect(int note) const {
     if (!IsBlackKey(note)) {
-        return wxRect(NoteToWhiteIndex(note) * kWhiteW, 0, kWhiteW, kWhiteH);
+        return wxRect(NoteToWhiteIndex(note) * m_whiteW, 0, m_whiteW, m_whiteH);
     }
     // 黑键: 位于左侧白键(前一音)的右边缘
     int leftWhite = note - 1;
     int wi = NoteToWhiteIndex(leftWhite);
-    return wxRect(wi * kWhiteW + kWhiteW - kBlackW / 2, 0, kBlackW, kBlackH);
+    return wxRect(wi * m_whiteW + m_whiteW - m_blackW / 2, 0, m_blackW, m_blackH);
 }
 
 int PianoRollCtrl::HitTest(const wxPoint& pos) const {
-    if (pos.y < 0 || pos.y >= kWhiteH) return -1;
+    if (pos.y < 0 || pos.y >= m_whiteH) return -1;
     // 可视坐标 → 内容坐标(加回滚动偏移)
     int cx = pos.x + m_scrollX;
     if (cx < 0) return -1;
@@ -261,7 +265,7 @@ void PianoRollCtrl::OnPaint(wxPaintEvent& event) {
     dc.SetBackground(wxBrush(wxColour(0x10, 0x14, 0x1a)));
     dc.Clear();
 
-    wxFont small(8, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
+    wxFont small(FromDIP(8), wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
     dc.SetFont(small);
 
     const wxColour kSelBorder(0x4f, 0x8c, 0xff);
@@ -325,7 +329,7 @@ void PianoRollCtrl::OnPaint(wxPaintEvent& event) {
 void PianoRollCtrl::OnMouse(wxMouseEvent& event) {
     wxPoint pos = event.GetPosition();
     if (event.LeftDown()) {
-        if (pos.y >= kWhiteH) {
+        if (pos.y >= m_whiteH) {
             // 底部滚动条: 点击滑块开始拖动, 否则跳转
             wxRect thumb = ScrollThumbRect();
             if (thumb.Contains(pos)) {
@@ -358,7 +362,9 @@ void PianoRollCtrl::OnMouse(wxMouseEvent& event) {
             }
             m_selectedNote = note;
             SetFocus();
-            if (onStatus) onStatus(wxString::FromUTF8("已选中,按下新键绑定该音符 (Esc 取消)"));
+            // #10: 记录选中提示, 供 Esc 取消时恢复
+            m_lastHint = wxString::FromUTF8("已选中,按下新键绑定该音符 (Esc 取消)");
+            if (onStatus) onStatus(m_lastHint);
             Refresh();
             Update();
         }
@@ -368,7 +374,7 @@ void PianoRollCtrl::OnMouse(wxMouseEvent& event) {
             if (HasCapture()) ReleaseMouse();
         }
     } else if (event.RightDown()) {
-        if (pos.y >= kWhiteH) return;   // 滚动条区忽略右键
+        if (pos.y >= m_whiteH) return;   // 滚动条区忽略右键
         int note = HitTest(pos);
         if (note >= 0) {
             m_map.erase(note);
@@ -409,7 +415,7 @@ void PianoRollCtrl::OnMouseWheel(wxMouseEvent& event) {
     ClampScroll();
     Refresh();
     Update();
-    event.Skip();
+    // 已处理则不再冒泡给父级, 避免将来弹窗可纵向滚动时双重滚动
 }
 
 void PianoRollCtrl::OnKeyDown(wxKeyEvent& event) {
@@ -423,8 +429,8 @@ void PianoRollCtrl::OnKeyDown(wxKeyEvent& event) {
         Update();
         return;
     }
-    // 忽略纯修饰键(等主键)
-    if (kc == WXK_SHIFT || kc == WXK_CONTROL || kc == WXK_ALT) return;
+    // 忽略纯修饰键(等主键), 但不吞掉事件(#9)
+    if (kc == WXK_SHIFT || kc == WXK_CONTROL || kc == WXK_ALT) { event.Skip(); return; }
 
     int vk = VkFromWx(kc);
     int mods = event.GetModifiers();
@@ -432,9 +438,22 @@ void PianoRollCtrl::OnKeyDown(wxKeyEvent& event) {
     if (mods & wxMOD_CONTROL) modifier = 2;    // 对齐 KeyManager: 2=Ctrl
     else if (mods & wxMOD_SHIFT) modifier = 1; // 1=Shift
 
+    // #6: 检测重复键绑定(另一音符已用同一按键), 提示但不阻止
+    // (引擎按 vk+hwnd 引用计数可正常处理同键多音)
+    wxString dupNote;
+    for (const auto& pair : m_map) {
+        if (pair.first != m_selectedNote && pair.second.vk_code == vk && pair.second.modifier == modifier) {
+            dupNote = NoteLabel(pair.first);
+            break;
+        }
+    }
+
     m_map[m_selectedNote] = Util::KeyMapping{ vk, modifier };
     if (onBind) onBind(m_selectedNote, vk, modifier);
-    if (onStatus) onStatus(wxString::FromUTF8("已绑定: ") + VkName(vk, modifier));
+    wxString msg = wxString::FromUTF8("已绑定: ") + VkName(vk, modifier);
+    if (!dupNote.IsEmpty()) msg += wxString::FromUTF8(" (注意: 音符 ") + dupNote + wxString::FromUTF8(" 已使用该键)");
+    if (onStatus) onStatus(msg);
+    m_lastHint = wxString::FromUTF8("点击琴键 → 按下新键即绑定 (Esc 取消/关闭)");
     m_selectedNote = -1;
     Refresh();
     Update();

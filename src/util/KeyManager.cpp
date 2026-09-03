@@ -404,6 +404,8 @@ namespace Util
     KeyMapping KeyManager::get_mapping(int note)
     {
         // 优化：使用 O(1) 缓存数组查找，避免 std::map 的 O(log n) 开销
+        // 加锁：播放线程读取期间 UI 线程可能 set_map 重建缓存
+        std::lock_guard<std::mutex> lock(m_mutex);
         if (note >= 0 && note < 128 && m_lookup_valid[note])
         {
             return m_lookup_cache[note];
@@ -480,6 +482,7 @@ namespace Util
 
         if (!new_map.empty())
         {
+            std::lock_guard<std::mutex> lock(m_mutex);
             m_note_map = new_map;
             rebuild_lookup_cache();
             LOG_INFO("键位配置加载成功: " << valid_count << " 个映射 (共 " << line_count << " 行)");
@@ -495,24 +498,29 @@ namespace Util
     {
         LOG_DEBUG("[KeyManager] 保存键位配置 (宽字符路径)");
 
-        std::vector<int> keys;
-        for (const auto &pair : m_note_map)
-        {
-            keys.push_back(pair.first);
-        }
-        std::sort(keys.begin(), keys.end());
-
+        // 锁内快照排序条目，锁外做文件 I/O（export 是 UI 线程低频操作）
         std::vector<std::pair<int, std::string>> entries;
-        entries.reserve(keys.size());
-        for (int k : keys)
         {
-            auto it = m_note_map.find(k);
-            if (it == m_note_map.end())
-                continue;
-            std::string key_str = format_key_string(it->second.vk_code, it->second.modifier);
-            if (key_str.empty())
-                continue;
-            entries.push_back({k, key_str});
+            std::lock_guard<std::mutex> lock(m_mutex);
+
+            std::vector<int> keys;
+            for (const auto &pair : m_note_map)
+            {
+                keys.push_back(pair.first);
+            }
+            std::sort(keys.begin(), keys.end());
+
+            entries.reserve(keys.size());
+            for (int k : keys)
+            {
+                auto it = m_note_map.find(k);
+                if (it == m_note_map.end())
+                    continue;
+                std::string key_str = format_key_string(it->second.vk_code, it->second.modifier);
+                if (key_str.empty())
+                    continue;
+                entries.push_back({k, key_str});
+            }
         }
 
         std::ostringstream out;
@@ -570,24 +578,28 @@ namespace Util
 
     void KeyManager::set_map(const std::map<int, KeyMapping> &map)
     {
+        std::lock_guard<std::mutex> lock(m_mutex);
         m_note_map = map;
         rebuild_lookup_cache();
     }
 
-    const std::map<int, KeyMapping> &KeyManager::get_map() const
+    std::map<int, KeyMapping> KeyManager::get_map() const
     {
+        std::lock_guard<std::mutex> lock(m_mutex);
         return m_note_map;
     }
 
     void KeyManager::reset_to_default()
     {
         LOG_DEBUG("[KeyManager] 重置为默认键位映射");
+        std::lock_guard<std::mutex> lock(m_mutex);
         init_default_map();
     }
 
     void KeyManager::load_yysls_preset()
     {
         LOG_DEBUG("[KeyManager] 加载燕云十六声键位预设");
+        std::lock_guard<std::mutex> lock(m_mutex);
         init_yysls_map();
     }
 

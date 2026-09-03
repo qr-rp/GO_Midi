@@ -22,6 +22,7 @@ enum {
     ID_KM_EXPORT,
     ID_KM_MIN_PITCH,
     ID_KM_MAX_PITCH,
+    ID_KM_PITCH_SAVE_TIMER,
 };
 
 wxBEGIN_EVENT_TABLE(KeymapEditorDialog, wxDialog)
@@ -33,6 +34,8 @@ wxBEGIN_EVENT_TABLE(KeymapEditorDialog, wxDialog)
     EVT_BUTTON(ID_KM_EXPORT, KeymapEditorDialog::OnExport)
     EVT_SPINCTRL(ID_KM_MIN_PITCH, KeymapEditorDialog::OnPitchChange)
     EVT_SPINCTRL(ID_KM_MAX_PITCH, KeymapEditorDialog::OnPitchChange)
+    EVT_TIMER(ID_KM_PITCH_SAVE_TIMER, KeymapEditorDialog::OnPitchSaveTimer)
+    EVT_CLOSE(KeymapEditorDialog::OnDialogClose)
 wxEND_EVENT_TABLE()
 
 KeymapEditorDialog::KeymapEditorDialog(wxWindow* parent, Core::PlaybackEngine* engine,
@@ -47,15 +50,11 @@ KeymapEditorDialog::KeymapEditorDialog(wxWindow* parent, Core::PlaybackEngine* e
       m_keymapFiles(keymapFiles), m_currentPath(currentPath),
       m_onChanged(std::move(onChanged)) {
     if (m_engine) m_km = &m_engine->get_key_manager();
+    m_pitchSaveTimer.SetOwner(this, ID_KM_PITCH_SAVE_TIMER);
     BuildUI();
     SyncChoice();
     // 恢复当前方案音域
-    int minP = 48, maxP = 84;
-    ReadSchemePitch(m_currentPath, minP, maxP);
-    m_minPitch = minP; m_maxPitch = maxP;
-    m_roll->SetPitchRange(minP, maxP);
-    if (m_minSpin) m_minSpin->SetValue(minP);
-    if (m_maxSpin) m_maxSpin->SetValue(maxP);
+    RestorePitchRange();
     SyncRoll();
     m_roll->SetFocus();
 }
@@ -66,7 +65,7 @@ void KeymapEditorDialog::BuildUI() {
     // 顶部: 方案下拉 + 按钮组
     wxBoxSizer* top = new wxBoxSizer(wxHORIZONTAL);
     m_choice = new wxChoice(this, ID_KM_CHOICE);
-    m_choice->SetMinSize(wxSize(150, -1));
+    m_choice->SetMinSize(FromDIP(wxSize(150, -1)));
     top->Add(m_choice, 1, wxALL | wxALIGN_CENTER_VERTICAL, 6);
 
     wxButton* newBtn = new wxButton(this, ID_KM_NEW, L"＋");
@@ -77,10 +76,10 @@ void KeymapEditorDialog::BuildUI() {
 
     wxButton* btns[] = { newBtn, delBtn, renameBtn, loadBtn, exportBtn };
     for (auto* b : btns) {
-        b->SetMinSize(wxSize(42, 28));
+        b->SetMinSize(FromDIP(wxSize(42, 28)));
         top->Add(b, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
     }
-    newBtn->SetToolTip(wxString::FromUTF8("新建键位方案(复制当前键位,存为 config 内方案)"));
+    newBtn->SetToolTip(wxString::FromUTF8("新建键位方案(空键位,存为 config 内方案)"));
     renameBtn->SetToolTip(wxString::FromUTF8("重命名当前自定义方案"));
     delBtn->SetToolTip(wxString::FromUTF8("删除当前自定义方案(恢复内置,不删文件)"));
     loadBtn->SetToolTip(wxString::FromUTF8("导入键位文件"));
@@ -95,8 +94,8 @@ void KeymapEditorDialog::BuildUI() {
     wxStaticText* dash = new wxStaticText(this, wxID_ANY, L"–");
     m_maxSpin = new wxSpinCtrl(this, ID_KM_MAX_PITCH, wxEmptyString, wxDefaultPosition, wxDefaultSize,
                                wxSP_ARROW_KEYS | wxTE_CENTRE, 0, 127, m_maxPitch);
-    m_minSpin->SetMinSize(wxSize(56, 24));
-    m_maxSpin->SetMinSize(wxSize(56, 24));
+    m_minSpin->SetMinSize(FromDIP(wxSize(56, 24)));
+    m_maxSpin->SetMinSize(FromDIP(wxSize(56, 24)));
     wxStaticText* pitchTip = new wxStaticText(this, wxID_ANY, wxString::FromUTF8("(切换方案时自动恢复,各方案独立)"));
     pitchTip->SetForegroundColour(wxColour(0x88, 0x92, 0xa0));
     pitchRow->Add(pitchLabel, 0, wxALL | wxALIGN_CENTER_VERTICAL, 6);
@@ -108,7 +107,7 @@ void KeymapEditorDialog::BuildUI() {
 
     // 中部: 钢琴卷(内部自绘横向滚动, 可视宽固定 700, 扩大音域滚轮/拖动滚动条查看)
     m_roll = new PianoRollCtrl(this, m_minPitch, m_maxPitch);
-    m_roll->SetViewWidth(700);
+    m_roll->SetViewWidth(FromDIP(700));
     root->Add(m_roll, 0, wxALIGN_CENTER | wxALL, 8);
 
     // 底部: 当前方案 + 提示
@@ -140,7 +139,7 @@ void KeymapEditorDialog::BuildUI() {
     // 高度自适应内容(顶部+音域+钢琴卷+底部), 宽度固定 740
     Fit();
     // 给滚动条/边距额外余量, 避免滚动容器被压缩导致琴键截断
-    SetSize(wxSize(740, std::max(GetSize().y, 280)));
+    SetSize(wxSize(FromDIP(740), std::max(GetSize().y, FromDIP(280))));
     CenterOnParent();
 }
 
@@ -214,12 +213,7 @@ void KeymapEditorDialog::OnChoice(wxCommandEvent& event) {
         }
     }
     // 恢复该方案音域
-    int minP = 48, maxP = 84;
-    ReadSchemePitch(m_currentPath, minP, maxP);
-    m_minPitch = minP; m_maxPitch = maxP;
-    m_roll->SetPitchRange(minP, maxP);
-    if (m_minSpin) m_minSpin->SetValue(minP);
-    if (m_maxSpin) m_maxSpin->SetValue(maxP);
+    RestorePitchRange();
     SyncRoll();
     Notify();
 }
@@ -237,10 +231,30 @@ void KeymapEditorDialog::OnPitchChange(wxSpinEvent& event) {
     m_minPitch = minP; m_maxPitch = maxP;
     m_roll->SetPitchRange(minP, maxP);
     Layout();
-    // 保存到当前方案(内置方案也独立存)
-    WriteSchemePitch(m_currentPath, minP, maxP);
+    // #3: 音域写 config 去抖(300ms 尾沿), 持续拖拽不写盘, 停顿后落盘一次
+    m_pitchSaveTimer.Start(300, wxTIMER_ONE_SHOT);
     SetStatus(wxString::Format("目标音域: %d – %d", minP, maxP));
     Notify();
+}
+
+void KeymapEditorDialog::OnPitchSaveTimer(wxTimerEvent& event) {
+    // 去抖落盘(引擎侧已通过 Notify 即时生效, 这里只负责持久化)
+    WriteSchemePitch(m_currentPath, m_minPitch, m_maxPitch);
+}
+
+void KeymapEditorDialog::OnDialogClose(wxCloseEvent& event) {
+    // 冲刷去抖中的音域写盘, 避免关窗丢失最后改动
+    WriteSchemePitch(m_currentPath, m_minPitch, m_maxPitch);
+    event.Skip();
+}
+
+void KeymapEditorDialog::RestorePitchRange() {
+    int minP = 48, maxP = 84;
+    ReadSchemePitch(m_currentPath, minP, maxP);
+    m_minPitch = minP; m_maxPitch = maxP;
+    m_roll->SetPitchRange(minP, maxP);
+    if (m_minSpin) m_minSpin->SetValue(minP);
+    if (m_maxSpin) m_maxSpin->SetValue(maxP);
 }
 
 void KeymapEditorDialog::OnNew(wxCommandEvent&) {
@@ -260,6 +274,7 @@ void KeymapEditorDialog::OnNew(wxCommandEvent&) {
     if (m_km) m_km->set_map(newMap);   // 当前键位切到空方案, 从零开始绑定
     SyncChoice();
     SyncRoll();
+    RestorePitchRange();   // #4: 新方案音域重置为默认 48-84, 与引擎侧一致
     SetStatus(wxString::FromUTF8("已新建键位方案: ") + uniqueName);
     Notify();
 }
@@ -304,11 +319,16 @@ void KeymapEditorDialog::OnDelete(wxCommandEvent&) {
     }
     size_t fileIdx = static_cast<size_t>(sel - 2);
     if (fileIdx >= m_keymapFiles.size()) return;
+    // #8: 显式删除该方案在 config 中的槽位(索引失效前)
+    if (m_config) {
+        m_config->DeleteGroup(wxString::Format("/KeymapSchemes/List_%ld", static_cast<long>(fileIdx)));
+    }
     m_keymapFiles.erase(m_keymapFiles.begin() + fileIdx);
     m_currentPath.Clear();
     if (m_km) m_km->reset_to_default();
     SyncChoice();
     SyncRoll();
+    RestorePitchRange();   // #4: 恢复默认键位音域, 与主界面 ApplySchemePitch 一致
     SetStatus(wxString::FromUTF8("自定义键位方案已删除, 已恢复默认"));
     Notify();
 }
@@ -448,7 +468,7 @@ void KeymapEditorDialog::WriteSchemePitch(const wxString& name, int minP, int ma
 
 wxString KeymapEditorDialog::GenerateUniqueName(const wxString& base) const {
     wxString name = base;
-    int counter = 1;
+    int counter = 0;
     while (FindIndex(name) >= 0) {
         name = wxString::Format("%s (%d)", base, ++counter);
     }
