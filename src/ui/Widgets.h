@@ -119,15 +119,22 @@ private:
     void OnSize(wxSizeEvent& event);
 
     void CheckScrolling();
+    void MeasureText();   // 缓存文本尺寸(仅文本/字体变化时测量)
 
     wxString m_text;
     double m_offset;
-    double m_spacing;
     double m_speed;
     int m_fps;
 
     wxTimer m_timer;
     wxTimer m_delayTimer;
+
+    // 缓存: 避免每帧/每次 resize 反复 GetTextExtent(建 wxClientDC + GDI 字体测量开销)
+    wxString m_cachedForText;  // 已缓存测量的文本
+    wxFont   m_cachedForFont;  // 已缓存测量的字体
+    wxSize   m_cachedTextSize; // 文本尺寸缓存
+    int      m_cachedSpacing;  // 间距缓存
+    int      m_lastMinHeight = -1;  // 上次设置的 min 高度, 避免 resize 反馈循环
 
     wxDECLARE_EVENT_TABLE();
 };
