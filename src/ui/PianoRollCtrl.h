@@ -8,7 +8,8 @@
 namespace UI {
 
 /// 钢琴卷键位编辑控件(对齐 next 分支设计):
-/// 横向标准钢琴,点击琴键后按下新键即绑定,支持 Ctrl/Shift 修饰。
+/// 横向标准钢琴,点击琴键后按下新键即绑定,支持 Ctrl/Shift/Alt/鼠标左中右 修饰组合
+/// (鼠标修饰: 按住鼠标键 + 按键盘主键)。
 class PianoRollCtrl : public wxWindow {
 public:
     PianoRollCtrl(wxWindow* parent, int minPitch, int maxPitch);
@@ -78,6 +79,9 @@ private:
     void OnPaint(wxPaintEvent& event);
     void OnMouse(wxMouseEvent& event);
     void OnKeyDown(wxKeyEvent& event);
+
+    /// 将 vk+modifier 绑定到当前选中音符（含重复键检测提示）, 返回绑定是否完成
+    bool BindKey(int vk, int modifier);
 
     wxString NoteLabel(int note) const;   // 简谱(♯1..7)
     wxString KeyLabel(int note) const;    // 已绑定按键名(空=未绑定)

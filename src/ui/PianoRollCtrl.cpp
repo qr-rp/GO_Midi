@@ -12,6 +12,7 @@ wxBEGIN_EVENT_TABLE(PianoRollCtrl, wxWindow)
     EVT_PAINT(PianoRollCtrl::OnPaint)
     EVT_LEFT_DOWN(PianoRollCtrl::OnMouse)
     EVT_LEFT_UP(PianoRollCtrl::OnMouse)
+    EVT_MIDDLE_DOWN(PianoRollCtrl::OnMouse)
     EVT_RIGHT_DOWN(PianoRollCtrl::OnMouse)
     EVT_MOTION(PianoRollCtrl::OnMouseMove)
     EVT_MOUSEWHEEL(PianoRollCtrl::OnMouseWheel)
@@ -26,7 +27,7 @@ PianoRollCtrl::PianoRollCtrl(wxWindow* parent, int minPitch, int maxPitch)
       m_displayMin(minPitch), m_displayMax(maxPitch),
       m_viewW(FromDIP(700)) {
     SetBackgroundStyle(wxBG_STYLE_PAINT);
-    m_lastHint = wxString::FromUTF8("点击琴键 → 按下新键即绑定 (Esc 取消/关闭)");
+    m_lastHint = wxString::FromUTF8("点击琴键 → 按下新键即绑定 (可组合 Ctrl/Shift/Alt/鼠标左中右, Esc 取消)");
     SetMinSize(wxSize(m_viewW, m_whiteH));
     SetFocus();
 }
@@ -155,8 +156,13 @@ wxString PianoRollCtrl::NoteLabel(int note) const {
 
 wxString PianoRollCtrl::VkName(int vk, int mod) const {
     wxString name;
-    if (mod == 2) name = L"Ctrl+";
-    else if (mod == 1) name = L"Shift+";
+    if (mod & Util::kModCtrl) name += L"Ctrl+";
+    if (mod & Util::kModShift) name += L"Shift+";
+    if (mod & Util::kModAlt) name += L"Alt+";
+    // 鼠标修饰键
+    if (mod & Util::kModMouseL) name += L"鼠标左键+";
+    if (mod & Util::kModMouseM) name += L"鼠标中键+";
+    if (mod & Util::kModMouseR) name += L"鼠标右键+";
 
     if (vk >= 'A' && vk <= 'Z') { name += wxString::Format(L"%c", vk); }
     else if (vk >= '0' && vk <= '9') { name += wxString::Format(L"%c", vk); }
@@ -328,6 +334,7 @@ void PianoRollCtrl::OnPaint(wxPaintEvent& event) {
 
 void PianoRollCtrl::OnMouse(wxMouseEvent& event) {
     wxPoint pos = event.GetPosition();
+
     if (event.LeftDown()) {
         if (pos.y >= m_whiteH) {
             // 底部滚动条: 点击滑块开始拖动, 否则跳转
@@ -363,7 +370,7 @@ void PianoRollCtrl::OnMouse(wxMouseEvent& event) {
             m_selectedNote = note;
             SetFocus();
             // #10: 记录选中提示, 供 Esc 取消时恢复
-            m_lastHint = wxString::FromUTF8("已选中,按下新键绑定该音符 (Esc 取消)");
+            m_lastHint = wxString::FromUTF8("已选中,按下新键绑定该音符 (可组合 Ctrl/Shift/Alt/鼠标键, Esc 取消)");
             if (onStatus) onStatus(m_lastHint);
             Refresh();
             Update();
@@ -433,10 +440,23 @@ void PianoRollCtrl::OnKeyDown(wxKeyEvent& event) {
     if (kc == WXK_SHIFT || kc == WXK_CONTROL || kc == WXK_ALT) { event.Skip(); return; }
 
     int vk = VkFromWx(kc);
-    int mods = event.GetModifiers();
+    // 位掩码修饰键: Ctrl=2 Shift=1 Alt=4, 可组合
     int modifier = 0;
-    if (mods & wxMOD_CONTROL) modifier = 2;    // 对齐 KeyManager: 2=Ctrl
-    else if (mods & wxMOD_SHIFT) modifier = 1; // 1=Shift
+    int mods = event.GetModifiers();
+    if (mods & wxMOD_CONTROL) modifier |= Util::kModCtrl;
+    if (mods & wxMOD_SHIFT) modifier |= Util::kModShift;
+    if (mods & wxMOD_ALT) modifier |= Util::kModAlt;
+    // 鼠标修饰键: 按住鼠标左/中/右键 + 按键盘主键 → 组合绑定
+    wxMouseState ms = wxGetMouseState();
+    if (ms.LeftIsDown()) modifier |= Util::kModMouseL;
+    if (ms.MiddleIsDown()) modifier |= Util::kModMouseM;
+    if (ms.RightIsDown()) modifier |= Util::kModMouseR;
+
+    BindKey(vk, modifier);
+}
+
+bool PianoRollCtrl::BindKey(int vk, int modifier) {
+    if (m_selectedNote < 0) return false;
 
     // #6: 检测重复键绑定(另一音符已用同一按键), 提示但不阻止
     // (引擎按 vk+hwnd 引用计数可正常处理同键多音)
@@ -453,10 +473,11 @@ void PianoRollCtrl::OnKeyDown(wxKeyEvent& event) {
     wxString msg = wxString::FromUTF8("已绑定: ") + VkName(vk, modifier);
     if (!dupNote.IsEmpty()) msg += wxString::FromUTF8(" (注意: 音符 ") + dupNote + wxString::FromUTF8(" 已使用该键)");
     if (onStatus) onStatus(msg);
-    m_lastHint = wxString::FromUTF8("点击琴键 → 按下新键即绑定 (Esc 取消/关闭)");
+    m_lastHint = wxString::FromUTF8("点击琴键 → 按下新键即绑定 (可组合 Ctrl/Shift/Alt/鼠标左中右, Esc 取消)");
     m_selectedNote = -1;
     Refresh();
     Update();
+    return true;
 }
 
 } // namespace UI

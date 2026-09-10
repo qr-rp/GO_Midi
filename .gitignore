@@ -1,6 +1,7 @@
 # Build directories
 build_mingw/
 build/
+build_next/
 cmake-build-*/
 out/
 
@@ -46,3 +47,4 @@ wxWidgets-*.tar.bz2
 # Tooling metadata
 .hermes/
 .omo/
+.codegraph/

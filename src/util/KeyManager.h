@@ -9,9 +9,25 @@
 
 namespace Util {
 
+    // 修饰键位掩码（可组合: Shift+Ctrl / Shift+Alt / 鼠标键+主键 ...）
+    enum : int {
+        kModNone    = 0,
+        kModShift   = 1,  ///< Shift
+        kModCtrl    = 2,  ///< Ctrl
+        kModAlt     = 4,  ///< Alt
+        kModMouseL  = 8,  ///< 鼠标左键（修饰键, 配合主键使用）
+        kModMouseM  = 16, ///< 鼠标中键
+        kModMouseR  = 32, ///< 鼠标右键
+    };
+
+    /// 修饰位中是否含鼠标键
+    inline bool has_mouse_mod(int modifier) {
+        return (modifier & (kModMouseL | kModMouseM | kModMouseR)) != 0;
+    }
+
     struct KeyMapping {
         int vk_code;
-        int modifier;  ///< 0: 无, 1: Shift, 2: Ctrl
+        int modifier;  ///< 位掩码: 1=Shift, 2=Ctrl, 4=Alt, 8=鼠标左, 16=鼠标中, 32=鼠标右 (0=无)
     };
 
     class KeyManager {

@@ -539,8 +539,9 @@ namespace Util
         out << " # 1. 每行定义一个音符映射，格式为: 音符(或音名) 分隔符 按键\n";
         out << " # 2. 音符表示法: 支持 MIDI 编号 (如 60) 或 音名 (如 C4, C#4, Eb4)\n";
         out << " # 3. 分隔符: 支持 冒号(:)、等号(=)、减号(-)、空格 或 全角符号(：、＝、－)\n";
-        out << " # 4. 修饰符: 在按键后加 '+' 表示 Shift，加 '-' 表示 Ctrl\n";
-        out << " # 5. 自由度: 所有的符号都不分全角/半角，且不区分大小写\n";
+        out << " # 4. 修饰符: 在按键后加 '+' 表示 Shift，加 '-' 表示 Ctrl，加 '*' 表示 Alt (可叠加, 如 q+- 表示 Ctrl+Shift+q)\n";
+        out << " # 5. 鼠标键: 用 LMB / MMB / RMB 表示 左/中/右键, 同样支持修饰符 (如 LMB* 表示 Alt+左键)\n";
+        out << " # 6. 自由度: 所有的符号都不分全角/半角，且不区分大小写\n";
         out << " #\n";
         out << " # [示例格式]\n";
         out << " #   60: z            (半角冒号)\n";
@@ -742,10 +743,19 @@ namespace Util
         if (it == rev.end())
             return "";
         std::string key = it->second;
-        if (modifier == 1)
+        // 修饰后缀(与 parse 一致): + = Shift, - = Ctrl, * = Alt, lmb/mmb/rmb = 鼠标左/中/右
+        if (modifier & kModShift)
             key += "+";
-        else if (modifier == 2)
+        if (modifier & kModCtrl)
             key += "-";
+        if (modifier & kModAlt)
+            key += "*";
+        if (modifier & kModMouseL)
+            key += "lmb";
+        if (modifier & kModMouseM)
+            key += "mmb";
+        if (modifier & kModMouseR)
+            key += "rmb";
         return key;
     }
 
@@ -756,18 +766,40 @@ namespace Util
             return false;
 
         modifier = 0;
-        if (s.size() > 1)
+        // 剥除所有修饰后缀(顺序无关): + = Shift, - = Ctrl, * = Alt, lmb/mmb/rmb = 鼠标
+        // 注意: 鼠标后缀是三字符, 要先于单字符后缀处理; 且必须给主键留至少 1 字符
+        bool popped = true;
+        while (popped && s.size() > 1)
         {
-            char last = s.back();
-            if (last == '+')
+            popped = false;
+            if (s.size() > 3)
             {
-                modifier = 1;
-                s.pop_back();
+                std::string tail3 = s.substr(s.size() - 3);
+                if (tail3 == "lmb") { modifier |= kModMouseL; s.resize(s.size() - 3); popped = true; }
+                else if (tail3 == "mmb") { modifier |= kModMouseM; s.resize(s.size() - 3); popped = true; }
+                else if (tail3 == "rmb") { modifier |= kModMouseR; s.resize(s.size() - 3); popped = true; }
             }
-            else if (last == '-')
+            if (!popped && s.size() > 1)
             {
-                modifier = 2;
-                s.pop_back();
+                char last = s.back();
+                if (last == '+')
+                {
+                    modifier |= kModShift;
+                    s.pop_back();
+                    popped = true;
+                }
+                else if (last == '-')
+                {
+                    modifier |= kModCtrl;
+                    s.pop_back();
+                    popped = true;
+                }
+                else if (last == '*')
+                {
+                    modifier |= kModAlt;
+                    s.pop_back();
+                    popped = true;
+                }
             }
         }
 
