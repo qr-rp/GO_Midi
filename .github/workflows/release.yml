@@ -65,7 +65,8 @@ jobs:
       run: |
         $tag = "${{ github.ref_name }}"
         $version = $tag -replace '^v', ''
-        $exeName = "GO_MIDI!_$version.exe"
+        # GitHub 会把 asset 名里的 ! 强制替换成 .（服务端行为，实测 API 直传也如此），用 - 代替
+        $exeName = "GO_MIDI-v$version.exe"
         # Ninja outputs to build/, MSBuild outputs to build/Release/
         $exePath = if (Test-Path "build\GO_MIDI!.exe") { "build\GO_MIDI!.exe" } else { "build\Release\GO_MIDI!.exe" }
         Copy-Item $exePath $exeName
