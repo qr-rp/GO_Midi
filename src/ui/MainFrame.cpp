@@ -581,7 +581,6 @@ wxPanel* MainFrame::CreateChannelConfig(wxPanel* parent, int index) {
     enableBtn->Bind(wxEVT_TOGGLEBUTTON, [this, index](wxCommandEvent& e) {
         // Toggle UI state
         bool enabled = e.IsChecked();
-        UpdateChannelUI(index, enabled);
         m_engine.set_channel_enable(index, enabled);
         RequestConfigSave(ConfigSaveKind::File);
     });
@@ -648,18 +647,15 @@ wxPanel* MainFrame::CreateChannelConfig(wxPanel* parent, int index) {
     // Initialize state
     bool initialEnable = (index == 0);
     enableBtn->SetValue(initialEnable);
-    UpdateChannelUI(index, initialEnable);
+    // 未启用通道也允许配置窗口/音轨/移调(播放中随时配好再启用 = 原子提交,
+    // 避免"启用但未选窗口"中间态全局发送)
     
     return panel;
 }
 
 void MainFrame::UpdateChannelUI(int index, bool enabled) {
-    if (index >= 0 && index < m_channelConfigs.size()) {
-        ChannelControls& c = m_channelConfigs[index];
-        c.windowChoice->Enable(enabled);
-        c.transposeCtrl->Enable(enabled);
-        c.trackChoice->Enable(enabled);
-    }
+    // 未启用通道也可配置(窗口/音轨/移调), 配置控件始终可用
+    // 设计: 先配好再启用 = 一次原子提交, 避免中间态全局发送
 }
 
 void MainFrame::InitKeymapPanel(wxPanel* parent, wxBoxSizer* mainSizer) {

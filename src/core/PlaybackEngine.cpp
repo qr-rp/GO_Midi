@@ -427,8 +427,12 @@ namespace Core
             if (m_channels[channel]->transpose != semitones)
             {
                 m_channels[channel]->transpose = semitones;
-                m_config_version++;
-                m_cv.notify_all();
+                // 未启用通道配置变化无需重建(不参与播放), 启用时 set_channel_enable 会触发
+                if (m_channels[channel]->enabled)
+                {
+                    m_config_version++;
+                    m_cv.notify_all();
+                }
             }
         }
         else
@@ -467,8 +471,11 @@ namespace Core
             if (m_channels[channel]->window_handle != hwnd)
             {
                 m_channels[channel]->window_handle = hwnd;
-                m_config_version++;
-                m_cv.notify_all();
+                if (m_channels[channel]->enabled)
+                {
+                    m_config_version++;
+                    m_cv.notify_all();
+                }
             }
         }
         else
@@ -487,8 +494,11 @@ namespace Core
             if (m_channels[channel]->track_index != track_index)
             {
                 m_channels[channel]->track_index = track_index;
-                m_config_version++;
-                m_cv.notify_all();
+                if (m_channels[channel]->enabled)
+                {
+                    m_config_version++;
+                    m_cv.notify_all();
+                }
             }
         }
         else
