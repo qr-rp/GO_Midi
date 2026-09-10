@@ -271,11 +271,11 @@ void PianoRollCtrl::OnPaint(wxPaintEvent& event) {
     dc.SetBackground(wxBrush(wxColour(0x10, 0x14, 0x1a)));
     dc.Clear();
 
-    // MSVC 下 wxFont small(smallSize, ...) 圆括号多参构造触发最烦人解析(C2628,
-    // 变量名被当类型声明解析; Widgets.cpp 用字面量能过), 大括号初始化彻底消除歧义
+    // MSVC 下变量名 small 撞 Windows SDK 宏(#define small char, windef.h 遗留),
+    // wxFont small{...} 展开为 wxFont char{...} → C2628; MinGW 不定义该宏所以能过
     int smallSize = FromDIP(8);
-    wxFont small{smallSize, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL};
-    dc.SetFont(small);
+    wxFont smallFont{smallSize, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL};
+    dc.SetFont(smallFont);
 
     const wxColour kSelBorder(0x4f, 0x8c, 0xff);
     const wxColour kWhite(0xf4, 0xf4, 0xf4);
