@@ -2626,14 +2626,9 @@ void MainFrame::LoadFileConfig(const wxString& filename) {
             m_engine.set_channel_track(c.channelIndex, -1);
         }
     }
-    
+
     if (hasConfig) {
         m_config->SetPath("/");
-    }
-
-    // Disable remaining channels (8-15) to match Python's 8-channel limit behavior
-    for (int i = 8; i < 16; ++i) {
-        m_engine.set_channel_enable(i, false);
     }
 
     // LOG("LoadFileConfig finished.");

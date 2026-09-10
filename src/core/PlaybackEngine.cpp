@@ -34,8 +34,8 @@ namespace Core
     {
         LOG_ENTRY();
 
-        // Initialize 16 channels
-        for (int i = 0; i < 16; ++i)
+        // Initialize 8 channels (UI 侧 8 个通道卡片, 对齐避免幽灵通道)
+        for (int i = 0; i < 8; ++i)
         {
             m_channels.push_back(std::make_unique<ChannelSettings>());
         }
@@ -422,7 +422,7 @@ namespace Core
         LOG_DEBUG("设置通道 " << channel << " 移调: " << semitones << " 半音");
 
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (channel >= 0 && channel < 16 && channel < m_channels.size())
+        if (channel >= 0 && channel < 8 && channel < m_channels.size())
         {
             if (m_channels[channel]->transpose != semitones)
             {
@@ -442,7 +442,7 @@ namespace Core
         LOG_DEBUG("设置通道 " << channel << " 启用状态: " << (enabled ? "启用" : "禁用"));
 
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (channel >= 0 && channel < 16 && channel < m_channels.size())
+        if (channel >= 0 && channel < 8 && channel < m_channels.size())
         {
             if (m_channels[channel]->enabled != enabled)
             {
@@ -462,7 +462,7 @@ namespace Core
         LOG_DEBUG("设置通道 " << channel << " 目标窗口: " << hwnd);
 
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (channel >= 0 && channel < 16 && channel < m_channels.size())
+        if (channel >= 0 && channel < 8 && channel < m_channels.size())
         {
             if (m_channels[channel]->window_handle != hwnd)
             {
@@ -482,7 +482,7 @@ namespace Core
         LOG_DEBUG("设置通道 " << channel << " 目标音轨: " << track_index);
 
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (channel >= 0 && channel < 16 && channel < m_channels.size())
+        if (channel >= 0 && channel < 8 && channel < m_channels.size())
         {
             if (m_channels[channel]->track_index != track_index)
             {
