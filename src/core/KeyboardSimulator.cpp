@@ -451,12 +451,13 @@ namespace Core
             }
         };
 
-        // 发送主键（按目标路由）
+        // 发送主键（按目标路由）: down=true 表示按下
+        // (post_key_msg/add_key_input 的参数都是 up 语义, 这里统一转换)
         auto emit_key = [&](void* target, int vk, bool down) {
             if (target)
-                post_key_msg(static_cast<HWND>(target), vk, down);
+                post_key_msg(static_cast<HWND>(target), vk, !down);
             else
-                add_key_input(vk, down);
+                add_key_input(vk, !down);
         };
 
         for (const auto& evt : events)
@@ -479,7 +480,7 @@ namespace Core
                 // ② 主键 down
                 // (重叠同主键音符已由 PlaybackEngine 冲突模块按 vk 截断为 legato,
                 //   这里不会收到同键重叠事件, 直接瞬时按下)
-                emit_key(target, evt.vk_code, false);
+                emit_key(target, evt.vk_code, true);
 
                 // ③ 修饰引用计数 +1
                 for (int bit : kAllModBits)
@@ -489,7 +490,7 @@ namespace Core
             else
             {
                 // ① 主键 up
-                emit_key(target, evt.vk_code, true);
+                emit_key(target, evt.vk_code, false);
 
                 // ② 修饰引用计数 -1，归零位物理释放（重复释放无害）
                 for (int bit : kAllModBits)

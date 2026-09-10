@@ -607,18 +607,8 @@ namespace Core
 
         for (auto *ch_config : active_configs)
         {
-            if (!ch_config->enabled)
-                continue;
-
-            // Fix: In playback mode with multiple channels, require explicit configuration
-            if (m_playing && active_configs.size() > 1)
-            {
-                if (ch_config->window_handle == nullptr && ch_config->track_index == -1)
-                {
-                    continue;
-                }
-            }
-
+            // active_configs 已只含 enabled 通道(default_global.enabled=true), 无需再查 enabled
+            // 无窗口通道不跳过: 设计意图"没选窗口=全局发送"
             ValidConfig vc;
             vc.settings = ch_config;
             vc.target_track = ch_config->track_index;
