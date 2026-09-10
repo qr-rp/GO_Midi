@@ -471,11 +471,14 @@ wxEND_EVENT_TABLE()
 ScrollingText::ScrollingText(wxWindow* parent, wxWindowID id, const wxString& text,
                              const wxPoint& pos, const wxSize& size)
     : wxControl(parent, id, pos, size, wxBORDER_NONE | wxFULL_REPAINT_ON_RESIZE),
-      m_text(text), m_offset(0.0), m_spacing(0.0), m_speed(0.5), m_fps(60),
+      m_text(text), m_offset(0.0), m_speed(0.5), m_fps(60),
       m_timer(this), m_delayTimer(this)
 {
     SetBackgroundStyle(wxBG_STYLE_PAINT);
     SetMinSize(FromDIP(wxSize(-1, 26)));
+    // 字体只在构造时设一次; 原来每次 CheckScrolling 都 SetFont,
+    // 会 InvalidateBestSize 触发 sizer 重排 → resize 反馈循环(卡顿主因之一)
+    SetFont(GetParent()->GetFont());
     
     // Bind timers using their specific IDs
     this->Bind(wxEVT_TIMER, &ScrollingText::OnTimer, this, m_timer.GetId());
@@ -501,22 +504,32 @@ wxString ScrollingText::GetLabel() const {
     return m_text;
 }
 
-void ScrollingText::CheckScrolling() {
-    wxClientDC dc(this);
-    wxFont font = GetParent()->GetFont();
-    SetFont(font);
-    dc.SetFont(font);
+void ScrollingText::MeasureText() {
+    // 仅当文本或字体变化时才测量(建 DC + GDI 字体测量是昂贵操作)
+    wxFont font = GetFont();
+    if (m_cachedForText == m_text && m_cachedForFont == font) return;
 
-    wxSize textSize = dc.GetTextExtent(m_text);
-    wxSize spaceSize = dc.GetTextExtent("    ");
-    m_spacing = spaceSize.GetWidth();
+    wxClientDC dc(this);
+    dc.SetFont(font);
+    m_cachedTextSize = dc.GetTextExtent(m_text);
+    m_cachedSpacing = dc.GetTextExtent("    ").GetWidth();
+    m_cachedForText = m_text;
+    m_cachedForFont = font;
+}
+
+void ScrollingText::CheckScrolling() {
+    MeasureText();
 
     int clientW = GetClientSize().GetWidth();
 
-    // Ensure min height
-    SetMinSize(FromDIP(wxSize(-1, textSize.GetHeight() + 4)));
+    // 只在最小高度变化时才 SetMinSize, 避免每次 size 事件都触发 sizer 重排(反馈循环)
+    int minH = m_cachedTextSize.GetHeight() + 4;
+    if (minH != m_lastMinHeight) {
+        m_lastMinHeight = minH;
+        SetMinSize(FromDIP(wxSize(-1, minH)));
+    }
 
-    if (textSize.GetWidth() > clientW && clientW > 10) {
+    if (m_cachedTextSize.GetWidth() > clientW && clientW > 10) {
         if (!m_timer.IsRunning() && !m_delayTimer.IsRunning()) {
             m_delayTimer.Start(1000, wxTIMER_ONE_SHOT);
         }
@@ -541,10 +554,9 @@ void ScrollingText::OnTimer(wxTimerEvent& event) {
 
     m_offset -= m_speed;
 
-    wxClientDC dc(this);
-    dc.SetFont(GetFont());
-    wxSize textSize = dc.GetTextExtent(m_text);
-    double totalW = textSize.GetWidth() + m_spacing;
+    // 用缓存的测量值, 避免每帧 GetTextExtent(60fps × 建 DC)
+    MeasureText();
+    double totalW = m_cachedTextSize.GetWidth() + m_cachedSpacing;
 
     if (m_offset <= -totalW) {
         m_offset += totalW;
@@ -563,7 +575,8 @@ void ScrollingText::OnPaint(wxPaintEvent& event) {
     dc.SetFont(GetFont());
     dc.SetTextForeground(GetForegroundColour());
 
-    wxSize textSize = dc.GetTextExtent(m_text);
+    MeasureText();
+    wxSize textSize = m_cachedTextSize;
     int clientW = GetClientSize().GetWidth();
     int clientH = GetClientSize().GetHeight();
     int y = (clientH - textSize.GetHeight()) / 2;
@@ -575,7 +588,7 @@ void ScrollingText::OnPaint(wxPaintEvent& event) {
         double x = m_offset;
         while (x < clientW) {
             dc.DrawText(m_text, (int)x, y);
-            x += textSize.GetWidth() + m_spacing;
+            x += textSize.GetWidth() + m_cachedSpacing;
         }
         
         dc.DestroyClippingRegion();

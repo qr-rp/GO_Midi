@@ -34,8 +34,8 @@ namespace Core
     {
         LOG_ENTRY();
 
-        // Initialize 16 channels
-        for (int i = 0; i < 16; ++i)
+        // Initialize 8 channels (UI 侧 8 个通道卡片, 对齐避免幽灵通道)
+        for (int i = 0; i < 8; ++i)
         {
             m_channels.push_back(std::make_unique<ChannelSettings>());
         }
@@ -304,6 +304,7 @@ namespace Core
         m_cv.notify_all();
 
         release_all_keys();
+        m_simulator.release_all_mods();
 
         LOG_INFO("播放暂停，当前时间=" << m_current_time << "s");
     }
@@ -323,6 +324,7 @@ namespace Core
         m_cv.notify_all();
 
         release_all_keys();
+        m_simulator.release_all_mods();
 
         // 额外的安全释放：释放常见修饰键以防卡住
         HWND foreground = GetForegroundWindow();
@@ -404,6 +406,7 @@ namespace Core
         m_cv.notify_all();
 
         release_all_keys();
+        m_simulator.release_all_mods();
 
         LOG_DEBUG("跳转完成，当前位置=" << m_current_time << "s");
     }
@@ -419,13 +422,17 @@ namespace Core
         LOG_DEBUG("设置通道 " << channel << " 移调: " << semitones << " 半音");
 
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (channel >= 0 && channel < 16 && channel < m_channels.size())
+        if (channel >= 0 && channel < 8 && channel < m_channels.size())
         {
             if (m_channels[channel]->transpose != semitones)
             {
                 m_channels[channel]->transpose = semitones;
-                m_config_version++;
-                m_cv.notify_all();
+                // 未启用通道配置变化无需重建(不参与播放), 启用时 set_channel_enable 会触发
+                if (m_channels[channel]->enabled)
+                {
+                    m_config_version++;
+                    m_cv.notify_all();
+                }
             }
         }
         else
@@ -439,7 +446,7 @@ namespace Core
         LOG_DEBUG("设置通道 " << channel << " 启用状态: " << (enabled ? "启用" : "禁用"));
 
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (channel >= 0 && channel < 16 && channel < m_channels.size())
+        if (channel >= 0 && channel < 8 && channel < m_channels.size())
         {
             if (m_channels[channel]->enabled != enabled)
             {
@@ -459,13 +466,16 @@ namespace Core
         LOG_DEBUG("设置通道 " << channel << " 目标窗口: " << hwnd);
 
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (channel >= 0 && channel < 16 && channel < m_channels.size())
+        if (channel >= 0 && channel < 8 && channel < m_channels.size())
         {
             if (m_channels[channel]->window_handle != hwnd)
             {
                 m_channels[channel]->window_handle = hwnd;
-                m_config_version++;
-                m_cv.notify_all();
+                if (m_channels[channel]->enabled)
+                {
+                    m_config_version++;
+                    m_cv.notify_all();
+                }
             }
         }
         else
@@ -479,13 +489,16 @@ namespace Core
         LOG_DEBUG("设置通道 " << channel << " 目标音轨: " << track_index);
 
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (channel >= 0 && channel < 16 && channel < m_channels.size())
+        if (channel >= 0 && channel < 8 && channel < m_channels.size())
         {
             if (m_channels[channel]->track_index != track_index)
             {
                 m_channels[channel]->track_index = track_index;
-                m_config_version++;
-                m_cv.notify_all();
+                if (m_channels[channel]->enabled)
+                {
+                    m_config_version++;
+                    m_cv.notify_all();
+                }
             }
         }
         else
@@ -604,18 +617,8 @@ namespace Core
 
         for (auto *ch_config : active_configs)
         {
-            if (!ch_config->enabled)
-                continue;
-
-            // Fix: In playback mode with multiple channels, require explicit configuration
-            if (m_playing && active_configs.size() > 1)
-            {
-                if (ch_config->window_handle == nullptr && ch_config->track_index == -1)
-                {
-                    continue;
-                }
-            }
-
+            // active_configs 已只含 enabled 通道(default_global.enabled=true), 无需再查 enabled
+            // 无窗口通道不跳过: 设计意图"没选窗口=全局发送"
             ValidConfig vc;
             vc.settings = ch_config;
             vc.target_track = ch_config->track_index;
@@ -764,7 +767,8 @@ namespace Core
 
                 int current_pitch = clamp_pitch(raw_pitch, m_min_pitch, m_max_pitch, vc.is_smart_transpose);
 
-                // Moved mapping to later stage
+                // 映射已提前到冲突处理之前(见下方 Key Mapping 阶段)：
+                // 冲突按最终 vk 分组，同键多音(不同 pitch 映射同一物理键)才能正确截断
 
                 notes.push_back({raw.start_s,
                                  raw.start_s + raw.duration,
@@ -782,16 +786,39 @@ namespace Core
 
         // Pre-allocate for On + Off events
         m_events.reserve(notes.size() * 2);
+
+        // ── 5. Key Mapping (提前到冲突处理之前: 冲突按最终 vk 分组) ──
+        int dropped_mapping_late = 0;
+        for (auto &note : notes)
+        {
+            if (note.end <= note.start)
+                continue; // Skip invalid notes
+
+            auto mapping = m_key_manager.get_mapping(note.pitch);
+            if (mapping.vk_code == 0)
+            {
+                dropped_mapping_late++;
+                note.end = note.start; // Mark as invalid
+                continue;
+            }
+            note.vk = mapping.vk_code;
+            note.modifier = mapping.modifier;
+        }
+
+        if (dropped_mapping_late > 0)
+        {
+            LOG_WARN("键位映射丢弃统计: 丢弃数量=" << dropped_mapping_late);
+        }
+
         {
             // Removed MIN_GAP to allow perfect legato (NoteOff at t, NoteOn at t)
             // Sorting ensures NoteOff comes before NoteOn at same timestamp.
 
-            // Helpers for conflict resolution
+            // Helpers for conflict resolution (按 vk 分组: 同一物理键同一时刻只能一个音符)
+            // 一个 pitch 只有一个映射 → 同 pitch 必然同 vk, vk 级冲突自动包含 pitch 级冲突;
+            // 同键多音(不同 pitch 映射到同一物理键)也在此统一处理, 语义与同音高 legato 一致。
             auto resolve = [&](TempNote *prev, TempNote *curr)
             {
-                if (prev->pitch != curr->pitch)
-                    return; // Only resolve same pitch
-
                 // 0. Exact overlap check
                 if (std::abs(prev->start - curr->start) < 1e-5 &&
                     std::abs(prev->end - prev->start - (curr->end - curr->start)) < 1e-5)
@@ -826,11 +853,15 @@ namespace Core
                            (std::hash<int>()(p.second) << 16);
                 }
             };
+            // 冲突分组键: (hwnd, vk) —— 同一物理键同一时刻只能一个音符
             std::unordered_map<std::pair<void*, int>, TempNote*, PairHash> active_notes_map;
 
             for (auto &curr : notes)
             {
-                auto key = std::make_pair(curr.hwnd, curr.pitch);
+                // 未映射或已无效的音符跳过(冲突只在真实物理键之间发生)
+                if (curr.vk == 0 || curr.end <= curr.start)
+                    continue;
+                auto key = std::make_pair(curr.hwnd, curr.vk);
                 auto it = active_notes_map.find(key);
 
                 if (it != active_notes_map.end())
@@ -845,7 +876,7 @@ namespace Core
             }
         }
 
-        // 4. Decompose Logic (Run last if enabled)
+        // ── 4. Decompose Logic (Run last if enabled) ──
         if (m_decompose)
         {
             const double CHORD_THRESHOLD = 0.03;
@@ -873,7 +904,10 @@ namespace Core
                 while (i < g.size())
                 {
                     size_t j = i + 1;
-                    while (j < g.size() && (g[j].start - g[i].start) < CHORD_THRESHOLD)
+                    // 同物理键的音符不算和弦：冲突处理已把它们截成 legato，
+                    // 分解再错开会制造空隙（如 0.02 结束 → 0.07 才按下）
+                    while (j < g.size() && (g[j].start - g[i].start) < CHORD_THRESHOLD
+                                        && g[j].vk != g[i].vk)
                     {
                         j++;
                     }
@@ -918,29 +952,6 @@ namespace Core
             }
 
             notes = std::move(mono_notes);
-        }
-
-        // 5. Key Mapping (Moved to end)
-        int dropped_mapping_late = 0;
-        for (auto &note : notes)
-        {
-            if (note.end <= note.start)
-                continue; // Skip invalid notes
-
-            auto mapping = m_key_manager.get_mapping(note.pitch);
-            if (mapping.vk_code == 0)
-            {
-                dropped_mapping_late++;
-                note.end = note.start; // Mark as invalid
-                continue;
-            }
-            note.vk = mapping.vk_code;
-            note.modifier = mapping.modifier;
-        }
-
-        if (dropped_mapping_late > 0)
-        {
-            LOG_WARN("键位映射丢弃统计: 丢弃数量=" << dropped_mapping_late);
         }
 
         // 6. Generate Events

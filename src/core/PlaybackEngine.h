@@ -32,7 +32,7 @@ namespace Core {
     /// 与 KeyboardSimulator 的 KeyInputEvent 同构，直接复用批量发送 API（A2）
     using KeyEvent = KeyInputEvent;
 
-    /// 通道设置 (0-15)
+    /// 通道设置 (0-7)
     struct ChannelSettings {
         std::atomic<int> transpose{0};
         std::atomic<bool> enabled{true};

@@ -20,6 +20,7 @@
 #include <random>
 
 #include "UIHelpers.h"
+#include "KeymapEditorDialog.h"
 #include "../core/PlaybackEngine.h"
 #include "Widgets.h"
 #include "PlaybackState.h"
@@ -49,13 +50,9 @@ enum {
     
     ID_PROGRESS_SLIDER,
     ID_SPEED_CTRL,
-    ID_MIN_PITCH_CTRL,
-    ID_MAX_PITCH_CTRL,
     
     ID_KEYMAP_CHOICE,
-    ID_LOAD_KEYMAP_BTN,
-    ID_SAVE_KEYMAP_BTN,
-    ID_DELETE_KEYMAP_BTN,
+    ID_KEYMAP_EDITOR_BTN,   // 打开键位编辑弹窗(钢琴卷)
     ID_SCHEDULE_BTN,
 
     
@@ -135,12 +132,9 @@ private:
     void OnABPointDrag(wxCommandEvent& event);
     
     void OnSpeedChange(wxSpinDoubleEvent& event);
-    void OnPitchRangeChange(wxSpinEvent& event);
     
     void OnKeymapChoice(wxCommandEvent& event);
-    void OnLoadKeymap(wxCommandEvent& event);
-    void OnSaveKeymap(wxCommandEvent& event);
-    void OnDeleteKeymap(wxCommandEvent& event);
+    void OnOpenKeymapEditor(wxCommandEvent& event);
     void OnSchedule(wxCommandEvent& event);
 
     // Custom event handlers
@@ -214,8 +208,12 @@ private:
     void LoadKeymapConfig();
     void SaveKeymapConfig();
     void UpdateKeymapChoice();
-    void LoadKeymapFile(const wxString& path);
+    void LoadKeymapScheme(const wxString& name);   // 从 config 读方案 map 到 KeyManager
+    long FindKeymapSchemeIndex(const wxString& name) const;  // 返回 -1 表示不存在
+    bool ReadKeymapSchemeMap(const wxString& name, std::map<int, Util::KeyMapping>& out) const; // 从 config 读方案 map
     void load_builtin_preset(int idx);
+    bool ReadSchemePitch(const wxString& name, int& minP, int& maxP) const;  // 读方案音域(空=FF14, @builtin_=燕云, 其他=自定义)
+    void ApplySchemePitch(const wxString& name);   // 应用方案音域到引擎+UI
     void LoadLastSelectedFile();
     void SaveLastSelectedFile();
     std::unique_ptr<wxConfigBase> m_config;
@@ -249,8 +247,6 @@ private:
     ModernSlider* m_progressSlider;
     
     wxSpinCtrlDouble* m_speedCtrl;
-    wxSpinCtrl* m_minPitchCtrl;
-    wxSpinCtrl* m_maxPitchCtrl;
     ScrollingText* m_currentFileLabel;
 
     // UI Members - Channels
@@ -258,14 +254,14 @@ private:
     
     // UI Members - Keymap & NTP
     wxChoice* m_keymapChoice;
-    wxButton* m_loadKeymapBtn;
-    wxButton* m_saveKeymapBtn;
-    wxButton* m_deleteKeymapBtn;
+    wxButton* m_keymapEditorBtn = nullptr;   // 打开钢琴卷键位编辑器
     wxStaticText* m_ntpLabel;
 
     // 键位映射管理
-    std::vector<wxString> m_keymapFiles;  // 存储导入的键位映射文件路径
-    wxString m_currentKeymapPath;          // 当前使用的键位映射文件路径（空表示使用内置 FF14）
+    std::vector<wxString> m_keymapFiles;  // 自定义键位方案名列表(数据存 config /KeymapSchemes)
+    wxString m_currentKeymapPath;          // 当前方案标识（空=内置FF14, @builtin_N=内置预设, 或方案名）
+    int m_minPitch = 48;                   // 当前方案音域(跟方案走)
+    int m_maxPitch = 84;
     wxSpinCtrl* m_schedMin;
     wxSpinCtrl* m_schedSec;
     wxButton* m_scheduleBtn;
