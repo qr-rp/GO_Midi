@@ -101,10 +101,9 @@ jobs:
         Set-Content -Path "$env:RUNNER_TEMP\release_body.md" -Value $bodyText
 
     - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: ${{ steps.prepare.outputs.exe_name }}
-        body_path: ${{ runner.temp }}\release_body.md
-        prerelease: false
+      shell: pwsh
+      # 用 gh CLI 替代 softprops/action-gh-release —— 后者会把文件名里的 ! 吞成 .（glob/转义处理）
+      run: |
+        gh release create "${{ github.ref_name }}" "${{ steps.prepare.outputs.exe_name }}" --title "${{ github.ref_name }}" --notes-file "$env:RUNNER_TEMP\release_body.md"
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
