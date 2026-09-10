@@ -598,8 +598,28 @@ namespace Core
             default_global.enabled = true;
             default_global.track_index = -1;
             default_global.transpose = 0;
-            default_global.window_handle = nullptr;
+            // 用户配置过任意窗口时, 取第一个已配置窗口(选了目标窗口就不该全局发送)
+            for (const auto& ch : m_channels)
+            {
+                if (ch->window_handle.load())
+                {
+                    default_global.window_handle = ch->window_handle.load();
+                    break;
+                }
+            }
             active_configs.push_back(&default_global);
+        }
+
+        // 指定目标模式: 用户配置过任意窗口 → 未选窗口的通道一律跳过, 绝不全局发送
+        // (选窗口的通道未启用 / 启用通道没选窗口 都曾导致按键全局发送)
+        bool any_window_configured = false;
+        for (const auto& ch : m_channels)
+        {
+            if (ch->window_handle.load())
+            {
+                any_window_configured = true;
+                break;
+            }
         }
 
         // 即用即走：配置快照作为局部变量
@@ -608,6 +628,9 @@ namespace Core
         for (auto *ch_config : active_configs)
         {
             if (!ch_config->enabled)
+                continue;
+
+            if (any_window_configured && ch_config->window_handle == nullptr)
                 continue;
 
             // Fix: In playback mode with multiple channels, require explicit configuration
@@ -625,6 +648,25 @@ namespace Core
             vc.is_specific_track = (vc.target_track != -1);
             vc.is_smart_transpose = (ch_config->transpose == 0);
             valid_configs.push_back(vc);
+        }
+
+        // 指定目标模式兜底: 用户配置过窗口, 但有效通道全被过滤(如选窗口的通道未启用)
+        // → 用第一个配置过窗口的通道, 保证"选了目标窗口就发到窗口"而非静默或无目标发送
+        if (valid_configs.empty() && any_window_configured)
+        {
+            for (auto& ch : m_channels)
+            {
+                if (ch->window_handle.load())
+                {
+                    ValidConfig vc;
+                    vc.settings = ch.get();
+                    vc.target_track = ch->track_index;
+                    vc.is_specific_track = (vc.target_track != -1);
+                    vc.is_smart_transpose = (ch->transpose == 0);
+                    valid_configs.push_back(vc);
+                    break;
+                }
+            }
         }
 
         // 优化：使用栈数组替代 vector，消除堆分配
