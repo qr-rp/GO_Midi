@@ -29,8 +29,8 @@ namespace Core {
         /// 批量发送按键（A2 优化）：
         /// - 无目标窗口的按键合并为单次 SendInput（减少系统调用，消除同帧按键错位）
         /// - 有目标窗口的按键保持逐键 PostMessage 语义
-        /// - 修饰键与主键同生命周期：Note On 按下修饰保持，Note Off 随引用计数归零释放；
-        ///   中途出现不同修饰（含无修饰）的 Note On 时先释放旧修饰再按新修饰，避免干扰
+        /// - 修饰键为瞬时包裹：Note On 先按修饰、再按主键、随即释放修饰；
+        ///   Note Off 释放主键并再次释放修饰（安全措施）。修饰不在音符间保持
         void send_key_events(const std::vector<KeyInputEvent>& events);
 
         /// 批量释放按键（按窗口分组，比逐个 send_key_up 更高效）
@@ -51,10 +51,10 @@ namespace Core {
     private:
         void send_input(int vk_code, int modifier, bool key_up);
 
-        /// 延迟释放修饰键状态（按目标窗口分组; nullptr 目标用 0 键）
+        /// 修饰键物理状态（按目标窗口分组; nullptr 目标用 0 键）
+        /// 瞬时包裹下 held 只在单个音符的包裹内非零, 用于鼠标消息携带的键盘修饰状态
         struct ModState {
             int held = 0;                          ///< 当前物理按住的修饰位
-            int refs[6] = {0, 0, 0, 0, 0, 0};      ///< 每个修饰位的活跃音符引用计数
         };
         std::unordered_map<void*, ModState> m_mod_state;
     };
