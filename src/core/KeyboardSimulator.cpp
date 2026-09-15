@@ -321,22 +321,7 @@ namespace Core
         return 0;
     }
 
-    // 修饰位 → 引用计数索引（0..5）
-    static int ModBitIndex(int modbit)
-    {
-        switch (modbit)
-        {
-            case Util::kModShift:   return 0;
-            case Util::kModCtrl:    return 1;
-            case Util::kModAlt:     return 2;
-            case Util::kModMouseL:  return 3;
-            case Util::kModMouseM:  return 4;
-            case Util::kModMouseR:  return 5;
-        }
-        return 0;
-    }
-
-    // 全部修饰位（枚举顺序与 ModBitIndex 对应）
+    // 全部修饰位（键鼠）
     static const int kAllModBits[6] = {
         Util::kModShift, Util::kModCtrl, Util::kModAlt,
         Util::kModMouseL, Util::kModMouseM, Util::kModMouseR
@@ -465,47 +450,37 @@ namespace Core
             void* target = evt.window_handle;
             ModState& st = m_mod_state[target];
 
-            if (evt.is_note_on)
-            {
-                // ① 切换修饰：释放 held 中不在 modifier 的位，按下 modifier 中不在 held 的位
-                int release = st.held & ~evt.modifier;
-                int press   = evt.modifier & ~st.held;
-                for (int bit : kAllModBits)
-                {
-                    if (release & bit) emit_mod(target, bit, false);  // up
-                    if (press   & bit) emit_mod(target, bit, true);   // down
-                }
-                st.held = evt.modifier;
-
-                // ② 主键 down
-                // (重叠同主键音符已由 PlaybackEngine 冲突模块按 vk 截断为 legato,
-                //   这里不会收到同键重叠事件, 直接瞬时按下)
-                emit_key(target, evt.vk_code, true);
-
-                // ③ 修饰引用计数 +1
-                for (int bit : kAllModBits)
-                    if (evt.modifier & bit)
-                        st.refs[ModBitIndex(bit)]++;
-            }
-            else
-            {
-                // ① 主键 up
-                emit_key(target, evt.vk_code, false);
-
-                // ② 修饰引用计数 -1，归零位物理释放（重复释放无害）
+            // 按下/抬起本音符用到的全部修饰位（位掩码: Shift/Ctrl/Alt/鼠标左中右）
+            auto emit_mods = [&](bool down) {
                 for (int bit : kAllModBits)
                 {
                     if (!(evt.modifier & bit))
                         continue;
-                    int& ref = st.refs[ModBitIndex(bit)];
-                    if (ref > 0)
-                        ref--;
-                    if (ref == 0 && (st.held & bit))
-                    {
-                        emit_mod(target, bit, false);  // up
+                    if (down)
+                        st.held |= bit;
+                    else
                         st.held &= ~bit;
-                    }
+                    emit_mod(target, bit, down);
                 }
+            };
+
+            if (evt.is_note_on)
+            {
+                // 瞬时策略：① 按下修饰 → ② 主键 down → ③ 立即释放修饰
+                emit_mods(true);
+
+                // (重叠同主键音符已由 PlaybackEngine 冲突模块按 vk 截断为 legato,
+                //   这里不会收到同键重叠事件, 直接瞬时按下)
+                emit_key(target, evt.vk_code, true);
+
+                emit_mods(false);
+            }
+            else
+            {
+                // 主键 up；同时释放修饰（安全措施，重复释放无害）
+                emit_key(target, evt.vk_code, false);
+
+                emit_mods(false);
             }
         }
 
