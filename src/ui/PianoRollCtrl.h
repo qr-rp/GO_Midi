@@ -79,6 +79,10 @@ private:
     void OnPaint(wxPaintEvent& event);
     void OnMouse(wxMouseEvent& event);
     void OnKeyDown(wxKeyEvent& event);
+    void OnCharHook(wxKeyEvent& event);
+
+    /// 提取 Ctrl/Shift/Alt + 鼠标键位掩码
+    int CurrentModifier(const wxKeyEvent& event) const;
 
     /// 将 vk+modifier 绑定到当前选中音符（含重复键检测提示）, 返回绑定是否完成
     bool BindKey(int vk, int modifier);
