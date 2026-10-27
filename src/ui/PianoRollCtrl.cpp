@@ -5,6 +5,7 @@
 #include <wx/settings.h>
 
 #include <windows.h>  // VK_* 常量
+#include <imm.h>      // ImmAssociateContext: 键位捕获时禁用输入法
 
 namespace UI {
 
@@ -17,6 +18,7 @@ wxBEGIN_EVENT_TABLE(PianoRollCtrl, wxWindow)
     EVT_MOTION(PianoRollCtrl::OnMouseMove)
     EVT_MOUSEWHEEL(PianoRollCtrl::OnMouseWheel)
     EVT_KEY_DOWN(PianoRollCtrl::OnKeyDown)
+    EVT_CHAR_HOOK(PianoRollCtrl::OnCharHook)
 wxEND_EVENT_TABLE()
 
 PianoRollCtrl::PianoRollCtrl(wxWindow* parent, int minPitch, int maxPitch)
@@ -27,6 +29,10 @@ PianoRollCtrl::PianoRollCtrl(wxWindow* parent, int minPitch, int maxPitch)
       m_displayMin(minPitch), m_displayMax(maxPitch),
       m_viewW(FromDIP(700)) {
     SetBackgroundStyle(wxBG_STYLE_PAINT);
+    // 键位捕获必须拿到物理按键: 输入法激活时数字/字母键会先变成 VK_PROCESSKEY,
+    // wxKeyEvent::GetKeyCode() 返回 WXK_NONE(0), 导致所有键都被绑定成"键0".
+    // 该控件只做按键采集, 不需要文本输入, 直接解除输入法上下文.
+    ImmAssociateContext(static_cast<HWND>(GetHWND()), nullptr);
     m_lastHint = wxString::FromUTF8("点击琴键 → 按下新键即绑定 (可组合 Ctrl/Shift/Alt/鼠标左中右, Esc 取消)");
     SetMinSize(wxSize(m_viewW, m_whiteH));
     SetFocus();
@@ -235,11 +241,11 @@ int PianoRollCtrl::VkFromWx(int kc) const {
     }
     switch (kc) {
         case WXK_SPACE: return VK_SPACE;
-        case WXK_RETURN: return VK_RETURN;
+        case WXK_RETURN: case WXK_NUMPAD_ENTER: return VK_RETURN;
         case WXK_TAB: return VK_TAB;
         case WXK_BACK: return VK_BACK;
         case WXK_ESCAPE: return VK_ESCAPE;
-        case WXK_DELETE: return VK_DELETE;
+        case WXK_DELETE: case WXK_NUMPAD_DELETE: return VK_DELETE;
         case WXK_INSERT: return VK_INSERT;
         case WXK_HOME: return VK_HOME;
         case WXK_END: return VK_END;
@@ -432,6 +438,9 @@ void PianoRollCtrl::OnKeyDown(wxKeyEvent& event) {
     if (m_selectedNote < 0) { event.Skip(); return; }
 
     int kc = event.GetKeyCode();
+    // 无真实键码的事件(如输入法 VK_PROCESSKEY)不能绑定, 否则会记成"键0";
+    // 直接放行等待真正的按键事件, 且不要清除当前选中的琴键.
+    if (kc == WXK_NONE) { event.Skip(); return; }
     if (kc == WXK_ESCAPE) {
         m_selectedNote = -1;
         if (onStatus) onStatus(m_lastHint);
@@ -444,6 +453,27 @@ void PianoRollCtrl::OnKeyDown(wxKeyEvent& event) {
 
     int vk = VkFromWx(kc);
     // 位掩码修饰键: Ctrl=2 Shift=1 Alt=4, 可组合
+    int modifier = CurrentModifier(event);
+
+    BindKey(vk, modifier);
+}
+
+void PianoRollCtrl::OnCharHook(wxKeyEvent& event) {
+    // 对话框的默认按钮处理会吞掉 Enter, 这里在 CHAR_HOOK 阶段截获回车/删除.
+    // 只接管这两个键, 不影响 Tab/方向键的对话框导航.
+    if (m_selectedNote >= 0) {
+        int kc = event.GetKeyCode();
+        if (kc == WXK_RETURN || kc == WXK_NUMPAD_ENTER ||
+            kc == WXK_DELETE || kc == WXK_NUMPAD_DELETE) {
+            BindKey(VkFromWx(kc), CurrentModifier(event));
+            return;
+        }
+    }
+    event.Skip();
+}
+
+int PianoRollCtrl::CurrentModifier(const wxKeyEvent& event) const {
+    // 位掩码修饰键: Ctrl=2 Shift=1 Alt=4, 可组合
     int modifier = 0;
     int mods = event.GetModifiers();
     if (mods & wxMOD_CONTROL) modifier |= Util::kModCtrl;
@@ -454,12 +484,13 @@ void PianoRollCtrl::OnKeyDown(wxKeyEvent& event) {
     if (ms.LeftIsDown()) modifier |= Util::kModMouseL;
     if (ms.MiddleIsDown()) modifier |= Util::kModMouseM;
     if (ms.RightIsDown()) modifier |= Util::kModMouseR;
-
-    BindKey(vk, modifier);
+    return modifier;
 }
 
 bool PianoRollCtrl::BindKey(int vk, int modifier) {
     if (m_selectedNote < 0) return false;
+    // 0 不是合法虚拟键码, 防御性拦截(避免把无效键写进键位映射)
+    if (vk <= 0) return false;
 
     // #6: 检测重复键绑定(另一音符已用同一按键), 提示但不阻止
     // (引擎按 vk+hwnd 引用计数可正常处理同键多音)
