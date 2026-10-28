@@ -488,7 +488,7 @@ namespace Core
         configure_playback_thread();
 
         size_t next_event_idx = 0;
-        auto last_loop_time = std::chrono::high_resolution_clock::now();
+        auto last_loop_time = std::chrono::steady_clock::now();
 
         while (m_running)
         {
@@ -507,7 +507,7 @@ namespace Core
             while (m_running && (!m_playing || m_paused))
             {
                 m_cv.wait(lock);
-                last_loop_time = std::chrono::high_resolution_clock::now();
+                last_loop_time = std::chrono::steady_clock::now();
 
                 // If seeked/unpaused, update index
                 if (m_config_version != m_built_version)
@@ -526,13 +526,13 @@ namespace Core
                 m_seek_triggered = false;
                 next_event_idx = event_index_at_or_after(m_current_time.load());
                 // 重置计时器，避免 seek 后 m_current_time 多跳一个 dt
-                last_loop_time = std::chrono::high_resolution_clock::now();
+                last_loop_time = std::chrono::steady_clock::now();
             }
 
             // Lock is still held here
 
             // Playback Logic
-            auto now = std::chrono::high_resolution_clock::now();
+            auto now = std::chrono::steady_clock::now();
             std::chrono::duration<double> dt = now - last_loop_time;
             last_loop_time = now;
 
