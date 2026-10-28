@@ -114,4 +114,11 @@ private:
     const std::map<int, Util::KeyMapping>& map,
     int min_pitch, int max_pitch);
 
+/// 查找下一个可编辑音符。
+/// anchor < 0 时从可见范围边界开始, 否则从锚点按 direction 搜索。
+[[nodiscard]] std::optional<int> find_next_navigation_note(
+    int anchor, int direction,
+    int display_min, int display_max,
+    const PianoPitchRange& editable_range);
+
 } // namespace UI

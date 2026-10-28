@@ -226,4 +226,28 @@ PianoRollBindingAnalysis analyze_key_bindings(
     return result;
 }
 
+std::optional<int> find_next_navigation_note(
+    int anchor, int direction,
+    int display_min, int display_max,
+    const PianoPitchRange& editable_range)
+{
+    if (direction == 0 || display_min > display_max)
+        return std::nullopt;
+
+    const int step = direction > 0 ? 1 : -1;
+    int note = anchor + step;
+    if (anchor < 0) {
+        if (direction > 0)
+            note = display_min;
+        else
+            note = display_max;
+    }
+    while (note >= display_min && note <= display_max) {
+        if (editable_range.contains(note))
+            return note;
+        note += step;
+    }
+    return std::nullopt;
+}
+
 } // namespace UI

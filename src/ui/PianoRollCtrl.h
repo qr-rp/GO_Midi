@@ -31,6 +31,7 @@ private:
     PianoRollBindingAnalysis m_analysis;
     PianoRollEditHistory m_history;
     int m_selectedNote = -1;   // 当前选中等待绑定
+    int m_navigationAnchor = -1;
     int m_hoverNote = -1;
     int m_mouseModifier = 0;
     wxString m_lastHint;
@@ -64,7 +65,6 @@ private:
     void OnPaint(wxPaintEvent& event);
     void PaintKeys(wxDC& dc, bool paint_black);
     void PaintKey(wxDC& dc, int note);
-    void PaintKeyLabels(wxDC& dc, const wxRect& rect, int note, bool in_range);
     void PaintScrollBar(wxDC& dc);
     void OnMouse(wxMouseEvent& event);
     void HandlePrimaryDown(const wxPoint& pos);

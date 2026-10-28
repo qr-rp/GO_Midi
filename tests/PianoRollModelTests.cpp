@@ -131,6 +131,50 @@ namespace {
                "reset should clear both history stacks");
     }
 
+    void test_navigation_continues_from_anchor_and_skips_disabled_notes()
+    {
+        const UI::PianoPitchRange editable{60, 63};
+        const auto right = UI::find_next_navigation_note(
+            60, 1, 48, 83, editable);
+        const auto left = UI::find_next_navigation_note(
+            61, -1, 48, 83, editable);
+        const auto first = UI::find_next_navigation_note(
+            -1, 1, 48, 83, editable);
+        const auto end = UI::find_next_navigation_note(
+            63, 1, 48, 83, editable);
+
+        expect(right == 61, "right navigation should continue from the anchor");
+        expect(left == 60, "left navigation should continue from the anchor");
+        expect(first == 60, "first navigation should skip notes outside the editable range");
+        expect(!end.has_value(), "navigation should stop at the editable boundary");
+    }
+
+    void verify_layout_range(int min_note, int max_note)
+    {
+        const auto layout = make_layout(min_note, max_note);
+        std::set<int> white_positions;
+        std::set<int> black_positions;
+        for (int note = min_note; note <= max_note; ++note) {
+            const auto key = layout.key_geometry(note);
+            expect(key.width > 0 && key.height > 0,
+                   "every visible note should have positive key geometry");
+            auto& positions = key.black ? black_positions : white_positions;
+            expect(positions.insert(key.x).second,
+                   "keys of the same colour should not share an x position");
+            const int hit_y = key.black ? key.height / 2 : key.height - 1;
+            expect(layout.hit_test(key.x + key.width / 2, hit_y) == note,
+                   "the centre of every visible key should hit that key");
+        }
+    }
+
+    void test_layout_properties()
+    {
+        for (int min_note = 0; min_note < 128; ++min_note) {
+            for (int max_note = min_note; max_note < 128; ++max_note)
+                verify_layout_range(min_note, max_note);
+        }
+    }
+
 } // namespace
 
 int main()
@@ -140,6 +184,8 @@ int main()
     test_conflict_analysis_distinguishes_identity_modes();
     test_analysis_ignores_invalid_vk();
     test_edit_history_roundtrip();
+    test_navigation_continues_from_anchor_and_skips_disabled_notes();
+    test_layout_properties();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " test(s) failed\n";

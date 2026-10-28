@@ -108,16 +108,92 @@ namespace {
         return fitted + ellipsis;
     }
 
-    wxColour key_label_colour(bool in_range, bool black,
-                              bool logical, bool physical)
+    struct KeyColours {
+        wxColour border;
+        wxColour fill;
+        wxColour note_text;
+        wxColour key_text;
+    };
+
+    struct KeyPaintState {
+        bool selected;
+        bool black;
+        bool in_range;
+        bool logical;
+        bool physical;
+    };
+
+    struct KeyLabels {
+        wxString note;
+        wxString binding;
+        wxColour note_colour;
+        wxColour key_colour;
+    };
+
+    int fill_state(bool selected, bool in_range)
     {
-        if (!in_range)
-            return black ? wxColour(0xa0, 0x5a, 0x5a) : wxColour(0x8a, 0x4a, 0x4a);
-        if (physical)
-            return wxColour(0xe0, 0x6a, 0x6a);
-        if (logical)
-            return wxColour(0xd6, 0xa5, 0x45);
-        return black ? wxColour(0xff, 0x9a, 0x9a) : wxColour(0xd0, 0x5a, 0x5a);
+        if (selected) return 2;
+        if (!in_range) return 1;
+        return 0;
+    }
+
+    int key_text_state(bool in_range, bool logical, bool physical)
+    {
+        if (!in_range) return 0;
+        if (physical) return 1;
+        if (logical) return 2;
+        return 3;
+    }
+
+    KeyColours key_colours(const KeyPaintState& state)
+    {
+        static const wxColour kWhiteBorder(0x3a, 0x42, 0x52);
+        static const wxColour kBlackBorder(0x55, 0x5c, 0x6a);
+        static const wxColour kFill[3][2] = {
+            {wxColour(0xf4, 0xf4, 0xf4), wxColour(0x1a, 0x1a, 0x1e)},
+            {wxColour(0x2e, 0x34, 0x3e), wxColour(0x14, 0x17, 0x1c)},
+            {wxColour(0xcf, 0xe0, 0xff), wxColour(0x3a, 0x55, 0x8a)}
+        };
+        static const wxColour kNoteText[2][2] = {
+            {wxColour(0x5c, 0x64, 0x72), wxColour(0x30, 0x36, 0x42)},
+            {wxColour(0x6a, 0x72, 0x80), wxColour(0xcc, 0xd2, 0xdc)}
+        };
+        static const wxColour kKeyText[4][2] = {
+            {wxColour(0x8a, 0x4a, 0x4a), wxColour(0xa0, 0x5a, 0x5a)},
+            {wxColour(0xe0, 0x6a, 0x6a), wxColour(0xe0, 0x6a, 0x6a)},
+            {wxColour(0xd6, 0xa5, 0x45), wxColour(0xd6, 0xa5, 0x45)},
+            {wxColour(0xd0, 0x5a, 0x5a), wxColour(0xff, 0x9a, 0x9a)}
+        };
+
+        const int colour = state.black ? 1 : 0;
+        wxColour border;
+        if (state.selected)
+            border = wxColour(0x4f, 0x8c, 0xff);
+        else if (state.black)
+            border = kBlackBorder;
+        else
+            border = kWhiteBorder;
+        return {
+            border,
+            kFill[fill_state(state.selected, state.in_range)][colour],
+            kNoteText[colour][state.in_range ? 1 : 0],
+            kKeyText[key_text_state(
+                state.in_range, state.logical, state.physical)][colour]
+        };
+    }
+
+    void paint_key_labels(wxDC& dc, const wxRect& rect, bool black,
+                          const KeyLabels& labels)
+    {
+        const int label_width = std::max(0, rect.width - 4);
+        dc.SetTextForeground(labels.note_colour);
+        dc.DrawText(fit_label(dc, labels.note, label_width), rect.x + 2, rect.y + 3);
+        if (labels.binding.IsEmpty())
+            return;
+
+        dc.SetTextForeground(labels.key_colour);
+        const int key_y = rect.y + rect.height - (black ? 13 : 14);
+        dc.DrawText(fit_label(dc, labels.binding, label_width), rect.x + 2, key_y);
     }
 
     int required_control_height(int content_width, int view_width,
@@ -232,6 +308,7 @@ void PianoRollCtrl::SetMap(const std::map<int, Util::KeyMapping>& map) {
     m_history.reset();
     m_mouseModifier = 0;
     m_selectedNote = -1;
+    m_navigationAnchor = -1;
     RecalcDisplayRange();
     UpdateSize();
 }
@@ -241,6 +318,7 @@ void PianoRollCtrl::SetPitchRange(int minPitch, int maxPitch) {
     if (m_pitch_range.min_pitch > m_pitch_range.max_pitch)
         std::swap(m_pitch_range.min_pitch, m_pitch_range.max_pitch);
     m_selectedNote = -1;
+    m_navigationAnchor = -1;
     RecalcDisplayRange();
     UpdateSize();
 }
@@ -386,38 +464,17 @@ void PianoRollCtrl::PaintKey(wxDC& dc, int note) {
     const wxRect rect(key.x - m_scrollX, key.y, key.width, key.height);
     const bool in = InAudioRange(note);
     const bool selected = note == m_selectedNote;
-    const wxColour border = selected
-        ? wxColour(0x4f, 0x8c, 0xff)
-        : (key.black ? wxColour(0x55, 0x5c, 0x6a) : wxColour(0x3a, 0x42, 0x52));
-    const wxColour fill = selected
-        ? (key.black ? wxColour(0x3a, 0x55, 0x8a) : wxColour(0xcf, 0xe0, 0xff))
-        : (in
-            ? (key.black ? wxColour(0x1a, 0x1a, 0x1e) : wxColour(0xf4, 0xf4, 0xf4))
-            : (key.black ? wxColour(0x14, 0x17, 0x1c) : wxColour(0x2e, 0x34, 0x3e)));
-    dc.SetPen(wxPen(border, selected ? 2 : 1));
-    dc.SetBrush(wxBrush(fill));
-    dc.DrawRectangle(rect);
-    PaintKeyLabels(dc, rect, note, in);
-}
-
-void PianoRollCtrl::PaintKeyLabels(wxDC& dc, const wxRect& rect, int note, bool in_range) {
-    const auto key = m_layout.key_geometry(note);
-    const wxColour note_colour = key.black
-        ? (in_range ? wxColour(0xcc, 0xd2, 0xdc) : wxColour(0x6a, 0x72, 0x80))
-        : (in_range ? wxColour(0x30, 0x36, 0x42) : wxColour(0x5c, 0x64, 0x72));
-    const int label_width = std::max(0, rect.width - 4);
-    dc.SetTextForeground(note_colour);
-    dc.DrawText(fit_label(dc, note_label(note), label_width), rect.x + 2, rect.y + 3);
-
-    const wxString key_label = CompactKeyLabel(note);
-    if (key_label.IsEmpty())
-        return;
-
     const bool logical = m_analysis.logical_duplicates.contains(note);
     const bool physical = m_analysis.physical_conflicts.contains(note);
-    dc.SetTextForeground(key_label_colour(in_range, key.black, logical, physical));
-    const int key_y = rect.y + rect.height - (key.black ? 13 : 14);
-    dc.DrawText(fit_label(dc, key_label, label_width), rect.x + 2, key_y);
+    const auto colours = key_colours({
+        selected, key.black, in, logical, physical
+    });
+    dc.SetPen(wxPen(colours.border, selected ? 2 : 1));
+    dc.SetBrush(wxBrush(colours.fill));
+    dc.DrawRectangle(rect);
+    paint_key_labels(dc, rect, key.black, {
+        note_label(note), CompactKeyLabel(note), colours.note_text, colours.key_text
+    });
 }
 
 void PianoRollCtrl::PaintScrollBar(wxDC& dc) {
@@ -508,6 +565,7 @@ void PianoRollCtrl::HandlePrimaryDown(const wxPoint& pos) {
         return;
     if (!InAudioRange(note)) {
         m_selectedNote = -1;
+        m_navigationAnchor = note;
         if (onStatus)
             onStatus(wxString::FromUTF8("该音符在目标音域外, 请先扩展音域再绑定"));
         Refresh();
@@ -601,6 +659,7 @@ void PianoRollCtrl::SelectNote(int note) {
     }
 
     m_selectedNote = note;
+    m_navigationAnchor = note;
     SetFocus();
     m_lastHint = wxString::FromUTF8(
         "已选中音符, 按下新键绑定 · 鼠标键可作修饰 · Esc 取消");
@@ -614,13 +673,12 @@ void PianoRollCtrl::SelectNote(int note) {
 void PianoRollCtrl::MoveSelection(int direction) {
     if (direction == 0)
         return;
-    int note = direction > 0 ? m_layout.display_min() : m_layout.display_max();
-    while (m_layout.contains(note)) {
-        if (InAudioRange(note)) {
-            SelectNote(note);
-            return;
-        }
-        note += direction;
+    const auto note = find_next_navigation_note(
+        m_navigationAnchor, direction,
+        m_layout.display_min(), m_layout.display_max(), m_pitch_range);
+    if (note) {
+        SelectNote(*note);
+        return;
     }
     if (onStatus)
         onStatus(wxString::FromUTF8("当前音域内没有可选择音符"));
