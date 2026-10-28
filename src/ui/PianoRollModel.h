@@ -2,7 +2,9 @@
 
 #include <array>
 #include <map>
+#include <optional>
 #include <set>
+#include <vector>
 
 #include "../util/KeyManager.h"
 
@@ -22,6 +24,41 @@ struct PianoRollBindingAnalysis {
     std::set<int> logical_duplicates;
     std::set<int> physical_conflicts;
     std::set<int> out_of_range;
+};
+
+struct PianoPitchRange {
+    int min_pitch = 0;
+    int max_pitch = 127;
+
+    [[nodiscard]] bool contains(int note) const
+    {
+        return note >= min_pitch && note <= max_pitch;
+    }
+};
+
+/// 键位编辑撤销/重做快照。记录的是操作前/后的完整映射, 最多保留 64 步。
+class PianoRollEditHistory {
+public:
+    void reset();
+    void record(const std::map<int, Util::KeyMapping>& current);
+    [[nodiscard]] std::optional<std::map<int, Util::KeyMapping>> undo(
+        const std::map<int, Util::KeyMapping>& current);
+    [[nodiscard]] std::optional<std::map<int, Util::KeyMapping>> redo(
+        const std::map<int, Util::KeyMapping>& current);
+
+    [[nodiscard]] bool can_undo() const { return !m_undo.empty(); }
+    [[nodiscard]] bool can_redo() const { return !m_redo.empty(); }
+
+private:
+    static constexpr std::size_t kMaxSteps = 64;
+    std::vector<std::map<int, Util::KeyMapping>> m_undo;
+    std::vector<std::map<int, Util::KeyMapping>> m_redo;
+
+    static void push_limited(
+        std::vector<std::map<int, Util::KeyMapping>>& stack,
+        const std::map<int, Util::KeyMapping>& snapshot);
+    [[nodiscard]] std::optional<std::map<int, Util::KeyMapping>> restore(
+        bool undo, const std::map<int, Util::KeyMapping>& current);
 };
 
 struct PianoRollLayoutConfig {

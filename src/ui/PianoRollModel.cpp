@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <map>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -41,6 +42,54 @@ namespace {
     }
 
 } // namespace
+
+void PianoRollEditHistory::reset()
+{
+    m_undo.clear();
+    m_redo.clear();
+}
+
+void PianoRollEditHistory::record(
+    const std::map<int, Util::KeyMapping>& current)
+{
+    push_limited(m_undo, current);
+    m_redo.clear();
+}
+
+std::optional<std::map<int, Util::KeyMapping>> PianoRollEditHistory::undo(
+    const std::map<int, Util::KeyMapping>& current)
+{
+    return restore(true, current);
+}
+
+std::optional<std::map<int, Util::KeyMapping>> PianoRollEditHistory::redo(
+    const std::map<int, Util::KeyMapping>& current)
+{
+    return restore(false, current);
+}
+
+void PianoRollEditHistory::push_limited(
+    std::vector<std::map<int, Util::KeyMapping>>& stack,
+    const std::map<int, Util::KeyMapping>& snapshot)
+{
+    if (stack.size() >= kMaxSteps)
+        stack.erase(stack.begin());
+    stack.push_back(snapshot);
+}
+
+std::optional<std::map<int, Util::KeyMapping>> PianoRollEditHistory::restore(
+    bool undo, const std::map<int, Util::KeyMapping>& current)
+{
+    auto& source = undo ? m_undo : m_redo;
+    auto& target = undo ? m_redo : m_undo;
+    if (source.empty())
+        return std::nullopt;
+
+    push_limited(target, current);
+    auto snapshot = std::move(source.back());
+    source.pop_back();
+    return snapshot;
+}
 
 PianoRollLayout::PianoRollLayout(const PianoRollLayoutConfig& config)
 {

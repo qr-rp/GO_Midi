@@ -1,6 +1,7 @@
 #include "PianoRollCtrl.h"
 
 #include <algorithm>
+#include <utility>
 
 #include <wx/dcclient.h>
 #include <wx/dcmemory.h>
@@ -13,16 +14,27 @@ namespace UI {
 
 namespace {
 
-    wxString modifier_code(int mod)
+    wxString format_modifiers(int mod, bool full_names)
     {
-        wxString code;
-        if (mod & Util::kModCtrl) code += L"C";
-        if (mod & Util::kModShift) code += L"S";
-        if (mod & Util::kModAlt) code += L"A";
-        if (mod & Util::kModMouseL) code += L"L";
-        if (mod & Util::kModMouseM) code += L"M";
-        if (mod & Util::kModMouseR) code += L"R";
-        return code;
+        static constexpr struct {
+            int bit;
+            const wchar_t* code;
+            const wchar_t* name;
+        } kModifiers[] = {
+            {Util::kModCtrl, L"C", L"Ctrl+"},
+            {Util::kModShift, L"S", L"Shift+"},
+            {Util::kModAlt, L"A", L"Alt+"},
+            {Util::kModMouseL, L"L", L"鼠标左键+"},
+            {Util::kModMouseM, L"M", L"鼠标中键+"},
+            {Util::kModMouseR, L"R", L"鼠标右键+"}
+        };
+
+        wxString result;
+        for (const auto& modifier : kModifiers) {
+            if (mod & modifier.bit)
+                result += full_names ? modifier.name : modifier.code;
+        }
+        return result;
     }
 
     wxString vk_short_name(int vk)
@@ -108,6 +120,14 @@ namespace {
         return black ? wxColour(0xff, 0x9a, 0x9a) : wxColour(0xd0, 0x5a, 0x5a);
     }
 
+    int required_control_height(int content_width, int view_width,
+                                int keyboard_height, int scroll_height)
+    {
+        return content_width > view_width
+            ? keyboard_height + scroll_height + 2
+            : keyboard_height;
+    }
+
 } // namespace
 
 wxBEGIN_EVENT_TABLE(PianoRollCtrl, wxWindow)
@@ -115,7 +135,9 @@ wxBEGIN_EVENT_TABLE(PianoRollCtrl, wxWindow)
     EVT_LEFT_DOWN(PianoRollCtrl::OnMouse)
     EVT_LEFT_UP(PianoRollCtrl::OnMouse)
     EVT_MIDDLE_DOWN(PianoRollCtrl::OnMouse)
+    EVT_MIDDLE_UP(PianoRollCtrl::OnMouse)
     EVT_RIGHT_DOWN(PianoRollCtrl::OnMouse)
+    EVT_RIGHT_UP(PianoRollCtrl::OnMouse)
     EVT_SIZE(PianoRollCtrl::OnSize)
     EVT_MOTION(PianoRollCtrl::OnMouseMove)
     EVT_MOUSEWHEEL(PianoRollCtrl::OnMouseWheel)
@@ -125,32 +147,27 @@ wxEND_EVENT_TABLE()
 
 PianoRollCtrl::PianoRollCtrl(wxWindow* parent, int minPitch, int maxPitch)
     : wxWindow(parent, wxID_ANY),
-      m_whiteW(FromDIP(30)), m_whiteH(FromDIP(92)),
-      m_blackW(FromDIP(20)), m_blackH(FromDIP(56)), m_scrollH(FromDIP(6)),
-      m_minPitch(minPitch), m_maxPitch(maxPitch),
-      m_displayMin(minPitch), m_displayMax(maxPitch),
-      m_preferredViewW(FromDIP(700)), m_viewW(FromDIP(700)) {
+      m_pitch_range{minPitch, maxPitch},
+      m_layout_config{
+          minPitch, maxPitch,
+          FromDIP(30), FromDIP(20), FromDIP(92), FromDIP(56)
+      },
+      m_viewW(FromDIP(700)) {
     SetBackgroundStyle(wxBG_STYLE_PAINT);
     // 键位捕获必须拿到物理按键: 输入法激活时数字/字母键会先变成 VK_PROCESSKEY,
     // wxKeyEvent::GetKeyCode() 返回 WXK_NONE(0), 导致所有键都被绑定成"键0".
     // 该控件只做按键采集, 不需要文本输入, 直接解除输入法上下文.
     ImmAssociateContext(static_cast<HWND>(GetHWND()), nullptr);
-    m_lastHint = wxString::FromUTF8("点击琴键 → 按下新键即绑定 (可组合 Ctrl/Shift/Alt/鼠标左中右, Esc 取消)");
+    m_lastHint = wxString::FromUTF8("点击琴键绑定 · 未选中时 ←/→ 浏览 · Ctrl+Z 撤销 · Esc 取消");
     RefreshLayout();
-    SetMinSize(wxSize(FromDIP(240), m_whiteH));
+    SetMinSize(wxSize(FromDIP(240), m_layout_config.white_height));
     SetFocus();
 }
 
 void PianoRollCtrl::RefreshLayout() {
-    m_layout.configure({
-        m_displayMin,
-        m_displayMax,
-        m_whiteW,
-        m_blackW,
-        m_whiteH,
-        m_blackH
-    });
-    m_analysis = analyze_key_bindings(m_map, m_minPitch, m_maxPitch);
+    m_layout.configure(m_layout_config);
+    m_analysis = analyze_key_bindings(
+        m_map, m_pitch_range.min_pitch, m_pitch_range.max_pitch);
 }
 
 void PianoRollCtrl::UpdateSize() {
@@ -158,12 +175,12 @@ void PianoRollCtrl::UpdateSize() {
     int actualWidth = GetClientSize().x;
     m_viewW = actualWidth > 1
         ? actualWidth
-        : std::min(m_preferredViewW, ContentWidth());
+        : std::min(FromDIP(700), ContentWidth());
     if (m_viewW < 1) m_viewW = 1;
     ClampScroll();
-    int needScroll = ContentWidth() > m_viewW;
-    int h = needScroll ? m_whiteH + m_scrollH + 2 : m_whiteH;
-    SetMinSize(wxSize(FromDIP(240), h));
+    const int height = required_control_height(
+        ContentWidth(), m_viewW, m_layout_config.white_height, FromDIP(6));
+    SetMinSize(wxSize(FromDIP(240), height));
     InvalidateBestSize();
     Refresh();
 }
@@ -171,6 +188,15 @@ void PianoRollCtrl::UpdateSize() {
 void PianoRollCtrl::OnSize(wxSizeEvent& event) {
     m_viewW = std::max(1, event.GetSize().x);
     ClampScroll();
+    const int height = required_control_height(
+        ContentWidth(), m_viewW, m_layout_config.white_height, FromDIP(6));
+    if (GetMinSize().y != height) {
+        SetMinSize(wxSize(FromDIP(240), height));
+        CallAfter([this] {
+            if (GetParent())
+                GetParent()->Layout();
+        });
+    }
     Refresh();
     event.Skip();
 }
@@ -184,7 +210,8 @@ void PianoRollCtrl::ClampScroll() {
 }
 
 wxRect PianoRollCtrl::ScrollBarRect() const {
-    return wxRect(2, m_whiteH + 2, m_viewW - 4, m_scrollH);
+    return wxRect(2, m_layout_config.white_height + 2,
+                  m_viewW - 4, FromDIP(6));
 }
 
 wxRect PianoRollCtrl::ScrollThumbRect() const {
@@ -202,25 +229,30 @@ wxRect PianoRollCtrl::ScrollThumbRect() const {
 
 void PianoRollCtrl::SetMap(const std::map<int, Util::KeyMapping>& map) {
     m_map = map;
+    m_history.reset();
+    m_mouseModifier = 0;
+    m_selectedNote = -1;
     RecalcDisplayRange();
     UpdateSize();
 }
 
 void PianoRollCtrl::SetPitchRange(int minPitch, int maxPitch) {
-    m_minPitch = minPitch;
-    m_maxPitch = maxPitch;
-    if (m_minPitch > m_maxPitch) std::swap(m_minPitch, m_maxPitch);
+    m_pitch_range = {minPitch, maxPitch};
+    if (m_pitch_range.min_pitch > m_pitch_range.max_pitch)
+        std::swap(m_pitch_range.min_pitch, m_pitch_range.max_pitch);
     m_selectedNote = -1;
     RecalcDisplayRange();
     UpdateSize();
 }
 
 void PianoRollCtrl::RecalcDisplayRange() {
-    m_displayMin = m_minPitch;
-    m_displayMax = m_maxPitch;
+    m_layout_config.display_min = m_pitch_range.min_pitch;
+    m_layout_config.display_max = m_pitch_range.max_pitch;
     for (const auto& pair : m_map) {
-        if (pair.first < m_displayMin) m_displayMin = pair.first;
-        if (pair.first > m_displayMax) m_displayMax = pair.first;
+        if (pair.first < m_layout_config.display_min)
+            m_layout_config.display_min = pair.first;
+        if (pair.first > m_layout_config.display_max)
+            m_layout_config.display_max = pair.first;
     }
 }
 
@@ -228,76 +260,49 @@ int PianoRollCtrl::HitTest(const wxPoint& pos) const {
     return m_layout.hit_test(pos.x + m_scrollX, pos.y);
 }
 
-wxString PianoRollCtrl::NoteLabel(int note) const {
+wxString note_label(int note) {
     static const wxChar* kTones[] = { L"1", L"♯1", L"2", L"♯2", L"3",
                                       L"4", L"♯4", L"5", L"♯5", L"6", L"♯6", L"7" };
     int pc = (note % 12 + 12) % 12;
     return wxString(kTones[pc]);
 }
 
-wxString PianoRollCtrl::VkName(int vk, int mod) const {
-    wxString name;
-    if (mod & Util::kModCtrl) name += L"Ctrl+";
-    if (mod & Util::kModShift) name += L"Shift+";
-    if (mod & Util::kModAlt) name += L"Alt+";
-    // 鼠标修饰键
-    if (mod & Util::kModMouseL) name += L"鼠标左键+";
-    if (mod & Util::kModMouseM) name += L"鼠标中键+";
-    if (mod & Util::kModMouseR) name += L"鼠标右键+";
+wxString vk_base_name(int vk) {
+    static constexpr std::pair<int, const wchar_t*> kNamedKeys[] = {
+        {VK_SPACE, L"Space"}, {VK_RETURN, L"Enter"}, {VK_TAB, L"Tab"},
+        {VK_BACK, L"Backspace"}, {VK_ESCAPE, L"Esc"}, {VK_DELETE, L"Del"},
+        {VK_INSERT, L"Ins"}, {VK_HOME, L"Home"}, {VK_END, L"End"},
+        {VK_PRIOR, L"PgUp"}, {VK_NEXT, L"PgDn"}, {VK_LEFT, L"←"},
+        {VK_RIGHT, L"→"}, {VK_UP, L"↑"}, {VK_DOWN, L"↓"},
+        {VK_SNAPSHOT, L"PrtSc"}, {VK_SCROLL, L"ScrLk"}, {VK_PAUSE, L"Pause"},
+        {VK_CAPITAL, L"CapsLk"}, {VK_NUMLOCK, L"NumLk"}, {VK_LWIN, L"Win"},
+        {VK_RWIN, L"Win"}, {VK_APPS, L"Menu"}, {VK_OEM_1, L";"},
+        {VK_OEM_PLUS, L"+"}, {VK_OEM_COMMA, L","}, {VK_OEM_MINUS, L"-"},
+        {VK_OEM_PERIOD, L"."}, {VK_OEM_2, L"/"}, {VK_OEM_3, L"`"},
+        {VK_OEM_4, L"["}, {VK_OEM_5, L"\\"}, {VK_OEM_6, L"]"},
+        {VK_OEM_7, L"'"}, {VK_ADD, L"小+"}, {VK_SUBTRACT, L"小-"},
+        {VK_MULTIPLY, L"小*"}, {VK_DIVIDE, L"小/"}, {VK_DECIMAL, L"小."}
+    };
 
-    if (vk >= 'A' && vk <= 'Z') { name += wxString::Format(L"%c", vk); }
-    else if (vk >= '0' && vk <= '9') { name += wxString::Format(L"%c", vk); }
-    else {
-        switch (vk) {
-            case VK_SPACE: name += L"Space"; break;
-            case VK_RETURN: name += L"Enter"; break;
-            case VK_TAB: name += L"Tab"; break;
-            case VK_BACK: name += L"Backspace"; break;
-            case VK_ESCAPE: name += L"Esc"; break;
-            case VK_DELETE: name += L"Del"; break;
-            case VK_INSERT: name += L"Ins"; break;
-            case VK_HOME: name += L"Home"; break;
-            case VK_END: name += L"End"; break;
-            case VK_PRIOR: name += L"PgUp"; break;
-            case VK_NEXT: name += L"PgDn"; break;
-            case VK_LEFT: name += L"←"; break;
-            case VK_RIGHT: name += L"→"; break;
-            case VK_UP: name += L"↑"; break;
-            case VK_DOWN: name += L"↓"; break;
-            case VK_SNAPSHOT: name += L"PrtSc"; break;
-            case VK_SCROLL: name += L"ScrLk"; break;
-            case VK_PAUSE: name += L"Pause"; break;
-            case VK_CAPITAL: name += L"CapsLk"; break;
-            case VK_NUMLOCK: name += L"NumLk"; break;
-            case VK_LWIN: name += L"Win"; break;
-            case VK_RWIN: name += L"Win"; break;
-            case VK_APPS: name += L"Menu"; break;
-            case VK_OEM_1: name += L";"; break;
-            case VK_OEM_PLUS: name += L"+"; break;
-            case VK_OEM_COMMA: name += L","; break;
-            case VK_OEM_MINUS: name += L"-"; break;
-            case VK_OEM_PERIOD: name += L"."; break;
-            case VK_OEM_2: name += L"/"; break;
-            case VK_OEM_3: name += L"`"; break;
-            case VK_OEM_4: name += L"["; break;
-            case VK_OEM_5: name += L"\\"; break;
-            case VK_OEM_6: name += L"]"; break;
-            case VK_OEM_7: name += L"'"; break;
-            case VK_ADD: name += L"小+"; break;
-            case VK_SUBTRACT: name += L"小-"; break;
-            case VK_MULTIPLY: name += L"小*"; break;
-            case VK_DIVIDE: name += L"小/"; break;
-            case VK_DECIMAL: name += L"小."; break;
-            default:
-                if (vk >= VK_F1 && vk <= VK_F24) name += wxString::Format(L"F%d", vk - VK_F1 + 1);
-                else if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9) name += wxString::Format(L"小%d", vk - VK_NUMPAD0);
-                else name += wxString::Format(L"键%d", vk);
-        }
+    if ((vk >= 'A' && vk <= 'Z') || (vk >= '0' && vk <= '9')) {
+        return wxString(static_cast<wxChar>(vk));
     }
-    return name;
+    for (const auto& [code, label] : kNamedKeys) {
+        if (vk == code)
+            return wxString(label);
+    }
+    if (vk >= VK_F1 && vk <= VK_F24)
+        return wxString::Format(L"F%d", vk - VK_F1 + 1);
+    if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9)
+        return wxString::Format(L"小%d", vk - VK_NUMPAD0);
+    return wxString::Format(L"键%d", vk);
 }
 
-int PianoRollCtrl::VkFromWx(int kc) const {
+wxString vk_name(int vk, int mod) {
+    return format_modifiers(mod, true) + vk_base_name(vk);
+}
+
+int vk_from_wx(int kc) {
     if (kc >= 'A' && kc <= 'Z') return kc;
     if (kc >= '0' && kc <= '9') return kc;
     // ASCII 标点(wxMSW GetKeyCode 对标点返回 ASCII 码)→ Windows VK
@@ -344,7 +349,7 @@ wxString PianoRollCtrl::CompactKeyLabel(int note) const {
     const auto it = m_map.find(note);
     if (it == m_map.end())
         return wxString();
-    const wxString modifiers = modifier_code(it->second.modifier);
+    const wxString modifiers = format_modifiers(it->second.modifier, false);
     const wxString key = vk_short_name(it->second.vk_code);
     return modifiers.IsEmpty() ? key : modifiers + L"+" + key;
 }
@@ -402,7 +407,7 @@ void PianoRollCtrl::PaintKeyLabels(wxDC& dc, const wxRect& rect, int note, bool 
         : (in_range ? wxColour(0x30, 0x36, 0x42) : wxColour(0x5c, 0x64, 0x72));
     const int label_width = std::max(0, rect.width - 4);
     dc.SetTextForeground(note_colour);
-    dc.DrawText(fit_label(dc, NoteLabel(note), label_width), rect.x + 2, rect.y + 3);
+    dc.DrawText(fit_label(dc, note_label(note), label_width), rect.x + 2, rect.y + 3);
 
     const wxString key_label = CompactKeyLabel(note);
     if (key_label.IsEmpty())
@@ -428,65 +433,103 @@ void PianoRollCtrl::PaintScrollBar(wxDC& dc) {
 }
 
 void PianoRollCtrl::OnMouse(wxMouseEvent& event) {
-    wxPoint pos = event.GetPosition();
-
+    const wxPoint pos = event.GetPosition();
     if (event.LeftDown()) {
-        if (pos.y >= m_whiteH) {
-            // 底部滚动条: 点击滑块开始拖动, 否则跳转
-            wxRect thumb = ScrollThumbRect();
-            if (thumb.Contains(pos)) {
-                m_draggingScroll = true;
-                m_dragOffset = pos.x - thumb.x;
-                CaptureMouse();
-            } else {
-                int content = ContentWidth();
-                int maxScroll = content - m_viewW;
-                if (maxScroll > 0) {
-                    wxRect bar = ScrollBarRect();
-                    double ratio = (double)(pos.x - bar.x) / bar.width;
-                    m_scrollX = static_cast<int>(ratio * maxScroll);
-                    ClampScroll();
-                    Refresh();
-                    Update();
-                }
-            }
-            return;
-        }
-        int note = HitTest(pos);
-        if (note >= 0) {
-            if (!InAudioRange(note)) {
-                // 音域外已绑定键: 只读, 需先扩展音域才能重绑
-                m_selectedNote = -1;
-                if (onStatus) onStatus(wxString::FromUTF8("该音符在目标音域外, 请先扩展音域再绑定"));
-                Refresh();
-                Update();
-                return;
-            }
-            m_selectedNote = note;
-            SetFocus();
-            // #10: 记录选中提示, 供 Esc 取消时恢复
-            m_lastHint = wxString::FromUTF8("已选中,按下新键绑定该音符 (可组合 Ctrl/Shift/Alt/鼠标键, Esc 取消)");
-            if (onStatus) onStatus(m_lastHint);
-            Refresh();
-            Update();
-        }
+        HandlePrimaryDown(pos);
     } else if (event.LeftUp()) {
+        m_mouseModifier &= ~Util::kModMouseL;
         if (m_draggingScroll) {
             m_draggingScroll = false;
             if (HasCapture()) ReleaseMouse();
         }
+    } else if (event.MiddleDown()) {
+        SetMouseModifierFromButton(Util::kModMouseM, pos);
+    } else if (event.MiddleUp()) {
+        m_mouseModifier &= ~Util::kModMouseM;
     } else if (event.RightDown()) {
-        if (pos.y >= m_whiteH) return;   // 滚动条区忽略右键
-        int note = HitTest(pos);
-        if (note >= 0) {
-            m_map.erase(note);
-            if (onBind) onBind(note, -1, -1);
-            if (onStatus) onStatus(wxString::FromUTF8("已清除该音符绑定"));
-            Refresh();
-            Update();
-        }
+        HandleSecondaryDown(pos);
+    } else if (event.RightUp()) {
+        m_mouseModifier &= ~Util::kModMouseR;
     }
     event.Skip();
+}
+
+void PianoRollCtrl::BeginScrollInteraction(const wxPoint& pos) {
+    const wxRect thumb = ScrollThumbRect();
+    if (thumb.Contains(pos)) {
+        m_draggingScroll = true;
+        m_dragOffset = pos.x - thumb.x;
+        CaptureMouse();
+        return;
+    }
+
+    const int max_scroll = ContentWidth() - m_viewW;
+    if (max_scroll <= 0)
+        return;
+    const wxRect bar = ScrollBarRect();
+    const double ratio = static_cast<double>(pos.x - bar.x) / bar.width;
+    m_scrollX = static_cast<int>(ratio * max_scroll);
+    ClampScroll();
+    Refresh();
+    Update();
+}
+
+void PianoRollCtrl::HandleSecondaryDown(const wxPoint& pos) {
+    if (pos.y >= m_layout_config.white_height)
+        return;
+    if (m_selectedNote >= 0) {
+        SetMouseModifierFromButton(Util::kModMouseR, pos);
+        return;
+    }
+    const int note = HitTest(pos);
+    if (note < 0)
+        return;
+    if (m_map.find(note) == m_map.end()) {
+        if (onStatus)
+            onStatus(wxString::FromUTF8("该音符尚未绑定"));
+        return;
+    }
+
+    m_history.record(m_map);
+    m_map.erase(note);
+    CommitMapChanged();
+    if (onStatus)
+        onStatus(wxString::FromUTF8("已清除该音符绑定, 可按 Ctrl+Z 撤销"));
+}
+
+void PianoRollCtrl::HandlePrimaryDown(const wxPoint& pos) {
+    if (pos.y >= m_layout_config.white_height) {
+        BeginScrollInteraction(pos);
+        return;
+    }
+
+    const int note = HitTest(pos);
+    if (note < 0)
+        return;
+    if (!InAudioRange(note)) {
+        m_selectedNote = -1;
+        if (onStatus)
+            onStatus(wxString::FromUTF8("该音符在目标音域外, 请先扩展音域再绑定"));
+        Refresh();
+        Update();
+        return;
+    }
+    if (m_selectedNote == note) {
+        m_mouseModifier |= Util::kModMouseL;
+        if (onStatus)
+            onStatus(wxString::FromUTF8("鼠标左键已作为修饰键, 按主键完成绑定"));
+        return;
+    }
+    SelectNote(note);
+}
+
+bool PianoRollCtrl::SetMouseModifierFromButton(int modifier, const wxPoint& pos) {
+    if (m_selectedNote < 0 || HitTest(pos) < 0)
+        return false;
+    m_mouseModifier |= modifier;
+    if (onStatus)
+        onStatus(wxString::FromUTF8("鼠标键已作为修饰键, 按主键完成绑定"));
+    return true;
 }
 
 void PianoRollCtrl::OnMouseMove(wxMouseEvent& event) {
@@ -522,7 +565,7 @@ void PianoRollCtrl::UpdateHoverTooltip(const wxPoint& pos) {
         return;
     }
 
-    wxString tip = NoteLabel(note);
+    wxString tip = note_label(note);
     const auto it = m_map.find(note);
     if (it == m_map.end()) {
         SetToolTip(tip);
@@ -530,7 +573,7 @@ void PianoRollCtrl::UpdateHoverTooltip(const wxPoint& pos) {
     }
 
     tip += wxString::FromUTF8(" · ") +
-           VkName(it->second.vk_code, it->second.modifier);
+           vk_name(it->second.vk_code, it->second.modifier);
     if (m_analysis.physical_conflicts.contains(note))
         tip += wxString::FromUTF8(" · 物理主键冲突");
     else if (m_analysis.logical_duplicates.contains(note))
@@ -550,9 +593,99 @@ void PianoRollCtrl::OnMouseWheel(wxMouseEvent& event) {
     // 已处理则不再冒泡给父级, 避免将来弹窗可纵向滚动时双重滚动
 }
 
-void PianoRollCtrl::OnKeyDown(wxKeyEvent& event) {
-    if (m_selectedNote < 0) { event.Skip(); return; }
+void PianoRollCtrl::SelectNote(int note) {
+    if (!InAudioRange(note)) {
+        if (onStatus)
+            onStatus(wxString::FromUTF8("该音符在目标音域外, 请先扩展音域再绑定"));
+        return;
+    }
 
+    m_selectedNote = note;
+    SetFocus();
+    m_lastHint = wxString::FromUTF8(
+        "已选中音符, 按下新键绑定 · 鼠标键可作修饰 · Esc 取消");
+    if (onStatus)
+        onStatus(wxString::Format(wxString::FromUTF8("已选中 %s · %s"),
+                                 note_label(note), m_lastHint));
+    Refresh();
+    Update();
+}
+
+void PianoRollCtrl::MoveSelection(int direction) {
+    if (direction == 0)
+        return;
+    int note = direction > 0 ? m_layout.display_min() : m_layout.display_max();
+    while (m_layout.contains(note)) {
+        if (InAudioRange(note)) {
+            SelectNote(note);
+            return;
+        }
+        note += direction;
+    }
+    if (onStatus)
+        onStatus(wxString::FromUTF8("当前音域内没有可选择音符"));
+}
+
+bool PianoRollCtrl::HandleHistoryShortcut(const wxKeyEvent& event) {
+    if (!event.ControlDown())
+        return false;
+    const int key = event.GetKeyCode();
+    if (key == 'Z' || key == 'z') {
+        ApplyHistory(!event.ShiftDown());
+        return true;
+    }
+    if (key == 'Y' || key == 'y') {
+        ApplyHistory(false);
+        return true;
+    }
+    return false;
+}
+
+void PianoRollCtrl::ApplyHistory(bool undo) {
+    auto snapshot = undo ? m_history.undo(m_map) : m_history.redo(m_map);
+    if (!snapshot) {
+        if (onStatus)
+            onStatus(wxString::FromUTF8(
+                undo ? "没有可撤销的键位修改" : "没有可重做的键位修改"));
+        return;
+    }
+    m_map = std::move(*snapshot);
+    CommitMapChanged();
+    if (onStatus)
+        onStatus(wxString::FromUTF8(
+            undo ? "已撤销上一步键位修改" : "已重做键位修改"));
+}
+
+void PianoRollCtrl::CommitMapChanged() {
+    m_selectedNote = -1;
+    m_hoverNote = -1;
+    m_mouseModifier = 0;
+    UnsetToolTip();
+    RecalcDisplayRange();
+    UpdateSize();
+    if (onMapChanged)
+        onMapChanged(m_map);
+    Refresh();
+    Update();
+}
+
+void PianoRollCtrl::HandleUnselectedKey(wxKeyEvent& event) {
+    if (HandleHistoryShortcut(event))
+        return;
+    const int key = event.GetKeyCode();
+    if (event.GetModifiers() == wxMOD_NONE &&
+        (key == WXK_LEFT || key == WXK_RIGHT)) {
+        MoveSelection(key == WXK_RIGHT ? 1 : -1);
+        return;
+    }
+    event.Skip();
+}
+
+void PianoRollCtrl::OnKeyDown(wxKeyEvent& event) {
+    if (m_selectedNote < 0) {
+        HandleUnselectedKey(event);
+        return;
+    }
     int kc = event.GetKeyCode();
     // 无真实键码的事件(如输入法 VK_PROCESSKEY)不能绑定, 否则会记成"键0";
     // 直接放行等待真正的按键事件, 且不要清除当前选中的琴键.
@@ -567,7 +700,7 @@ void PianoRollCtrl::OnKeyDown(wxKeyEvent& event) {
     // 忽略纯修饰键(等主键), 但不吞掉事件(#9)
     if (kc == WXK_SHIFT || kc == WXK_CONTROL || kc == WXK_ALT) { event.Skip(); return; }
 
-    int vk = VkFromWx(kc);
+    int vk = vk_from_wx(kc);
     // 位掩码修饰键: Ctrl=2 Shift=1 Alt=4, 可组合
     int modifier = CurrentModifier(event);
 
@@ -577,11 +710,13 @@ void PianoRollCtrl::OnKeyDown(wxKeyEvent& event) {
 void PianoRollCtrl::OnCharHook(wxKeyEvent& event) {
     // 对话框的默认按钮处理会吞掉 Enter, 这里在 CHAR_HOOK 阶段截获回车/删除.
     // 只接管这两个键, 不影响 Tab/方向键的对话框导航.
+    if (m_selectedNote < 0 && HandleHistoryShortcut(event))
+        return;
     if (m_selectedNote >= 0) {
         int kc = event.GetKeyCode();
         if (kc == WXK_RETURN || kc == WXK_NUMPAD_ENTER ||
             kc == WXK_DELETE || kc == WXK_NUMPAD_DELETE) {
-            BindKey(VkFromWx(kc), CurrentModifier(event));
+            BindKey(vk_from_wx(kc), CurrentModifier(event));
             return;
         }
     }
@@ -595,11 +730,14 @@ int PianoRollCtrl::CurrentModifier(const wxKeyEvent& event) const {
     if (mods & wxMOD_CONTROL) modifier |= Util::kModCtrl;
     if (mods & wxMOD_SHIFT) modifier |= Util::kModShift;
     if (mods & wxMOD_ALT) modifier |= Util::kModAlt;
-    // 鼠标修饰键: 按住鼠标左/中/右键 + 按键盘主键 → 组合绑定
-    wxMouseState ms = wxGetMouseState();
-    if (ms.LeftIsDown()) modifier |= Util::kModMouseL;
-    if (ms.MiddleIsDown()) modifier |= Util::kModMouseM;
-    if (ms.RightIsDown()) modifier |= Util::kModMouseR;
+    // 只接受本控件显式捕获且当前仍按住的鼠标键, 避免全局鼠标状态误入绑定。
+    const wxMouseState mouse = wxGetMouseState();
+    if ((m_mouseModifier & Util::kModMouseL) && mouse.LeftIsDown())
+        modifier |= Util::kModMouseL;
+    if ((m_mouseModifier & Util::kModMouseM) && mouse.MiddleIsDown())
+        modifier |= Util::kModMouseM;
+    if ((m_mouseModifier & Util::kModMouseR) && mouse.RightIsDown())
+        modifier |= Util::kModMouseR;
     return modifier;
 }
 
@@ -608,25 +746,34 @@ bool PianoRollCtrl::BindKey(int vk, int modifier) {
     // 0 不是合法虚拟键码, 防御性拦截(避免把无效键写进键位映射)
     if (vk <= 0) return false;
 
-    // #6: 检测重复键绑定(另一音符已用同一按键), 提示但不阻止
-    // (引擎按 vk+hwnd 引用计数可正常处理同键多音)
-    wxString dupNote;
-    for (const auto& pair : m_map) {
-        if (pair.first != m_selectedNote && pair.second.vk_code == vk && pair.second.modifier == modifier) {
-            dupNote = NoteLabel(pair.first);
-            break;
-        }
+    const int note = m_selectedNote;
+    const Util::KeyMapping mapping{ vk, modifier };
+    const auto existing = m_map.find(note);
+    if (existing != m_map.end() &&
+        existing->second.vk_code == vk &&
+        existing->second.modifier == modifier) {
+        if (onStatus)
+            onStatus(wxString::FromUTF8("该音符已使用此键位, 无需重复绑定"));
+        m_selectedNote = -1;
+        m_mouseModifier = 0;
+        Refresh();
+        return true;
     }
 
-    m_map[m_selectedNote] = Util::KeyMapping{ vk, modifier };
-    if (onBind) onBind(m_selectedNote, vk, modifier);
-    wxString msg = wxString::FromUTF8("已绑定: ") + VkName(vk, modifier);
-    if (!dupNote.IsEmpty()) msg += wxString::FromUTF8(" (注意: 音符 ") + dupNote + wxString::FromUTF8(" 已使用该键)");
+    m_history.record(m_map);
+    m_map[note] = mapping;
+    CommitMapChanged();
+    wxString msg = wxString::FromUTF8("已绑定: ") + vk_name(vk, modifier);
+    if (m_analysis.physical_conflicts.contains(note))
+        msg += wxString::Format(
+            wxString::FromUTF8(" · 警告: %d 个音符存在物理主键冲突"),
+            static_cast<int>(m_analysis.physical_conflicts.size()));
+    else if (m_analysis.logical_duplicates.contains(note))
+        msg += wxString::Format(
+            wxString::FromUTF8(" · 警告: %d 个音符存在逻辑键位重复"),
+            static_cast<int>(m_analysis.logical_duplicates.size()));
+    msg += wxString::FromUTF8(" · Ctrl+Z 撤销");
     if (onStatus) onStatus(msg);
-    m_lastHint = wxString::FromUTF8("点击琴键 → 按下新键即绑定 (可组合 Ctrl/Shift/Alt/鼠标左中右, Esc 取消)");
-    m_selectedNote = -1;
-    Refresh();
-    Update();
     return true;
 }
 

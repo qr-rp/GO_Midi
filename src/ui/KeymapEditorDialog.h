@@ -38,6 +38,7 @@ private:
     PianoRollCtrl* m_roll = nullptr;
     wxStaticText* m_fileLabel = nullptr;
     wxStaticText* m_hint = nullptr;
+    wxStaticText* m_stats = nullptr;
     wxSpinCtrl* m_minSpin = nullptr;   // 目标音域下界
     wxSpinCtrl* m_maxSpin = nullptr;   // 目标音域上界
     wxTimer m_pitchSaveTimer;          // 音域写 config 去抖(300ms 尾沿)
@@ -52,6 +53,7 @@ private:
     void RestorePitchRange();         // 按当前方案恢复音域(spins+钢琴卷)
     wxString VkName(int vk, int mod) const;
     void SetStatus(const wxString& text);
+    void UpdateStats();
 
     void OnChoice(wxCommandEvent& event);
     void OnPitchChange(wxSpinEvent& event);  // 音域调整 → 去抖写当前方案

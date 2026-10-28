@@ -27,6 +27,8 @@ namespace Util {
     struct KeyMapping {
         int vk_code;
         int modifier;  ///< 位掩码: 1=Shift, 2=Ctrl, 4=Alt, 8=鼠标左, 16=鼠标中, 32=鼠标右 (0=无)
+
+        bool operator==(const KeyMapping&) const = default;
     };
 
     class KeyManager {

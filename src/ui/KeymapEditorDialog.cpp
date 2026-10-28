@@ -119,19 +119,17 @@ void KeymapEditorDialog::BuildUI() {
     m_hint = new wxStaticText(this, wxID_ANY, wxString());
     m_hint->SetForegroundColour(wxColour(0x88, 0x92, 0xa0));
     foot->Add(m_hint, 1, wxALL | wxALIGN_CENTER_VERTICAL, 6);
+    m_stats = new wxStaticText(this, wxID_ANY, wxString());
+    m_stats->SetForegroundColour(wxColour(0x88, 0x92, 0xa0));
+    foot->Add(m_stats, 0, wxALL | wxALIGN_CENTER_VERTICAL, 6);
     root->Add(foot, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 8);
 
     m_roll->onStatus = [this](const wxString& t) { SetStatus(t); };
-    // 绑定/清除同步回 KeyManager(否则只改显示不改实际键位)
-    m_roll->onBind = [this](int note, int vk, int modifier) {
+    // 绑定、清除、撤销和重做都同步回 KeyManager。
+    m_roll->onMapChanged = [this](const std::map<int, Util::KeyMapping>& map) {
         if (!m_km) return;
-        auto map = m_km->get_map();
-        if (vk < 0) {
-            map.erase(note);
-        } else {
-            map[note] = Util::KeyMapping{ vk, modifier };
-        }
         m_km->set_map(map);
+        UpdateStats();
         Notify();
     };
 
@@ -146,6 +144,30 @@ void KeymapEditorDialog::BuildUI() {
 
 void KeymapEditorDialog::SetStatus(const wxString& text) {
     if (m_hint) m_hint->SetLabel(text);
+}
+
+void KeymapEditorDialog::UpdateStats() {
+    if (!m_stats || !m_roll)
+        return;
+    const auto& analysis = m_roll->GetBindingAnalysis();
+    m_stats->SetLabel(wxString::Format(
+        wxString::FromUTF8("缺失 %d · 逻辑 %d · 物理 %d · 域外 %d"),
+        analysis.unbound_in_range,
+        static_cast<int>(analysis.logical_duplicates.size()),
+        static_cast<int>(analysis.physical_conflicts.size()),
+        static_cast<int>(analysis.out_of_range.size())));
+    m_stats->SetToolTip(wxString::FromUTF8(
+        "缺失: 目标音域内未绑定音符\n"
+        "逻辑: 相同主键+修饰符的重复绑定\n"
+        "物理: 相同主键但修饰符不同的冲突\n"
+        "域外: 目标音域外的旧绑定"));
+    m_stats->SetForegroundColour(
+        !analysis.physical_conflicts.empty()
+            ? wxColour(0xe0, 0x6a, 0x6a)
+            : (!analysis.logical_duplicates.empty()
+                ? wxColour(0xd6, 0xa5, 0x45)
+                : wxColour(0x88, 0x92, 0xa0)));
+    Layout();
 }
 
 void KeymapEditorDialog::SyncChoice() {
@@ -164,7 +186,9 @@ void KeymapEditorDialog::SyncRoll() {
     else if (m_currentPath == "@builtin_1") label = wxString::FromUTF8("当前: 内置键位 (燕云十六声)");
     else label = wxString::FromUTF8("当前方案: ") + m_currentPath.AfterLast('\\');
     if (m_fileLabel) m_fileLabel->SetLabel(label);
-    SetStatus(wxString::FromUTF8("点击琴键 → 按下新键即绑定 (Esc 取消) · 右键清除绑定"));
+    UpdateStats();
+    SetStatus(wxString::FromUTF8(
+        "点击琴键绑定 · 未选中时 ←/→ 浏览 · Ctrl+Z 撤销 · Esc 取消后右键清除"));
     Layout();   // 钢琴卷随窗口宽度伸展, 内容变化时重新布局
 }
 
@@ -217,6 +241,7 @@ void KeymapEditorDialog::OnPitchChange(wxSpinEvent& event) {
     }
     m_minPitch = minP; m_maxPitch = maxP;
     m_roll->SetPitchRange(minP, maxP);
+    UpdateStats();
     Layout();
     // #3: 音域写 config 去抖(300ms 尾沿), 持续拖拽不写盘, 停顿后落盘一次
     m_pitchSaveTimer.Start(300, wxTIMER_ONE_SHOT);

@@ -104,6 +104,33 @@ namespace {
                "invalid VK entries should not create conflict groups");
     }
 
+    void test_edit_history_roundtrip()
+    {
+        UI::PianoRollEditHistory history;
+        const std::map<int, Util::KeyMapping> original = {
+            {60, {'A', Util::kModNone}}
+        };
+        const std::map<int, Util::KeyMapping> changed = {
+            {60, {'B', Util::kModCtrl}},
+            {61, {'C', Util::kModShift}}
+        };
+
+        history.record(original);
+        const auto undone = history.undo(changed);
+        expect(undone.has_value() && *undone == original,
+               "undo should restore the snapshot recorded before the edit");
+        expect(history.can_redo(), "undo should make the edit available for redo");
+
+        const auto redone = history.redo(original);
+        expect(redone.has_value() && *redone == changed,
+               "redo should restore the mapping replaced by undo");
+        expect(history.can_undo(), "redo should move the edit back to the undo stack");
+
+        history.reset();
+        expect(!history.can_undo() && !history.can_redo(),
+               "reset should clear both history stacks");
+    }
+
 } // namespace
 
 int main()
@@ -112,6 +139,7 @@ int main()
     test_black_key_start_does_not_overlap();
     test_conflict_analysis_distinguishes_identity_modes();
     test_analysis_ignores_invalid_vk();
+    test_edit_history_roundtrip();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " test(s) failed\n";
