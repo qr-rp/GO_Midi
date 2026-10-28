@@ -4,7 +4,7 @@
 
 **GO_Midi** — 一个用于游戏的 MIDI 自动演奏工具。解析 MIDI 文件（Format 0/1），将音符转为键盘按键，通过 Win32 `SendInput` API 发送到目标窗口。支持多通道并行播放（每个通道独立配置目标窗口、音轨、移调）、AB 点循环、定时播放（NTP 同步）、播放列表管理。
 
-- **语言**: C++17 (禁用异常/RTTI)
+- **语言**: C++23 (禁用异常/RTTI)
 - **GUI**: wxWidgets 3.3.1（源码编译，静态链接）
 - **构建**: CMake 3.10+，仅 Windows 目标
 - **平台**: Windows 10/11 64-bit，需要管理员权限（SendInput 键盘模拟）
@@ -237,7 +237,7 @@ namespace UIConstants {
 
 ## Runtime/Tooling Preferences
 
-- **构建系统**: CMake 3.10+（仅 Windows）
+- **构建系统**: CMake 3.25+（仅 Windows）
 - **工具链**: MinGW-w64 (x86_64) 本地，MSVC (windows-latest) CI
 - **包管理**: 无包管理器；wxWidgets 通过源码 `add_subdirectory` 集成
 - **wxWidgets 版本**: 3.3.1，静态链接，~40 个不需要的特性被禁用以减少体积

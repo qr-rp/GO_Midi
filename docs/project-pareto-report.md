@@ -4,6 +4,9 @@ Date: 2026-10-28
 Branch: `dev`
 Baseline: `d89fdc389557f9ce29f184c7573a6e4a1e8d4b4b` plus the working-tree smart-transpose work
 
+Toolchain: C++23, CMake 3.25+, extensions disabled, warnings treated as errors,
+and checked-in CMake Presets.
+
 ## Pareto criteria
 
 This refactor treats a change as Pareto-improving only when:

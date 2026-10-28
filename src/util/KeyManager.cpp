@@ -45,13 +45,13 @@ namespace
 
     std::string normalize_line(std::string s)
     {
-        replace_all(s, u8"：", ":");
-        replace_all(s, u8"＝", "=");
-        replace_all(s, u8"－", "-");
-        replace_all(s, u8"＋", "+");
-        replace_all(s, u8"　", " ");
-        replace_all(s, u8"（", "(");
-        replace_all(s, u8"）", ")");
+        replace_all(s, "：", ":");
+        replace_all(s, "＝", "=");
+        replace_all(s, "－", "-");
+        replace_all(s, "＋", "+");
+        replace_all(s, "　", " ");
+        replace_all(s, "（", "(");
+        replace_all(s, "）", ")");
         return s;
     }
 
@@ -79,8 +79,6 @@ namespace
 
         // 统计字节频率
         int high_bytes = 0;      // 0x80-0xFF 范围内的字节数
-        int null_bytes = 0;      // 0x00 字节数
-        int ascii_printable = 0; // 可打印 ASCII 字符数
         int total = static_cast<int>(buffer.size());
 
         for (int i = 0; i < total; ++i)
@@ -88,10 +86,6 @@ namespace
             unsigned char c = static_cast<unsigned char>(buffer[i]);
             if (c >= 0x80)
                 high_bytes++;
-            else if (c == 0)
-                null_bytes++;
-            else if (c >= 0x20 && c < 0x7F)
-                ascii_printable++;
         }
 
         double high_byte_ratio = static_cast<double>(high_bytes) / total;
@@ -135,7 +129,7 @@ namespace
                 if ((c2 >= 0x40 && c2 <= 0x7E) || (c2 >= 0x80 && c2 <= 0xFC))
                     has_sjis_pattern = true;
             }
-            else if (c1 >= 0xC0 && c1 <= 0xFF && c2 >= 0x80 && c2 <= 0xFF)
+            else if (c1 >= 0xC0 && c2 >= 0x80)
             {
                 // 可能是西欧字符
                 has_western_pattern = true;

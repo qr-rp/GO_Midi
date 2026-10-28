@@ -2,18 +2,18 @@
 
 ## One command
 
-Windows / MSVC:
+Windows / MSVC with the checked-in preset:
 
 ```powershell
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGO_MIDI_BUILD_TESTS=ON
-cmake --build build --target validate -j
+cmake --preset windows-ninja
+cmake --build --preset windows-ninja --target validate -j
 ```
 
 Linux cross-compile with MinGW and Wine:
 
 ```bash
-cmake -S . -B build_mingw -DCMAKE_TOOLCHAIN_FILE=mingw-toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DGO_MIDI_BUILD_TESTS=ON
-cmake --build build_mingw --target validate -j
+cmake --preset mingw-cross
+cmake --build --preset mingw-cross --target validate -j
 ```
 
 When cross-compiling on Unix, CMake automatically uses Wine as the CTest

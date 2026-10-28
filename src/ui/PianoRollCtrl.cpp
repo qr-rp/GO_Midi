@@ -271,9 +271,8 @@ wxString PianoRollCtrl::KeyLabel(int note) const {
     return VkName(it->second.vk_code, it->second.modifier);
 }
 
-void PianoRollCtrl::OnPaint(wxPaintEvent& event) {
+void PianoRollCtrl::OnPaint(wxPaintEvent&) {
     wxPaintDC dc(this);
-    wxSize sz = GetClientSize();
     dc.SetBackground(wxBrush(wxColour(0x10, 0x14, 0x1a)));
     dc.Clear();
 

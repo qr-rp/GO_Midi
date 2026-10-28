@@ -56,11 +56,8 @@ jobs:
 
     - name: Configure
       shell: pwsh
-      run: >
-        cmake -S . -B build -G Ninja
-        -DCMAKE_BUILD_TYPE=Release
-        -DGO_MIDI_BUILD_TESTS=ON
+      run: cmake --preset windows-ninja
 
     - name: Build and validate
       shell: pwsh
-      run: cmake --build build --target validate --config Release -j ${{ steps.cpu.outputs.count }}
+      run: cmake --build --preset windows-ninja --target validate -j ${{ steps.cpu.outputs.count }}

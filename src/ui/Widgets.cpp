@@ -127,7 +127,7 @@ bool ModernSlider::IsNearBPoint(int x) {
     return std::abs(x - bPos) < FromDIP(10);
 }
 
-void ModernSlider::OnPaint(wxPaintEvent& event) {
+void ModernSlider::OnPaint(wxPaintEvent&) {
     wxAutoBufferedPaintDC dc(this);
     wxGraphicsContext* gc = wxGraphicsContext::Create(dc);
 
@@ -293,7 +293,7 @@ void ModernSlider::OnLeftDown(wxMouseEvent& event) {
     Refresh();
 }
 
-void ModernSlider::OnLeftUp(wxMouseEvent& event) {
+void ModernSlider::OnLeftUp(wxMouseEvent&) {
     if (HasCapture()) {
         ReleaseMouse();
     }
@@ -370,17 +370,17 @@ void ModernSlider::OnMotion(wxMouseEvent& event) {
     }
 }
 
-void ModernSlider::OnEnter(wxMouseEvent& event) {
+void ModernSlider::OnEnter(wxMouseEvent&) {
     m_isHovering = true;
     Refresh();
 }
 
-void ModernSlider::OnLeave(wxMouseEvent& event) {
+void ModernSlider::OnLeave(wxMouseEvent&) {
     m_isHovering = false;
     Refresh();
 }
 
-void ModernSlider::OnEraseBackground(wxEraseEvent& event) {
+void ModernSlider::OnEraseBackground(wxEraseEvent&) {
     // Do nothing to prevent flicker
 }
 
@@ -540,7 +540,7 @@ void ScrollingText::CheckScrolling() {
     }
 }
 
-void ScrollingText::OnDelayTimer(wxTimerEvent& event) {
+void ScrollingText::OnDelayTimer(wxTimerEvent&) {
     if (!m_timer.IsRunning()) {
         m_timer.Start(1000 / m_fps);
     }
@@ -564,7 +564,7 @@ void ScrollingText::OnTimer(wxTimerEvent& event) {
     Refresh();
 }
 
-void ScrollingText::OnPaint(wxPaintEvent& event) {
+void ScrollingText::OnPaint(wxPaintEvent&) {
     wxAutoBufferedPaintDC dc(this);
     
     // Background

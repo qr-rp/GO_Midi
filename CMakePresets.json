@@ -1,0 +1,100 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "GO_MIDI_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "windows-ninja",
+      "displayName": "Windows x64 (Ninja/MSVC)",
+      "inherits": "base",
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "windows-vs2022",
+      "displayName": "Windows x64 (Visual Studio 2022)",
+      "inherits": "base",
+      "generator": "Visual Studio 17 2022",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      }
+    },
+    {
+      "name": "mingw-cross",
+      "displayName": "Linux to Windows x64 (MinGW)",
+      "inherits": "base",
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "toolchainFile": "${sourceDir}/mingw-toolchain.cmake"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-ninja",
+      "configurePreset": "windows-ninja",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-vs2022",
+      "configurePreset": "windows-vs2022",
+      "configuration": "Release"
+    },
+    {
+      "name": "mingw-cross",
+      "configurePreset": "mingw-cross",
+      "configuration": "Release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-ninja",
+      "configurePreset": "windows-ninja",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-vs2022",
+      "configurePreset": "windows-vs2022",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "mingw-cross",
+      "configurePreset": "mingw-cross",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

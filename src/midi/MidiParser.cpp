@@ -4,6 +4,7 @@
 #include <tuple>
 #include <unordered_map>
 #include <filesystem>
+#include <optional>
 #include "../util/Logger.h"
 
 namespace Midi
@@ -14,6 +15,20 @@ namespace Midi
 
     namespace
     {
+        template <typename T>
+        std::optional<T> find_tick_zero_value(
+            const std::vector<std::pair<int, T>>& events)
+        {
+            for (const auto& [tick, value] : events)
+            {
+                if (tick == 0)
+                    return value;
+                if (tick > 0)
+                    break;
+            }
+            return std::nullopt;
+        }
+
         struct ActiveNote
         {
             int start_tick{0};
@@ -694,48 +709,16 @@ namespace Midi
 
     double MidiFile::get_initial_bpm() const
     {
-        int tempo_us = 500000;
-
-        // Optimization: m_tempo_events is already sorted in parse()
-        for (const auto &ev : m_tempo_events)
-        {
-            if (ev.first == 0)
-            {
-                tempo_us = ev.second;
-                break;
-            }
-            else if (ev.first > 0)
-            {
-                break;
-            }
-        }
-
-        if (tempo_us <= 0)
+        const auto tempo_us = find_tick_zero_value(m_tempo_events);
+        if (!tempo_us || *tempo_us <= 0)
             return 0.0;
-        return 60000000.0 / tempo_us;
+        return 60000000.0 / *tempo_us;
     }
 
     std::pair<int, int> MidiFile::get_initial_time_signature() const
     {
-        std::pair<int, int> sig = {4, 4};
-        bool found = false;
-
-        // Optimization: m_time_sig_events is already sorted
-        for (const auto &ev : m_time_sig_events)
-        {
-            if (ev.first == 0)
-            {
-                sig = ev.second;
-                found = true;
-                break;
-            }
-            else if (ev.first > 0)
-            {
-                break;
-            }
-        }
-
-        return sig;
+        return find_tick_zero_value(m_time_sig_events).value_or(
+            std::pair<int, int>{4, 4});
     }
 
 }

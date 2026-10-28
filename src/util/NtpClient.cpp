@@ -65,7 +65,7 @@ namespace Util
         DWORD timeout = (DWORD)timeout_ms;
         setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(timeout));
 
-        struct addrinfo hints = {0};
+        struct addrinfo hints{};
         hints.ai_family = AF_INET;
         hints.ai_socktype = SOCK_DGRAM;
 
@@ -211,7 +211,7 @@ namespace Util
             }
 
             // 如果已经收集到足够样本，提前结束（仅限快速模式）
-            if (fast_mode && all_samples.size() >= target_total_samples)
+            if (fast_mode && all_samples.size() >= static_cast<std::size_t>(target_total_samples))
             {
                 break;
             }
@@ -316,7 +316,7 @@ namespace Util
             }
         }
 
-        const auto count = s_sync_count.fetch_add(1) + 1;
+        s_sync_count.fetch_add(1);
         // abs_err_ms defined above
 
         std::chrono::system_clock::time_point new_base_ntp;

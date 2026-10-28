@@ -1,4 +1,5 @@
 #include <wx/tglbtn.h>
+#include <bit>
 #include "MainFrame.h"
 #include "UIHelpers.h"
 #include "KeymapSchemeConfig.h"
@@ -16,7 +17,7 @@ static void AllowDragDropForAdmin(HWND hwnd) {
     HMODULE hUser32 = GetModuleHandleW(L"user32.dll");
     if (!hUser32) return;
     
-    auto pfn = reinterpret_cast<ChangeWindowMessageFilterExFn>(
+    auto pfn = std::bit_cast<ChangeWindowMessageFilterExFn>(
         GetProcAddress(hUser32, "ChangeWindowMessageFilterEx"));
     if (!pfn) return;
     
@@ -53,7 +54,7 @@ class MidiDropTarget : public wxFileDropTarget {
 public:
     explicit MidiDropTarget(MainFrame* frame) : m_frame(frame) {}
     
-    bool OnDropFiles(wxCoord x, wxCoord y, const wxArrayString& filenames) override {
+    bool OnDropFiles(wxCoord, wxCoord, const wxArrayString& filenames) override {
         wxArrayString midiFiles;
         for (const auto& f : filenames) {
             wxString lower = f.Lower();
@@ -620,7 +621,7 @@ wxPanel* MainFrame::CreateChannelConfig(wxPanel* parent, int index) {
         }
     });
     
-    transposeCtrl->Bind(wxEVT_TEXT_ENTER, [this, index, transposeCtrl](wxCommandEvent& e) {
+    transposeCtrl->Bind(wxEVT_TEXT_ENTER, [this, index, transposeCtrl](wxCommandEvent&) {
         int val = transposeCtrl->GetValue();
         m_engine.set_channel_transpose(index, val);
         RequestConfigSave(ConfigSaveKind::File);
@@ -654,7 +655,7 @@ wxPanel* MainFrame::CreateChannelConfig(wxPanel* parent, int index) {
     return panel;
 }
 
-void MainFrame::UpdateChannelUI(int index, bool enabled) {
+void MainFrame::UpdateChannelUI(int, bool) {
     // 未启用通道也可配置(窗口/音轨/移调), 配置控件始终可用
     // 设计: 先配好再启用 = 一次原子提交, 避免中间态全局发送
 }
@@ -718,7 +719,7 @@ void MainFrame::InitKeymapPanel(wxPanel* parent, wxBoxSizer* mainSizer) {
 
 // ================= Event Stubs =================
 
-void MainFrame::OnImportFile(wxCommandEvent& event) {
+void MainFrame::OnImportFile(wxCommandEvent&) {
     wxFileDialog openFileDialog(this, wxString::FromUTF8("选择MIDI文件"), "", "",
                                 wxString::FromUTF8("MIDI文件 (*.mid;*.midi)|*.mid;*.midi|所有文件 (*.*)|*.*"),
                                 wxFD_OPEN | wxFD_FILE_MUST_EXIST | wxFD_MULTIPLE);
@@ -762,7 +763,7 @@ void MainFrame::ImportFiles(const wxArrayString& paths) {
     }
 }
 
-void MainFrame::OnRemoveFile(wxCommandEvent& event) {
+void MainFrame::OnRemoveFile(wxCommandEvent&) {
     if (!m_playlistCtrl) return;
     long viewIndex = m_playlistCtrl->GetFirstSelected();
     if (viewIndex == -1) return;
@@ -826,7 +827,7 @@ void MainFrame::OnRemoveFile(wxCommandEvent& event) {
     SavePlaylistConfig();
 }
 
-void MainFrame::OnClearList(wxCommandEvent& event) {
+void MainFrame::OnClearList(wxCommandEvent&) {
     if (!m_playlistCtrl) return;
     
     if (m_engine.is_playing()) {
@@ -857,7 +858,7 @@ void MainFrame::OnClearList(wxCommandEvent& event) {
     m_config->Flush();
 }
 
-void MainFrame::OnSearch(wxCommandEvent& event) {
+void MainFrame::OnSearch(wxCommandEvent&) {
     PopulatePlaylistView();
 }
 
@@ -984,7 +985,7 @@ bool MainFrame::PlayIndex(int viewIndex, bool autoPlay, bool showDialog) {
     long modelIndex = m_playlistCtrl->GetItemData(viewIndex);
     LOG("Model index: " + std::to_string(modelIndex));
 
-    if (modelIndex < 0 || modelIndex >= m_playlist_files.size()) {
+    if (modelIndex < 0 || static_cast<std::size_t>(modelIndex) >= m_playlist_files.size()) {
         LOG("Invalid modelIndex. Files size: " + std::to_string(m_playlist_files.size()));
         return false;
     }
@@ -1106,7 +1107,7 @@ bool MainFrame::PlayIndex(int viewIndex, bool autoPlay, bool showDialog) {
     return true;
 }
 
-void MainFrame::OnPlay(wxCommandEvent& event) {
+void MainFrame::OnPlay(wxCommandEvent&) {
     if (m_current_midi) {
         if (m_engine.is_playing()) {
             if (m_engine.is_paused()) {
@@ -1123,7 +1124,7 @@ void MainFrame::OnPlay(wxCommandEvent& event) {
     }
 }
 
-void MainFrame::OnStop(wxCommandEvent& event) {
+void MainFrame::OnStop(wxCommandEvent&) {
     bool wasActive = m_engine.is_playing() || m_engine.is_paused();
 
     m_engine.stop();
@@ -1224,7 +1225,7 @@ bool MainFrame::SkipToNextValid(int startIndex, int direction, int maxRetries) {
     return false;
 }
 
-void MainFrame::OnPrev(wxCommandEvent& event) {
+void MainFrame::OnPrev(wxCommandEvent&) {
     if (m_playlistCtrl->GetItemCount() == 0) return;
 
     if (m_play_mode == UIConstants::MODE_RANDOM) {
@@ -1251,7 +1252,7 @@ void MainFrame::OnPrev(wxCommandEvent& event) {
     }
 }
 
-void MainFrame::OnNext(wxCommandEvent& event) {
+void MainFrame::OnNext(wxCommandEvent&) {
     if (m_playlistCtrl->GetItemCount() == 0) return;
 
     if (m_play_mode == UIConstants::MODE_RANDOM) {
@@ -1283,7 +1284,7 @@ void MainFrame::OnNext(wxCommandEvent& event) {
     }
 }
 
-void MainFrame::OnModeClick(wxCommandEvent& event) {
+void MainFrame::OnModeClick(wxCommandEvent&) {
     // Cycle modes
     if (m_play_mode == UIConstants::MODE_SINGLE) m_play_mode = UIConstants::MODE_SINGLE_LOOP;
     else if (m_play_mode == UIConstants::MODE_SINGLE_LOOP) m_play_mode = UIConstants::MODE_LIST;
@@ -1301,7 +1302,7 @@ void MainFrame::OnModeClick(wxCommandEvent& event) {
     SaveGlobalConfig();
 }
 
-void MainFrame::OnDecomposeClick(wxCommandEvent& event) {
+void MainFrame::OnDecomposeClick(wxCommandEvent&) {
     m_decompose_chords = !m_decompose_chords;
     m_engine.set_decompose(m_decompose_chords);
     m_decomposeBtn->SetLabel(m_decompose_chords 
@@ -1310,11 +1311,11 @@ void MainFrame::OnDecomposeClick(wxCommandEvent& event) {
     SaveGlobalConfig();
 }
 
-void MainFrame::OnSliderTrack(wxCommandEvent& event) {
+void MainFrame::OnSliderTrack(wxCommandEvent&) {
     m_is_dragging_slider = true;
 }
 
-void MainFrame::OnSliderRelease(wxCommandEvent& event) {
+void MainFrame::OnSliderRelease(wxCommandEvent&) {
     m_is_dragging_slider = false;
     if (m_current_midi && m_current_midi->length > 0) {
         int val = m_progressSlider->GetValue();
@@ -1331,7 +1332,7 @@ void MainFrame::OnSliderRelease(wxCommandEvent& event) {
     }
 }
 
-void MainFrame::OnSliderChange(wxCommandEvent& event) {
+void MainFrame::OnSliderChange(wxCommandEvent&) {
     if (m_is_dragging_slider && m_current_midi && m_current_midi->length > 0) {
         int val = m_progressSlider->GetValue();
         // Slider value is in milliseconds
@@ -1381,7 +1382,7 @@ void MainFrame::OnABPointSetB(wxCommandEvent& event) {
         static_cast<int>(m_abPointB_ms / 1000) % 60));
 }
 
-void MainFrame::OnABPointClear(wxCommandEvent& event) {
+void MainFrame::OnABPointClear(wxCommandEvent&) {
     m_abPointA_ms = -1.0;
     m_abPointB_ms = -1.0;
     m_abLoopEnabled = false;
@@ -1413,7 +1414,7 @@ void MainFrame::OnSpeedChange(wxSpinDoubleEvent& event) {
     m_engine.set_speed(event.GetValue());
 }
 
-void MainFrame::OnKeymapChoice(wxCommandEvent& event) {
+void MainFrame::OnKeymapChoice(wxCommandEvent&) {
 
     int sel = m_keymapChoice->GetSelection();
     if (sel >= 0 && sel < 2) {
@@ -1433,7 +1434,7 @@ void MainFrame::OnKeymapChoice(wxCommandEvent& event) {
     SaveKeymapConfig();
 }
 
-void MainFrame::OnOpenKeymapEditor(wxCommandEvent& event) {
+void MainFrame::OnOpenKeymapEditor(wxCommandEvent&) {
     // 打开钢琴卷键位编辑器(对齐 next 分支设计)
     UI::KeymapEditorDialog dlg(this, &m_engine, m_config.get(), m_keymapFiles, m_currentKeymapPath,
         [this]() {
@@ -1444,7 +1445,7 @@ void MainFrame::OnOpenKeymapEditor(wxCommandEvent& event) {
         });
     dlg.ShowModal();
 }
-void MainFrame::OnSchedule(wxCommandEvent& event) {
+void MainFrame::OnSchedule(wxCommandEvent&) {
     if (m_is_scheduled) {
         // Cancel schedule
         m_is_scheduled = false;
@@ -1618,8 +1619,6 @@ void MainFrame::OnScheduleTrigger(wxCommandEvent& event) {
     if (!m_is_scheduled || m_active_schedule_token.load() != token) {
         return;
     }
-
-    const auto target_us = m_schedule_target_epoch_us.load();
 
     UpdateStatusText(wxString::FromUTF8("定时任务触发"));
 
@@ -1853,7 +1852,7 @@ void MainFrame::OnTimer(wxTimerEvent&) {
     }
 }
 
-void MainFrame::OnStatusTimer(wxTimerEvent& event) {
+void MainFrame::OnStatusTimer(wxTimerEvent&) {
     if (m_stateMachine.IsIdle()) {
         m_helpScrollActive = true;
         m_helpScrollTimer.Start(50, wxTIMER_ONE_SHOT);
@@ -1931,7 +1930,7 @@ void MainFrame::RequestConfigSave(ConfigSaveKind kind) {
     m_configSaveTimer.Start(300, wxTIMER_ONE_SHOT);
 }
 
-void MainFrame::OnConfigSaveTimer(wxTimerEvent& event) {
+void MainFrame::OnConfigSaveTimer(wxTimerEvent&) {
     FlushConfigSave();
 }
 
@@ -2057,7 +2056,7 @@ void MainFrame::LoadGlobalConfig() {
     if (winW >= 400 && winH >= 300) {
         wxRect savedRect(winX, winY, winW, winH);
         bool visible = false;
-        for (int d = 0; d < wxDisplay::GetCount(); ++d) {
+        for (unsigned int d = 0; d < wxDisplay::GetCount(); ++d) {
             if (wxDisplay(d).GetGeometry().Intersects(savedRect)) {
                 visible = true;
                 break;
@@ -2530,14 +2529,14 @@ void MainFrame::LoadFileConfig(const wxString& filename) {
 
 // ================= 多播放列表功能实现 =================
 
-void MainFrame::OnPlaylistChoice(wxCommandEvent& event) {
+void MainFrame::OnPlaylistChoice(wxCommandEvent&) {
     int sel = m_playlistChoice->GetSelection();
     if (sel != wxNOT_FOUND && sel != m_playlistManager.GetCurrentPlaylistIndex()) {
         SwitchToPlaylist(sel);
     }
 }
 
-void MainFrame::OnAddPlaylist(wxCommandEvent& event) {
+void MainFrame::OnAddPlaylist(wxCommandEvent&) {
     // 弹出对话框输入新播放列表名称
     wxString name = wxGetTextFromUser(
         wxString::FromUTF8("请输入新播放列表的名称:"),
@@ -2556,7 +2555,7 @@ void MainFrame::OnAddPlaylist(wxCommandEvent& event) {
     }
 }
 
-void MainFrame::OnDeletePlaylist(wxCommandEvent& event) {
+void MainFrame::OnDeletePlaylist(wxCommandEvent&) {
     // 检查是否只有一个播放列表
     if (m_playlistManager.GetPlaylistCount() <= 1) {
         wxMessageBox(
@@ -2594,7 +2593,7 @@ void MainFrame::OnDeletePlaylist(wxCommandEvent& event) {
     }
 }
 
-void MainFrame::OnRenamePlaylist(wxCommandEvent& event) {
+void MainFrame::OnRenamePlaylist(wxCommandEvent&) {
     if (!m_playlistManager.GetCurrentPlaylist()) return;
     
     wxString oldName = m_playlistManager.GetCurrentPlaylist()->name;
@@ -2629,7 +2628,8 @@ void MainFrame::UpdatePlaylistChoice() {
     }
     
     int currentIndex = m_playlistManager.GetCurrentPlaylistIndex();
-    if (currentIndex >= 0 && currentIndex < m_playlistChoice->GetCount()) {
+    if (currentIndex >= 0 &&
+        static_cast<unsigned int>(currentIndex) < m_playlistChoice->GetCount()) {
         m_playlistChoice->SetSelection(currentIndex);
     }
 }
@@ -2715,7 +2715,7 @@ void MainFrame::StopHelpScroll() {
     m_helpScrollTimer.Stop();
 }
 
-void MainFrame::OnHelpScrollTimer(wxTimerEvent& event) {
+void MainFrame::OnHelpScrollTimer(wxTimerEvent&) {
     if (!m_stateMachine.IsIdle() || !m_helpScrollActive || m_helpMessages.empty()) {
         StopHelpScroll();
         return;

@@ -1,8 +1,10 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.25)
 project(wx_GO_MIDI_CPP)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # MSVC optimization flags
 if(MSVC)
@@ -154,6 +156,27 @@ endif()
 add_executable(wx_GO_MIDI_CPP WIN32 ${SOURCES})
 set_target_properties(wx_GO_MIDI_CPP PROPERTIES OUTPUT_NAME "GO_MIDI!")
 
+function(go_midi_enable_warnings target)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE
+            /W4
+            /WX
+            /permissive-
+            /Zc:__cplusplus
+            /utf-8
+        )
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(${target} PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+            -Werror
+        )
+    endif()
+endfunction()
+
+go_midi_enable_warnings(wx_GO_MIDI_CPP)
+
 # Link with wxWidgets (built from source)
 target_link_libraries(wx_GO_MIDI_CPP wx::core wx::base)
 
@@ -200,6 +223,7 @@ if(GO_MIDI_BUILD_TESTS)
         src/core/TransposePlanner.cpp
     )
     target_include_directories(transpose_planner_tests PRIVATE src)
+    go_midi_enable_warnings(transpose_planner_tests)
     add_test(NAME transpose_planner_tests COMMAND transpose_planner_tests)
 
     add_executable(key_manager_tests
@@ -209,6 +233,7 @@ if(GO_MIDI_BUILD_TESTS)
     )
     target_include_directories(key_manager_tests PRIVATE src)
     target_link_libraries(key_manager_tests user32 kernel32)
+    go_midi_enable_warnings(key_manager_tests)
     add_test(NAME key_manager_tests COMMAND key_manager_tests)
 
     add_executable(keymap_scheme_config_tests
@@ -217,6 +242,7 @@ if(GO_MIDI_BUILD_TESTS)
     )
     target_include_directories(keymap_scheme_config_tests PRIVATE src)
     target_link_libraries(keymap_scheme_config_tests wx::core wx::base)
+    go_midi_enable_warnings(keymap_scheme_config_tests)
     add_test(NAME keymap_scheme_config_tests COMMAND keymap_scheme_config_tests)
 
     add_executable(midi_parser_tests
@@ -226,6 +252,7 @@ if(GO_MIDI_BUILD_TESTS)
     )
     target_include_directories(midi_parser_tests PRIVATE src)
     target_link_libraries(midi_parser_tests user32 kernel32)
+    go_midi_enable_warnings(midi_parser_tests)
     add_test(NAME midi_parser_tests
              COMMAND midi_parser_tests "${CMAKE_SOURCE_DIR}/tests/data/public_domain_midi")
 
@@ -238,6 +265,7 @@ if(GO_MIDI_BUILD_TESTS)
     )
     target_include_directories(transpose_regression_tests PRIVATE src)
     target_link_libraries(transpose_regression_tests user32 kernel32)
+    go_midi_enable_warnings(transpose_regression_tests)
     add_test(NAME transpose_regression_tests
              COMMAND transpose_regression_tests "${CMAKE_SOURCE_DIR}/tests/data/public_domain_midi")
 
@@ -259,6 +287,7 @@ if(GO_MIDI_BUILD_TESTS)
     )
     target_include_directories(transpose_compare PRIVATE src)
     target_link_libraries(transpose_compare user32 kernel32)
+    go_midi_enable_warnings(transpose_compare)
 
     add_custom_target(validate
         COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure

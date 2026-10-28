@@ -173,7 +173,7 @@ void KeymapEditorDialog::Notify() {
     if (m_onChanged) m_onChanged();
 }
 
-void KeymapEditorDialog::OnChoice(wxCommandEvent& event) {
+void KeymapEditorDialog::OnChoice(wxCommandEvent&) {
     int sel = m_choice->GetSelection();
     if (sel < 0) return;
     if (sel == 0) {
@@ -225,7 +225,7 @@ void KeymapEditorDialog::OnPitchChange(wxSpinEvent& event) {
     Notify();
 }
 
-void KeymapEditorDialog::OnPitchSaveTimer(wxTimerEvent& event) {
+void KeymapEditorDialog::OnPitchSaveTimer(wxTimerEvent&) {
     // 去抖落盘(引擎侧已通过 Notify 即时生效, 这里只负责持久化)
     FlushPitchSave();
 }
