@@ -33,8 +33,9 @@ emulator if `wine` is available.
 - `midi_parser_tests`: six external MIDI files covering track alignment,
   pitch/channel/duration ranges and note counts.
 - `transpose_regression_tests`: end-to-end 36/37-key plans for six external
-  MIDI files. It pins octave choice, retained-duration percentage, event hash,
-  and verifies the selected candidate is Pareto-optimal.
+  MIDI files. It pins octave choice, retained-duration percentage,
+  compiler-independent event-structure hash, and verifies the selected
+  candidate is Pareto-optimal.
 
 ## Continuous integration
 

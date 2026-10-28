@@ -97,11 +97,18 @@ namespace {
 
 class PianoRollCtrlTestApp : public wxApp {
 public:
-    bool OnInit() override { return true; }
+    bool OnInit() override
+    {
+        CallAfter([this] {
+            run_interaction_tests();
+            ExitMainLoop();
+        });
+        return true;
+    }
 
     int OnRun() override
     {
-        run_interaction_tests();
+        wxApp::OnRun();
         if (g_failures != 0) {
             std::cerr << g_failures << " piano-roll control test(s) failed\n";
             return EXIT_FAILURE;

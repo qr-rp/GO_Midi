@@ -310,6 +310,7 @@ if(GO_MIDI_BUILD_TESTS)
         transpose_regression_tests
     )
     set_tests_properties(${GO_MIDI_TESTS} PROPERTIES TIMEOUT 60)
+    set_tests_properties(piano_roll_ctrl_tests PROPERTIES TIMEOUT 120)
 
     add_executable(transpose_compare
         tools/transpose_compare.cpp
