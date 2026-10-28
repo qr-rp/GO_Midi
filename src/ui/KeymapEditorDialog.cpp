@@ -10,6 +10,8 @@
 #include <windows.h>  // VK_*
 
 #include "../util/Logger.h"
+#include "KeymapSchemeConfig.h"
+#include "UIHelpers.h"
 
 namespace UI {
 
@@ -148,27 +150,11 @@ void KeymapEditorDialog::SetStatus(const wxString& text) {
 }
 
 void KeymapEditorDialog::SyncChoice() {
-    if (!m_choice) return;
-    m_choice->Clear();
-    m_choice->Append(wxString::FromUTF8("默认键位"));       // 0: 内置 FF14
-    m_choice->Append(wxString::FromUTF8("燕云十六声"));     // 1: 内置燕云
-    for (const auto& name : m_keymapFiles) {
-        m_choice->Append(name);
-    }
-    // 根据当前方案定位选择 (与主界面标识体系一致: @builtin_0=FF14, @builtin_1=燕云)
-    if (m_currentPath.IsEmpty() || m_currentPath == "@builtin_0") {
-        m_choice->SetSelection(0);   // 默认键位(内置 FF14)
-    } else if (m_currentPath == "@builtin_1") {
-        m_choice->SetSelection(1);   // 燕云十六声
-    } else {
-        int idx = 2;
-        bool found = false;
-        for (const auto& name : m_keymapFiles) {
-            if (name == m_currentPath) { found = true; break; }
-            ++idx;
-        }
-        m_choice->SetSelection(found ? idx : 0);
-    }
+    if (!m_choice)
+        return;
+    KeymapSchemeStore::populate_choice(
+        m_choice, m_keymapFiles, m_currentPath,
+        UIConstants::DEFAULT_KEYMAP, UIConstants::KEYMAP_YYSLS);
 }
 
 void KeymapEditorDialog::SyncRoll() {
@@ -203,7 +189,9 @@ void KeymapEditorDialog::OnChoice(wxCommandEvent& event) {
         if (fileIdx < m_keymapFiles.size()) {
             const wxString& name = m_keymapFiles[fileIdx];
             std::map<int, Util::KeyMapping> schemeMap;
-            if (ReadSchemeMap(name, schemeMap)) {
+            if (KeymapSchemeStore::read_scheme_map(
+                    m_config, m_keymapFiles, name, schemeMap))
+            {
                 if (m_km) m_km->set_map(schemeMap);
                 m_currentPath = name;
                 SetStatus(wxString::FromUTF8("已加载: ") + name);
@@ -239,18 +227,26 @@ void KeymapEditorDialog::OnPitchChange(wxSpinEvent& event) {
 
 void KeymapEditorDialog::OnPitchSaveTimer(wxTimerEvent& event) {
     // 去抖落盘(引擎侧已通过 Notify 即时生效, 这里只负责持久化)
-    WriteSchemePitch(m_currentPath, m_minPitch, m_maxPitch);
+    FlushPitchSave();
+}
+
+void KeymapEditorDialog::FlushPitchSave() {
+    KeymapSchemeStore::write_scheme_pitch(
+        m_config, m_keymapFiles, m_currentPath, m_minPitch, m_maxPitch);
+    if (m_config)
+        m_config->Flush();
 }
 
 void KeymapEditorDialog::OnDialogClose(wxCloseEvent& event) {
     // 冲刷去抖中的音域写盘, 避免关窗丢失最后改动
-    WriteSchemePitch(m_currentPath, m_minPitch, m_maxPitch);
+    FlushPitchSave();
     event.Skip();
 }
 
 void KeymapEditorDialog::RestorePitchRange() {
     int minP = 48, maxP = 84;
-    ReadSchemePitch(m_currentPath, minP, maxP);
+    KeymapSchemeStore::read_scheme_pitch(
+        m_config, m_keymapFiles, m_currentPath, minP, maxP);
     m_minPitch = minP; m_maxPitch = maxP;
     m_roll->SetPitchRange(minP, maxP);
     if (m_minSpin) m_minSpin->SetValue(minP);
@@ -268,7 +264,8 @@ void KeymapEditorDialog::OnNew(wxCommandEvent&) {
     // 新建方案为空键位（config 内管理，不新建文件，也不复制当前）
     std::map<int, Util::KeyMapping> newMap;
     wxString uniqueName = GenerateUniqueName(name);
-    WriteSchemeMap(uniqueName, newMap);
+    KeymapSchemeStore::write_scheme_map(
+        m_config, m_keymapFiles, uniqueName, newMap);
     m_keymapFiles.push_back(uniqueName);
     m_currentPath = uniqueName;
     if (m_km) m_km->set_map(newMap);   // 当前键位切到空方案, 从零开始绑定
@@ -296,14 +293,17 @@ void KeymapEditorDialog::OnRename(wxCommandEvent&) {
     if (newName.IsEmpty() || newName == oldName) return;
     // 重命名：先读旧方案数据，改名后写回（config 内迁移）
     std::map<int, Util::KeyMapping> schemeMap;
-    if (!ReadSchemeMap(oldName, schemeMap)) {
+    if (!KeymapSchemeStore::read_scheme_map(
+            m_config, m_keymapFiles, oldName, schemeMap))
+    {
         SetStatus(wxString::FromUTF8("重命名失败: 方案数据缺失"));
         return;
     }
     wxString uniqueName = GenerateUniqueName(newName);
     m_keymapFiles[fileIdx] = uniqueName;
     if (m_currentPath == oldName) m_currentPath = uniqueName;
-    WriteSchemeMap(uniqueName, schemeMap);
+    KeymapSchemeStore::write_scheme_map(
+        m_config, m_keymapFiles, uniqueName, schemeMap);
     SyncChoice();
     SyncRoll();
     SetStatus(wxString::FromUTF8("已重命名: ") + oldName + wxString::FromUTF8(" → ") + uniqueName);
@@ -346,7 +346,8 @@ void KeymapEditorDialog::OnLoad(wxCommandEvent&) {
     // 导入内容存为 config 内新方案
     wxString baseName = path.AfterLast('\\').BeforeLast('.');
     wxString uniqueName = GenerateUniqueName(baseName);
-    WriteSchemeMap(uniqueName, m_km->get_map());
+    KeymapSchemeStore::write_scheme_map(
+        m_config, m_keymapFiles, uniqueName, m_km->get_map());
     m_keymapFiles.push_back(uniqueName);
     m_currentPath = uniqueName;
     SyncChoice();
@@ -368,108 +369,10 @@ void KeymapEditorDialog::OnExport(wxCommandEvent&) {
 }
 
 // ---- config 内方案读写辅助 ----
-long KeymapEditorDialog::FindIndex(const wxString& name) const {
-    for (size_t i = 0; i < m_keymapFiles.size(); ++i) {
-        if (m_keymapFiles[i] == name) return static_cast<long>(i);
-    }
-    return -1;
-}
-
-bool KeymapEditorDialog::ReadSchemeMap(const wxString& name, std::map<int, Util::KeyMapping>& out) const {
-    if (!m_config) return false;
-    long idx = FindIndex(name);
-    if (idx < 0) return false;
-    wxString groupPath = wxString::Format("/KeymapSchemes/List_%ld", idx);
-    if (!m_config->HasGroup(groupPath)) return false;
-    m_config->SetPath(groupPath);
-    long noteCount = 0;
-    m_config->Read("NoteCount", &noteCount, 0L);
-    for (long n = 0; n < noteCount; ++n) {
-        wxString val;
-        if (m_config->Read(wxString::Format("Note%ld", n), &val)) {
-            long pitch = 0, vk = 0, mod = 0;
-            wxString rest = val;
-            if (!rest.BeforeFirst(',').ToLong(&pitch)) continue;
-            rest = rest.AfterFirst(',');
-            if (!rest.BeforeFirst(',').ToLong(&vk)) continue;
-            rest = rest.AfterFirst(',');
-            if (!rest.ToLong(&mod)) continue;
-            out[static_cast<int>(pitch)] = {static_cast<int>(vk), static_cast<int>(mod)};
-        }
-    }
-    m_config->SetPath("/");
-    return true;
-}
-
-void KeymapEditorDialog::WriteSchemeMap(const wxString& name, const std::map<int, Util::KeyMapping>& map) const {
-    if (!m_config) return;
-    // 确保方案在列表中有槽位（列表顺序 = config 顺序）
-    long idx = FindIndex(name);
-    if (idx < 0) return;
-    wxString groupPath = wxString::Format("/KeymapSchemes/List_%ld", idx);
-    m_config->SetPath(groupPath);
-    m_config->Write("Name", name);
-    m_config->Write("NoteCount", static_cast<long>(map.size()));
-    long noteIdx = 0;
-    for (const auto& pair : map) {
-        wxString noteKey = wxString::Format("Note%ld", noteIdx++);
-        wxString noteVal = wxString::Format("%d,%d,%d", pair.first, pair.second.vk_code, pair.second.modifier);
-        m_config->Write(noteKey, noteVal);
-    }
-    m_config->SetPath("/");
-}
-
-bool KeymapEditorDialog::ReadSchemePitch(const wxString& name, int& minP, int& maxP) const {
-    minP = 48; maxP = 84;   // 默认(FF14 内置音域)
-    if (!m_config) return false;
-    wxString key;
-    if (name.IsEmpty() || name == "@builtin_0") {
-        // 内置 FF14 (空标识兼容旧数据)
-        key = "/Global/FF14Pitch";
-        if (!m_config->HasEntry(key)) {
-            m_config->Read("/Global/MinPitch", &minP, 48);   // 兼容旧版全局音域
-            m_config->Read("/Global/MaxPitch", &maxP, 84);
-            return true;
-        }
-    } else if (name.StartsWith("@builtin_")) {
-        // 内置燕云(@builtin_1)等
-        key = "/Global/YYPitch";
-        minP = 48; maxP = 83;   // 燕云十六声内置音域
-    } else {
-        long idx = FindIndex(name);
-        if (idx < 0) return false;
-        key = wxString::Format("/KeymapSchemes/List_%ld/Pitch", idx);
-    }
-    if (!m_config->HasEntry(key)) {
-        // 无已保存音域: 返回内置默认值, 不视为失败
-        return false;
-    }
-    m_config->Read(key, &minP, 48);
-    m_config->Read(key + "Max", &maxP, 84);
-    return true;
-}
-
-void KeymapEditorDialog::WriteSchemePitch(const wxString& name, int minP, int maxP) const {
-    if (!m_config) return;
-    wxString key;
-    if (name.IsEmpty() || name == "@builtin_0") {
-        key = "/Global/FF14Pitch";
-    } else if (name.StartsWith("@builtin_")) {
-        key = "/Global/YYPitch";
-    } else {
-        long idx = FindIndex(name);
-        if (idx < 0) return;
-        key = wxString::Format("/KeymapSchemes/List_%ld/Pitch", idx);
-    }
-    m_config->Write(key, minP);
-    m_config->Write(key + "Max", maxP);
-    m_config->Flush();
-}
-
 wxString KeymapEditorDialog::GenerateUniqueName(const wxString& base) const {
     wxString name = base;
     int counter = 0;
-    while (FindIndex(name) >= 0) {
+    while (KeymapSchemeStore::find_scheme_index(m_keymapFiles, name) >= 0) {
         name = wxString::Format("%s (%d)", base, ++counter);
     }
     return name;

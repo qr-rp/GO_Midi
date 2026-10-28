@@ -29,6 +29,8 @@ config.ini
 *.obj
 *.a
 *.lib
+__pycache__/
+*.pyc
 
 # CMake
 CMakeCache.txt

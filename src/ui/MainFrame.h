@@ -103,6 +103,7 @@ private:
     void OnRemoveFile(wxCommandEvent& event);
     void OnClearList(wxCommandEvent& event);
     void OnSearch(wxCommandEvent& event);
+    void PopulatePlaylistView();
     void OnPlaylistSelected(wxListEvent& event);
     void OnPlaylistActivated(wxListEvent& event);
     void OnPlaylistBeginDrag(wxListEvent& event);
@@ -154,6 +155,11 @@ private:
 
     // Timer Events
     void OnTimer(wxTimerEvent& event);
+    void PollBackgroundServices();
+    void PollRuntimeServices();
+    void UpdateNtpClock();
+    void UpdatePlaybackTick();
+    void HandleTrackFinished(double currentTime);
     void OnStatusTimer(wxTimerEvent& event);
     void OnHelpScrollTimer(wxTimerEvent& event);
 
@@ -209,10 +215,7 @@ private:
     void SaveKeymapConfig();
     void UpdateKeymapChoice();
     void LoadKeymapScheme(const wxString& name);   // 从 config 读方案 map 到 KeyManager
-    long FindKeymapSchemeIndex(const wxString& name) const;  // 返回 -1 表示不存在
-    bool ReadKeymapSchemeMap(const wxString& name, std::map<int, Util::KeyMapping>& out) const; // 从 config 读方案 map
     void load_builtin_preset(int idx);
-    bool ReadSchemePitch(const wxString& name, int& minP, int& maxP) const;  // 读方案音域(空=FF14, @builtin_=燕云, 其他=自定义)
     void ApplySchemePitch(const wxString& name);   // 应用方案音域到引擎+UI
     void LoadLastSelectedFile();
     void SaveLastSelectedFile();

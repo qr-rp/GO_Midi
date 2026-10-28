@@ -1,6 +1,7 @@
 #include <wx/tglbtn.h>
 #include "MainFrame.h"
 #include "UIHelpers.h"
+#include "KeymapSchemeConfig.h"
 #include "../util/Logger.h"
 #include "../util/NtpClient.h"
 
@@ -857,30 +858,7 @@ void MainFrame::OnClearList(wxCommandEvent& event) {
 }
 
 void MainFrame::OnSearch(wxCommandEvent& event) {
-    if (!m_playlistCtrl) return;
-    
-    wxString keyword = m_searchCtrl->GetValue().Lower();
-    m_playlistCtrl->DeleteAllItems();
-    
-    long idx = 0;
-    for (size_t i = 0; i < m_playlist_files.size(); ++i) {
-        wxString path = m_playlist_files[i];
-        wxString name = path.AfterLast('\\');
-        
-        if (keyword.IsEmpty() || name.Lower().Contains(keyword)) {
-            m_playlistCtrl->InsertItem(idx, name);
-            m_playlistCtrl->SetItemData(idx, i);
-            
-            // Highlight if currently playing
-            // We need to track current playing file by path
-            if (path == m_current_path) {
-                m_playlistCtrl->SetItemState(idx, wxLIST_STATE_SELECTED, wxLIST_STATE_SELECTED);
-                m_current_play_index = idx; // Update view index
-            }
-            
-            idx++;
-        }
-    }
+    PopulatePlaylistView();
 }
 
 void MainFrame::OnPlaylistSelected(wxListEvent& event) {
@@ -1750,7 +1728,7 @@ void MainFrame::UpdateTrackList() {
     }
 }
 
-void MainFrame::OnTimer(wxTimerEvent& event) {
+void MainFrame::PollRuntimeServices() {
     // 每5秒扫描窗口变化，仅在非播放状态时生效
     if (!m_engine.is_playing()) {
         static int windowScanCounter = 0;
@@ -1769,8 +1747,10 @@ void MainFrame::OnTimer(wxTimerEvent& event) {
             InstallGlobalHook();
         }
     }
+}
 
-    auto now_ntp = Util::NtpClient::GetNow();
+void MainFrame::UpdateNtpClock() {
+    const auto now_ntp = Util::NtpClient::GetNow();
     const bool synced = Util::NtpClient::IsSynced();
     static bool last_synced = false;
     if (synced != last_synced) {
@@ -1778,89 +1758,95 @@ void MainFrame::OnTimer(wxTimerEvent& event) {
         last_synced = synced;
     }
     
-    // Show NTP Time
+    // 显示 NTP 时间
     if (synced) {
-         time_t now_c = std::chrono::system_clock::to_time_t(now_ntp);
-         struct tm parts;
-         localtime_s(&parts, &now_c);
-         
-         static int last_ntp_sec = -1;
-         if (parts.tm_sec != last_ntp_sec) {
-             m_ntpLabel->SetLabel(wxString::Format("%02d:%02d", parts.tm_min, parts.tm_sec));
-             last_ntp_sec = parts.tm_sec;
-         }
+        const time_t now_c = std::chrono::system_clock::to_time_t(now_ntp);
+        struct tm parts;
+        localtime_s(&parts, &now_c);
+
+        static int last_ntp_sec = -1;
+        if (parts.tm_sec != last_ntp_sec) {
+            m_ntpLabel->SetLabel(wxString::Format("%02d:%02d", parts.tm_min, parts.tm_sec));
+            last_ntp_sec = parts.tm_sec;
+        }
     } else {
-         static bool last_synced_state = true;
-         if (last_synced_state) {
-             m_ntpLabel->SetLabel("--:--");
-             last_synced_state = false;
-         }
+        static bool last_synced_state = true;
+        if (last_synced_state) {
+            m_ntpLabel->SetLabel("--:--");
+            last_synced_state = false;
+        }
+    }
+}
+
+void MainFrame::PollBackgroundServices() {
+    PollRuntimeServices();
+    UpdateNtpClock();
+}
+
+void MainFrame::HandleTrackFinished(double currentTime) {
+    if (!m_current_midi || currentTime < m_current_midi->length || m_current_midi->length <= 0)
+        return;
+
+    if (m_play_mode == UIConstants::MODE_SINGLE_LOOP) {
+        m_engine.seek(0);
+        m_engine.play();
+        return;
     }
 
+    if (m_play_mode == UIConstants::MODE_SINGLE) {
+        wxCommandEvent dummy;
+        OnStop(dummy);
+        return;
+    }
+
+    // 检查当前文件是否还在当前播放列表中（切换过列表则可能不在）
+    const bool fileInCurrentPlaylist = std::find(
+        m_playlist_files.begin(), m_playlist_files.end(), m_current_path) != m_playlist_files.end();
+    wxCommandEvent dummy;
+    if (!fileInCurrentPlaylist)
+        OnStop(dummy);
+    else
+        OnNext(dummy);
+}
+
+void MainFrame::UpdatePlaybackTick() {
+    const double currentTime = m_engine.get_current_time();
+
+    // AB 点循环：到达 B 点后跳回 A 点
+    if (m_abLoopEnabled && m_abPointA_ms >= 0 && m_abPointB_ms > m_abPointA_ms &&
+        currentTime * 1000.0 >= m_abPointB_ms)
+    {
+        m_engine.seek(m_abPointA_ms / 1000.0);
+    }
+
+    // 降低 UI 刷新频率
+    static int updateCounter = 0;
+    static double lastUpdateTime = -1.0;
+    const bool shouldUpdateUI = (updateCounter++ % 3 == 0);
+    if (!m_is_dragging_slider && m_current_midi && m_current_midi->length > 0) {
+        const int newSliderValue = static_cast<int>(currentTime * 1000);
+        if (shouldUpdateUI &&
+            std::abs(m_progressSlider->GetValue() - newSliderValue) > 100)
+        {
+            m_progressSlider->SetValue(newSliderValue);
+        }
+
+        if (std::abs(currentTime - lastUpdateTime) >= 1.0 || lastUpdateTime < 0) {
+            m_stateUpdater->UpdateTimeLabels(currentTime, m_current_midi->length);
+            lastUpdateTime = currentTime;
+        }
+    }
+
+    if (!m_engine.is_paused() && !m_stateMachine.IsPlaying())
+        m_stateMachine.TransitionTo(UI::PlaybackStatus::Playing);
+
+    HandleTrackFinished(currentTime);
+}
+
+void MainFrame::OnTimer(wxTimerEvent&) {
+    PollBackgroundServices();
     if (m_engine.is_playing()) {
-        double t = m_engine.get_current_time();
-
-        // AB Point Loop: 如果到达B点，跳回A点
-        if (m_abLoopEnabled && m_abPointA_ms >= 0 && m_abPointB_ms > m_abPointA_ms) {
-            double currentTime_ms = t * 1000.0;
-            if (currentTime_ms >= m_abPointB_ms) {
-                m_engine.seek(m_abPointA_ms / 1000.0);
-            }
-        }
-
-        // 优化：减少UI更新频率
-        static int updateCounter = 0;
-        static double lastUpdateTime = -1.0;
-        bool shouldUpdateUI = (updateCounter++ % 3 == 0); // 每50ms更新一次
-
-        if (!m_is_dragging_slider && m_current_midi && m_current_midi->length > 0) {
-             // Slider value is in milliseconds
-             int newSliderVal = static_cast<int>(t * 1000);
-             if (shouldUpdateUI && std::abs(m_progressSlider->GetValue() - newSliderVal) > 100) {
-                 m_progressSlider->SetValue(newSliderVal);
-             }
-
-             // 仅在秒数变化时更新时间标签
-             if (std::abs(t - lastUpdateTime) >= 1.0 || lastUpdateTime < 0) {
-                 m_stateUpdater->UpdateTimeLabels(t, m_current_midi->length);
-                 lastUpdateTime = t;
-             }
-        }
-
-        // Ensure state is Playing (not Paused)
-        if (!m_engine.is_paused() && !m_stateMachine.IsPlaying()) {
-            m_stateMachine.TransitionTo(UI::PlaybackStatus::Playing);
-        }
-
-        // Check if finished
-        if (m_current_midi && t >= m_current_midi->length && m_current_midi->length > 0) {
-            if (m_play_mode == UIConstants::MODE_SINGLE_LOOP) {
-                m_engine.seek(0);
-                m_engine.play();
-            } else if (m_play_mode == UIConstants::MODE_SINGLE) {
-                wxCommandEvent dummy;
-                OnStop(dummy);
-            } else {
-                // 检查当前文件是否还在当前播放列表中（切换过列表则可能不在）
-                bool fileInCurrentPlaylist = false;
-                for (const auto& f : m_playlist_files) {
-                    if (f == m_current_path) {
-                        fileInCurrentPlaylist = true;
-                        break;
-                    }
-                }
-
-                if (!fileInCurrentPlaylist) {
-                    // 播放列表已切换，停止播放
-                    wxCommandEvent dummy;
-                    OnStop(dummy);
-                } else {
-                    // List modes
-                    wxCommandEvent dummy;
-                    OnNext(dummy);
-                }
-            }
-        }
+        UpdatePlaybackTick();
     } else if (m_stateMachine.IsActive()) {
         // Engine stopped but state still active - sync state
         m_stateMachine.TransitionTo(UI::PlaybackStatus::Stopped);
@@ -2207,21 +2193,22 @@ void MainFrame::SaveKeymapConfig() {
     for (const auto& name : m_keymapFiles) {
         if (name == m_currentKeymapPath && !m_currentKeymapPath.StartsWith("@builtin_")) continue; // 当前方案用 KeyManager 内存
         std::map<int, Util::KeyMapping> m;
-        if (ReadKeymapSchemeMap(name, m)) backupMaps[name] = m;
+        if (UI::KeymapSchemeStore::read_scheme_map(
+                m_config.get(), m_keymapFiles, name, m))
+        {
+            backupMaps[name] = m;
+        }
     }
 
     // 保存键位方案（config /KeymapSchemes 内管理，仿 PlaylistManager）
     m_config->DeleteGroup("KeymapSchemes");
     m_config->SetPath("/KeymapSchemes");
 
-    long count = static_cast<long>(m_keymapFiles.size());
+    const long count = static_cast<long>(m_keymapFiles.size());
     m_config->Write("Count", count);
+    m_config->SetPath("/");
 
     for (long i = 0; i < count; ++i) {
-        wxString groupPath = wxString::Format("List_%ld", i);
-        m_config->SetPath(groupPath);
-        m_config->Write("Name", m_keymapFiles[i]);
-
         // 当前激活方案：保存其完整键位映射（内置方案不落盘）；否则用备份
         const wxString& name = m_keymapFiles[i];
         std::map<int, Util::KeyMapping> schemeMap;
@@ -2231,25 +2218,20 @@ void MainFrame::SaveKeymapConfig() {
             auto it = backupMaps.find(name);
             if (it != backupMaps.end()) schemeMap = it->second;
         }
-        m_config->Write("NoteCount", static_cast<long>(schemeMap.size()));
-        long noteIdx = 0;
-        for (const auto& pair : schemeMap) {
-            wxString noteKey = wxString::Format("Note%ld", noteIdx++);
-            wxString noteVal = wxString::Format("%d,%d,%d", pair.first, pair.second.vk_code, pair.second.modifier);
-            m_config->Write(noteKey, noteVal);
-        }
+        UI::KeymapSchemeStore::write_scheme_map(
+            m_config.get(), m_keymapFiles, name, schemeMap);
+
         // 每个方案独立音域(当前激活方案用内存值, 其余用 config 值)
         int sMin = 48, sMax = 84;
         if (name == m_currentKeymapPath && !m_currentKeymapPath.StartsWith("@builtin_")) {
             sMin = m_minPitch; sMax = m_maxPitch;
         } else {
-            ReadSchemePitch(name, sMin, sMax);
+            UI::KeymapSchemeStore::read_scheme_pitch(
+                m_config.get(), m_keymapFiles, name, sMin, sMax);
         }
-        m_config->Write("Pitch", sMin);
-        m_config->Write("PitchMax", sMax);
-        m_config->SetPath("..");
+        UI::KeymapSchemeStore::write_scheme_pitch(
+            m_config.get(), m_keymapFiles, name, sMin, sMax);
     }
-    m_config->SetPath("/");
 
     // 保存当前选中的键位方案标识
     m_config->Write("/Global/CurrentKeymap", m_currentKeymapPath);
@@ -2257,41 +2239,11 @@ void MainFrame::SaveKeymapConfig() {
     m_config->Flush();
 }
 
-long MainFrame::FindKeymapSchemeIndex(const wxString& name) const {
-    for (size_t i = 0; i < m_keymapFiles.size(); ++i) {
-        if (m_keymapFiles[i] == name) return static_cast<long>(i);
-    }
-    return -1;
-}
-
-bool MainFrame::ReadKeymapSchemeMap(const wxString& name, std::map<int, Util::KeyMapping>& out) const {
-    long idx = FindKeymapSchemeIndex(name);
-    if (idx < 0) return false;
-    wxString groupPath = wxString::Format("/KeymapSchemes/List_%ld", idx);
-    if (!m_config->HasGroup(groupPath)) return false;
-    m_config->SetPath(groupPath);
-    long noteCount = 0;
-    m_config->Read("NoteCount", &noteCount, 0L);
-    for (long n = 0; n < noteCount; ++n) {
-        wxString val;
-        if (m_config->Read(wxString::Format("Note%ld", n), &val)) {
-            long pitch = 0, vk = 0, mod = 0;
-            wxString rest = val;
-            if (!rest.BeforeFirst(',').ToLong(&pitch)) continue;
-            rest = rest.AfterFirst(',');
-            if (!rest.BeforeFirst(',').ToLong(&vk)) continue;
-            rest = rest.AfterFirst(',');
-            if (!rest.ToLong(&mod)) continue;
-            out[static_cast<int>(pitch)] = {static_cast<int>(vk), static_cast<int>(mod)};
-        }
-    }
-    m_config->SetPath("/");
-    return true;
-}
-
 void MainFrame::LoadKeymapScheme(const wxString& name) {
     std::map<int, Util::KeyMapping> schemeMap;
-    if (ReadKeymapSchemeMap(name, schemeMap)) {
+    if (UI::KeymapSchemeStore::read_scheme_map(
+            m_config.get(), m_keymapFiles, name, schemeMap))
+    {
         m_engine.get_key_manager().set_map(schemeMap);
         m_engine.notify_keymap_changed();
         ApplySchemePitch(name);
@@ -2302,32 +2254,9 @@ void MainFrame::LoadKeymapScheme(const wxString& name) {
 }
 
 void MainFrame::UpdateKeymapChoice() {
-    if (!m_keymapChoice) return;
-
-    // 清空并重建列表
-    m_keymapChoice->Clear();
-    m_keymapChoice->Append(UIConstants::DEFAULT_KEYMAP);  // index 0: 内置 FF14
-    m_keymapChoice->Append(UIConstants::KEYMAP_YYSLS);    // index 1: 内置燕云十六声
-
-    // 添加自定义键位方案（config 内管理，直接显示方案名）
-    for (const auto& name : m_keymapFiles) {
-        m_keymapChoice->Append(name);
-    }
-
-    // 按当前方案标识定位选择 (与弹窗 SyncChoice 逻辑一致, 支持弹窗内切换后同步)
-    if (m_currentKeymapPath.IsEmpty() || m_currentKeymapPath == "@builtin_0") {
-        m_keymapChoice->SetSelection(0);   // 内置 FF14
-    } else if (m_currentKeymapPath == "@builtin_1") {
-        m_keymapChoice->SetSelection(1);   // 内置燕云
-    } else {
-        int idx = 2;
-        bool found = false;
-        for (const auto& name : m_keymapFiles) {
-            if (name == m_currentKeymapPath) { found = true; break; }
-            ++idx;
-        }
-        m_keymapChoice->SetSelection(found ? idx : 0);
-    }
+    UI::KeymapSchemeStore::populate_choice(
+        m_keymapChoice, m_keymapFiles, m_currentKeymapPath,
+        UIConstants::DEFAULT_KEYMAP, UIConstants::KEYMAP_YYSLS);
 }
 
 void MainFrame::load_builtin_preset(int idx)
@@ -2348,41 +2277,10 @@ void MainFrame::load_builtin_preset(int idx)
     m_engine.notify_keymap_changed();
 }
 
-bool MainFrame::ReadSchemePitch(const wxString& name, int& minP, int& maxP) const {
-    minP = 48; maxP = 84;   // 默认(FF14 内置音域)
-    if (!m_config) return false;
-    wxString key;
-    if (name.IsEmpty() || name == "@builtin_0") {
-        // 内置 FF14 (空标识兼容旧数据)
-        key = "/Global/FF14Pitch";
-        // 兼容旧版: 无 FF14 专属音域时回退全局 MinPitch/MaxPitch
-        if (!m_config->HasEntry(key)) {
-            m_config->Read("/Global/MinPitch", &minP, 48);
-            m_config->Read("/Global/MaxPitch", &maxP, 84);
-            return true;
-        }
-    } else if (name.StartsWith("@builtin_")) {
-        // 内置燕云 (@builtin_1) 等
-        key = "/Global/YYPitch";
-        minP = 48; maxP = 83;   // 燕云十六声内置音域
-    } else {
-        // 自定义方案: /KeymapSchemes/List_N 内
-        long idx = FindKeymapSchemeIndex(name);
-        if (idx < 0) return false;
-        key = wxString::Format("/KeymapSchemes/List_%ld/Pitch", idx);
-    }
-    if (!m_config->HasEntry(key)) {
-        // 无已保存音域: 返回内置默认值(FF14=48-84, 燕云=48-83), 不视为失败
-        return false;
-    }
-    m_config->Read(key, &minP, 48);
-    m_config->Read(key + "Max", &maxP, 84);
-    return true;
-}
-
 void MainFrame::ApplySchemePitch(const wxString& name) {
     int minP = 48, maxP = 84;
-    ReadSchemePitch(name, minP, maxP);
+    UI::KeymapSchemeStore::read_scheme_pitch(
+        m_config.get(), m_keymapFiles, name, minP, maxP);
     m_minPitch = minP;
     m_maxPitch = maxP;
     m_engine.set_pitch_range(minP, maxP);
@@ -2737,34 +2635,41 @@ void MainFrame::UpdatePlaylistChoice() {
 }
 
 void MainFrame::RefreshPlaylistUI() {
-    m_playlistCtrl->DeleteAllItems();
-    
     // 从 PlaylistManager 获取文件列表
     m_playlist_files.clear();
     const auto& files = m_playlistManager.GetFiles();
     for (const auto& file : files) {
         m_playlist_files.push_back(file);
     }
-    
+
+    PopulatePlaylistView();
+}
+
+void MainFrame::PopulatePlaylistView() {
+    if (!m_playlistCtrl || !m_searchCtrl)
+        return;
+
+    m_playlistCtrl->DeleteAllItems();
+
     // 应用搜索过滤
     wxString keyword = m_searchCtrl->GetValue().Lower();
-    bool hasSearch = !keyword.IsEmpty();
-    
+    const bool hasSearch = !keyword.IsEmpty();
+
     long idx = 0;
     for (size_t i = 0; i < m_playlist_files.size(); ++i) {
         wxString path = m_playlist_files[i];
         wxString name = path.AfterLast('\\');
-        
+
         if (!hasSearch || name.Lower().Contains(keyword)) {
             m_playlistCtrl->InsertItem(idx, name);
             m_playlistCtrl->SetItemData(idx, static_cast<long>(i));
-            
+
             // 高亮当前播放的文件
             if (path == m_current_path) {
                 m_playlistCtrl->SetItemState(idx, wxLIST_STATE_SELECTED, wxLIST_STATE_SELECTED);
                 m_current_play_index = static_cast<int>(idx);
             }
-            
+
             idx++;
         }
     }

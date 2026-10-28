@@ -1,0 +1,21 @@
+# Layer names map to repository paths.
+layer UTIL = src/util
+layer MIDI = src/midi
+layer CORE = src/core
+layer UI = src/ui
+layer APP = src/App
+
+# Dependencies may only point downward through the application stack.
+deny UTIL -> MIDI
+deny UTIL -> CORE
+deny UTIL -> UI
+deny UTIL -> APP
+
+deny MIDI -> CORE
+deny MIDI -> UI
+deny MIDI -> APP
+
+deny CORE -> UI
+deny CORE -> APP
+
+deny UI -> APP

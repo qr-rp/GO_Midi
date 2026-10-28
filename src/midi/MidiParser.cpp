@@ -1,4 +1,5 @@
 #include "MidiParser.h"
+#include <array>
 #include <cstring>
 #include <tuple>
 #include <unordered_map>
@@ -10,6 +11,74 @@ namespace Midi
 
 // 辅助宏：记录函数入口
 #define LOG_ENTRY() LOG_DEBUG("[" << __func__ << "] 进入")
+
+    namespace
+    {
+        struct ActiveNote
+        {
+            int start_tick{0};
+            int velocity{64};
+            int program{0};
+        };
+
+        class ActiveNoteTracker
+        {
+        public:
+            void note_on(int key_index, int tick, int velocity, int program)
+            {
+                const std::size_t index = static_cast<std::size_t>(key_index);
+                if (m_depth[index] > 0)
+                    m_overflow[key_index].push_back(m_top[index]);
+
+                m_top[index] = {tick, velocity, program};
+                ++m_depth[index];
+            }
+
+            bool note_off(int key_index, ActiveNote& released)
+            {
+                const std::size_t index = static_cast<std::size_t>(key_index);
+                if (m_depth[index] <= 0)
+                    return false;
+
+                released = m_top[index];
+                --m_depth[index];
+                if (m_depth[index] > 0)
+                {
+                    auto overflow = m_overflow.find(key_index);
+                    if (overflow != m_overflow.end() && !overflow->second.empty())
+                    {
+                        m_top[index] = overflow->second.back();
+                        overflow->second.pop_back();
+                        if (overflow->second.empty())
+                            m_overflow.erase(overflow);
+                    }
+                }
+                return true;
+            }
+
+            template <typename Callback>
+            void for_each_open(int end_tick, Callback callback) const
+            {
+                for (int key_index = 0; key_index < static_cast<int>(m_top.size()); ++key_index)
+                {
+                    if (m_depth[key_index] <= 0)
+                        continue;
+
+                    callback(key_index, m_top[key_index], end_tick);
+                    auto overflow = m_overflow.find(key_index);
+                    if (overflow == m_overflow.end())
+                        continue;
+                    for (const auto& note : overflow->second)
+                        callback(key_index, note, end_tick);
+                }
+            }
+
+        private:
+            std::array<ActiveNote, 2048> m_top{};
+            std::array<std::int8_t, 2048> m_depth{};
+            std::unordered_map<int, std::vector<ActiveNote>> m_overflow;
+        };
+    }
 
     MidiFile::MidiFile(const std::wstring &filepath)
     {
@@ -309,6 +378,51 @@ namespace Midi
         return true;
     }
 
+    bool MidiFile::parse_meta_event(size_t& position, size_t track_end, int abs_tick,
+                                    TrackParseResult& result, bool& end_of_track)
+    {
+        end_of_track = false;
+        if (position + 1 > track_end)
+            return false;
+
+        const uint8_t meta_type = m_data[position++];
+        const auto length_info = readVarLen(position);
+        if (!m_valid)
+            return false;
+
+        position = length_info.second;
+        const size_t meta_end = position + length_info.first;
+        if (meta_end > track_end)
+            return false;
+
+        if (meta_type == 0x2F)
+        {
+            end_of_track = true;
+        }
+        else if (meta_type == 0x03)
+        {
+            result.track.name = decodeText(position, length_info.first);
+        }
+        else if (meta_type == 0x51 && length_info.first == 3)
+        {
+            const int tempo_us =
+                (m_data[position] << 16) |
+                (m_data[position + 1] << 8) |
+                m_data[position + 2];
+            result.tempo_events.emplace_back(abs_tick, tempo_us);
+        }
+        else if (meta_type == 0x58 && length_info.first >= 4)
+        {
+            const int numerator = m_data[position];
+            const int denominator = 1 << m_data[position + 1];
+            result.time_sig_events.emplace_back(
+                abs_tick, std::make_pair(numerator, denominator));
+        }
+
+        position = meta_end;
+        return true;
+    }
+
     MidiFile::TrackParseResult MidiFile::parse_track(size_t start, size_t len, int track_index)
     {
         TrackParseResult res;
@@ -329,16 +443,21 @@ namespace Midi
         int channel_program[16];
         for (int i = 0; i < 16; ++i) channel_program[i] = 0;  // Default to piano
 
-        // 优化：使用扁平数组替代 vector<vector<int>>，减少小块堆分配
-        // 大多数同一 pitch+channel 同时只有一个活跃音符
-        int note_start_tick[2048];
-        int8_t note_start_depth[2048]; // 0=无活跃, 1=使用 note_start_tick, >1=有溢出
-        int note_velocity[2048]; // 存储 Note On 时的 velocity
-        int note_program[2048];  // 存储 Note On 时的 program
-        std::memset(note_start_depth, 0, sizeof(note_start_depth));
-        std::unordered_map<int, std::vector<int>> note_overflow; // 仅用于罕见的同音重叠
-        std::unordered_map<int, std::vector<int>> note_velocity_overflow; // 存储溢出音符的 velocity
-        std::unordered_map<int, std::vector<int>> note_program_overflow;  // 存储溢出音符的 program
+        ActiveNoteTracker active_notes;
+        auto release_note = [&](int key_index, int pitch, int channel)
+        {
+            ActiveNote released;
+            if (active_notes.note_off(key_index, released))
+            {
+                res.notes.emplace_back(
+                    released.start_tick,
+                    abs_tick,
+                    pitch,
+                    channel,
+                    released.velocity,
+                    released.program);
+            }
+        };
 
         while (pos < end_pos)
         {
@@ -366,45 +485,11 @@ namespace Midi
 
             if (status == 0xFF)
             { // Meta event
-                if (pos + 1 > end_pos)
+                bool end_of_track = false;
+                if (!parse_meta_event(pos, end_pos, abs_tick, res, end_of_track))
                     break;
-                uint8_t meta_type = m_data[pos];
-                pos++;
-                auto vl_meta = readVarLen(pos);
-                if (!m_valid) break;
-                uint32_t length = vl_meta.first;
-                pos = vl_meta.second;
-                size_t meta_end = pos + length;
-                if (meta_end > end_pos)
+                if (end_of_track)
                     break;
-
-                if (meta_type == 0x2F)
-                { // End of track
-                    pos = meta_end;
-                    break;
-                }
-                if (meta_type == 0x03)
-                { // Track name
-                    res.track.name = decodeText(pos, length);
-                    pos = meta_end;
-                    continue;
-                }
-                if (meta_type == 0x51 && length == 3)
-                { // Set Tempo
-                    int tempo_us = (m_data[pos] << 16) | (m_data[pos + 1] << 8) | m_data[pos + 2];
-                    res.tempo_events.emplace_back(abs_tick, tempo_us);
-                    pos = meta_end;
-                    continue;
-                }
-                if (meta_type == 0x58 && length >= 4)
-                { // Time Signature
-                    int nn = m_data[pos];
-                    int dd = 1 << m_data[pos + 1];
-                    res.time_sig_events.emplace_back(abs_tick, std::make_pair(nn, dd));
-                    pos = meta_end;
-                    continue;
-                }
-                pos = meta_end;
                 continue;
             }
 
@@ -432,44 +517,12 @@ namespace Midi
                 int key_idx = channel0 * 128 + pitch;
                 if (vel == 0)
                 { // Note Off via Note On with vel=0
-                    if (note_start_depth[key_idx] > 0)
-                    {
-                        int start_tick = note_start_tick[key_idx];
-                        int start_vel = note_velocity[key_idx];
-                        int start_prog = note_program[key_idx];
-                        note_start_depth[key_idx]--;
-                        if (note_start_depth[key_idx] > 0)
-                        {
-                            auto it = note_overflow.find(key_idx);
-                            auto vit = note_velocity_overflow.find(key_idx);
-                            auto pit = note_program_overflow.find(key_idx);
-                            if (it != note_overflow.end() && !it->second.empty() &&
-                                vit != note_velocity_overflow.end() && !vit->second.empty() &&
-                                pit != note_program_overflow.end() && !pit->second.empty())
-                            {
-                                note_start_tick[key_idx] = it->second.back();
-                                note_velocity[key_idx] = vit->second.back();
-                                note_program[key_idx] = pit->second.back();
-                                it->second.pop_back();
-                                vit->second.pop_back();
-                                pit->second.pop_back();
-                            }
-                        }
-                        res.notes.emplace_back(start_tick, abs_tick, pitch, channel, start_vel, start_prog);
-                    }
+                    release_note(key_idx, pitch, channel);
                 }
                 else
                 {
-                    if (note_start_depth[key_idx] > 0)
-                    {
-                        note_overflow[key_idx].push_back(note_start_tick[key_idx]);
-                        note_velocity_overflow[key_idx].push_back(note_velocity[key_idx]);
-                        note_program_overflow[key_idx].push_back(note_program[key_idx]);
-                    }
-                    note_start_tick[key_idx] = abs_tick;
-                    note_velocity[key_idx] = vel;
-                    note_program[key_idx] = channel_program[channel0];
-                    note_start_depth[key_idx]++;
+                    active_notes.note_on(
+                        key_idx, abs_tick, vel, channel_program[channel0]);
                     res.track.note_count++;
                 }
                 continue;
@@ -483,31 +536,7 @@ namespace Midi
                 // vel = m_data[pos + 1];
                 pos += 2;
                 int key_idx = channel0 * 128 + pitch;
-                if (note_start_depth[key_idx] > 0)
-                {
-                    int start_tick = note_start_tick[key_idx];
-                    int start_vel = note_velocity[key_idx];
-                    int start_prog = note_program[key_idx];
-                    note_start_depth[key_idx]--;
-                    if (note_start_depth[key_idx] > 0)
-                    {
-                        auto it = note_overflow.find(key_idx);
-                        auto vit = note_velocity_overflow.find(key_idx);
-                        auto pit = note_program_overflow.find(key_idx);
-                        if (it != note_overflow.end() && !it->second.empty() &&
-                            vit != note_velocity_overflow.end() && !vit->second.empty() &&
-                            pit != note_program_overflow.end() && !pit->second.empty())
-                        {
-                            note_start_tick[key_idx] = it->second.back();
-                            note_velocity[key_idx] = vit->second.back();
-                            note_program[key_idx] = pit->second.back();
-                            it->second.pop_back();
-                            vit->second.pop_back();
-                            pit->second.pop_back();
-                        }
-                    }
-                    res.notes.emplace_back(start_tick, abs_tick, pitch, channel, start_vel, start_prog);
-                }
+                release_note(key_idx, pitch, channel);
                 continue;
             }
 
@@ -546,35 +575,19 @@ namespace Midi
         }
 
         // 关闭未结束的音符
-        for (int i = 0; i < 2048; ++i)
+        active_notes.for_each_open(abs_tick,
+            [&](int key_index, const ActiveNote& note, int end_tick)
         {
-            if (note_start_depth[i] <= 0)
-                continue;
-
-            int ch = (i / 128) + 1; // 0-15 -> 1-16
-            int pitch = i % 128;
-            int vel = note_velocity[i] > 0 ? note_velocity[i] : 64; // 默认中等力度
-            int prog = note_program[i];
-
-            // 关闭栈顶音符
-            res.notes.emplace_back(note_start_tick[i], abs_tick, pitch, ch, vel, prog);
-
-            // 关闭溢出栈中的音符
-            auto it = note_overflow.find(i);
-            auto vit = note_velocity_overflow.find(i);
-            auto pit = note_program_overflow.find(i);
-            if (it != note_overflow.end())
-            {
-                for (size_t j = 0; j < it->second.size(); ++j)
-                {
-                    int v = (vit != note_velocity_overflow.end() && j < vit->second.size())
-                            ? vit->second[j] : 64;
-                    int p = (pit != note_program_overflow.end() && j < pit->second.size())
-                            ? pit->second[j] : prog;
-                    res.notes.emplace_back(it->second[j], abs_tick, pitch, ch, v, p);
-                }
-            }
-        }
+            const int channel = (key_index / 128) + 1;
+            const int pitch = key_index % 128;
+            res.notes.emplace_back(
+                note.start_tick,
+                end_tick,
+                pitch,
+                channel,
+                note.velocity > 0 ? note.velocity : 64,
+                note.program);
+        });
 
         res.last_tick = abs_tick;
         return res;

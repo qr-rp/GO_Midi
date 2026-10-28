@@ -1,0 +1,18 @@
+MIDI edition rights are recorded individually in catalog.json (exported as
+provenance.json). Source creators and contributors are retained there.
+
+PDMX v9: Phillip Long, Zachary Novack, Julian McAuley, and Taylor
+Berg-Kirkpatrick. Published June 1, 2025.
+https://zenodo.org/records/15571083
+The dataset compilation is licensed under Creative Commons Attribution 4.0:
+https://creativecommons.org/licenses/by/4.0/
+This collection selects independently Public Domain / CC0 score editions
+and redistributes unchanged MIDI members. It extracts selected metadata and
+adds classification, rights reviews, and a compact player index. The PDMX
+compilation license is not used as evidence of the individual MIDI licenses.
+Exact archive checksums, edition identifiers and source credits are retained
+in catalog.json and evidence/pdmx-v9.json.
+
+Other source-specific permissions and attribution records are preserved in
+PROVENANCE.md, catalog.json and evidence/. Research notes and quoted source
+declarations do not relicense third-party prose or unrelated music editions.

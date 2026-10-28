@@ -108,10 +108,41 @@ add_subdirectory(${wxWidgets_ROOT_DIR} wxWidgets)
 # Include directories
 include_directories(src)
 
-# Source files
-file(GLOB_RECURSE SOURCES 
-    "src/*.cpp" 
-    "src/*.h"
+# Explicit source list: keeps incremental builds correct when files are added,
+# removed, or renamed. Glob-based source discovery requires a manual reconfigure.
+set(SOURCES
+    src/App.cpp
+    src/App.h
+    src/core/KeyboardSimulator.cpp
+    src/core/KeyboardSimulator.h
+    src/core/PlaybackEngine.cpp
+    src/core/PlaybackEngine.h
+    src/core/TransposePlanner.cpp
+    src/core/TransposePlanner.h
+    src/midi/MidiParser.cpp
+    src/midi/MidiParser.h
+    src/ui/KeymapEditorDialog.cpp
+    src/ui/KeymapEditorDialog.h
+    src/ui/KeymapSchemeConfig.cpp
+    src/ui/KeymapSchemeConfig.h
+    src/ui/MainFrame.cpp
+    src/ui/MainFrame.h
+    src/ui/PianoRollCtrl.cpp
+    src/ui/PianoRollCtrl.h
+    src/ui/PlaybackState.cpp
+    src/ui/PlaybackState.h
+    src/ui/UIHelpers.cpp
+    src/ui/UIHelpers.h
+    src/ui/Widgets.cpp
+    src/ui/Widgets.h
+    src/util/KeyManager.cpp
+    src/util/KeyManager.h
+    src/util/Logger.cpp
+    src/util/Logger.h
+    src/util/NtpClient.cpp
+    src/util/NtpClient.h
+    src/util/PlaylistManager.cpp
+    src/util/PlaylistManager.h
 )
 
 # Add resource file for Windows Visual Styles (manifest)
@@ -152,6 +183,89 @@ target_link_libraries(wx_GO_MIDI_CPP
     shlwapi
     psapi
 )
+
+option(GO_MIDI_BUILD_TESTS "Build pure core tests" ON)
+if(GO_MIDI_BUILD_TESTS)
+    enable_testing()
+
+    if(CMAKE_CROSSCOMPILING AND CMAKE_HOST_UNIX)
+        find_program(GO_MIDI_WINE_EXECUTABLE wine)
+        if(GO_MIDI_WINE_EXECUTABLE)
+            set(CMAKE_CROSSCOMPILING_EMULATOR "${GO_MIDI_WINE_EXECUTABLE}")
+        endif()
+    endif()
+
+    add_executable(transpose_planner_tests
+        tests/TransposePlannerTests.cpp
+        src/core/TransposePlanner.cpp
+    )
+    target_include_directories(transpose_planner_tests PRIVATE src)
+    add_test(NAME transpose_planner_tests COMMAND transpose_planner_tests)
+
+    add_executable(key_manager_tests
+        tests/KeyManagerTests.cpp
+        src/util/KeyManager.cpp
+        src/util/Logger.cpp
+    )
+    target_include_directories(key_manager_tests PRIVATE src)
+    target_link_libraries(key_manager_tests user32 kernel32)
+    add_test(NAME key_manager_tests COMMAND key_manager_tests)
+
+    add_executable(keymap_scheme_config_tests
+        tests/KeymapSchemeConfigTests.cpp
+        src/ui/KeymapSchemeConfig.cpp
+    )
+    target_include_directories(keymap_scheme_config_tests PRIVATE src)
+    target_link_libraries(keymap_scheme_config_tests wx::core wx::base)
+    add_test(NAME keymap_scheme_config_tests COMMAND keymap_scheme_config_tests)
+
+    add_executable(midi_parser_tests
+        tests/MidiParserTests.cpp
+        src/midi/MidiParser.cpp
+        src/util/Logger.cpp
+    )
+    target_include_directories(midi_parser_tests PRIVATE src)
+    target_link_libraries(midi_parser_tests user32 kernel32)
+    add_test(NAME midi_parser_tests
+             COMMAND midi_parser_tests "${CMAKE_SOURCE_DIR}/tests/data/public_domain_midi")
+
+    add_executable(transpose_regression_tests
+        tests/TransposeRegressionTests.cpp
+        src/core/TransposePlanner.cpp
+        src/midi/MidiParser.cpp
+        src/util/KeyManager.cpp
+        src/util/Logger.cpp
+    )
+    target_include_directories(transpose_regression_tests PRIVATE src)
+    target_link_libraries(transpose_regression_tests user32 kernel32)
+    add_test(NAME transpose_regression_tests
+             COMMAND transpose_regression_tests "${CMAKE_SOURCE_DIR}/tests/data/public_domain_midi")
+
+    set(GO_MIDI_TESTS
+        transpose_planner_tests
+        key_manager_tests
+        keymap_scheme_config_tests
+        midi_parser_tests
+        transpose_regression_tests
+    )
+    set_tests_properties(${GO_MIDI_TESTS} PROPERTIES TIMEOUT 60)
+
+    add_executable(transpose_compare
+        tools/transpose_compare.cpp
+        src/core/TransposePlanner.cpp
+        src/midi/MidiParser.cpp
+        src/util/KeyManager.cpp
+        src/util/Logger.cpp
+    )
+    target_include_directories(transpose_compare PRIVATE src)
+    target_link_libraries(transpose_compare user32 kernel32)
+
+    add_custom_target(validate
+        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+        DEPENDS ${GO_MIDI_TESTS}
+        USES_TERMINAL
+    )
+endif()
 
 # Link stdc++fs for std::filesystem support (GCC 8 and below need this)
 if(MINGW OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")

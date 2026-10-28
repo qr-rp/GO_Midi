@@ -248,17 +248,21 @@ namespace UIConstants {
 - **配置文件**: `config.ini`（wxConfig INI 格式），自动生成/读取
 - **热键**: F12 全局播放/暂停
 - **Git 分支**: `main`（稳定）/ `dev`（开发）
-- **无测试工具链** — 项目不包含测试框架或测试文件
+- **自动验证**: CMake `validate` 目标 + CTest + `.github/workflows/validate.yml`
 
 ## Testing & QA
 
-当前项目**没有测试框架、测试文件或 lint 工具**。所有质量保障通过以下方式进行：
+项目使用无第三方依赖的 CTest 测试目标：
 
-- **编译验证**: `cmake --build` 成功即视为基本验证通过
-- **CI**: GitHub Actions 在标签推送时自动构建，生成 release artifact
-- **运行时测试**: 手动测试为主（MIDI 文件播放、窗口切换、键位映射等）
+- **一键验证**: `cmake --build build_mingw --target validate -j2`
+- **核心测试**: 移调计划器、KeyManager、键位方案配置、MIDI 解析
+- **端到端回归**: 6 首公开授权 MIDI 的 36/37 键八度、保留时值和事件哈希快照
+- **交叉编译**: Unix + MinGW 构建时 CTest 自动通过 Wine 执行 Windows 测试
+- **CI**: `main`/`dev` push、PR 及正式/开发标签发布前都自动执行 `validate`
 
-如果计划引入测试，建议方向：
-- 单元测试：`MidiParser`（无外部依赖，纯数据解析）
-- 集成测试：`PlaybackEngine` + `MidiParser` 联调
-- 不建议为 UI 层（wxWidgets）和 Windows API 层（SendInput）写自动化测试
+## Git Workflow
+
+- 每次完成一个可验证的修改后立即创建 Git 提交，不要连续积累多轮未提交改动。
+- 提交前至少运行 `git diff --check`；涉及代码时运行 `cmake --build build_mingw --target validate -j2`。
+- 一个提交应保持单一意图；功能、重构和测试如果无法独立通过验证，应合并为同一可回滚提交。
+- 提交信息使用 `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `ci:` 前缀，并说明验证结果。

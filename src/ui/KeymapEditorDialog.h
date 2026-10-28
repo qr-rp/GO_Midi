@@ -57,6 +57,7 @@ private:
     void OnPitchChange(wxSpinEvent& event);  // 音域调整 → 去抖写当前方案
     void OnPitchSaveTimer(wxTimerEvent& event); // 音域写盘(去抖落盘)
     void OnDialogClose(wxCloseEvent& event);   // 关闭时冲刷未落盘音域
+    void FlushPitchSave();
     void OnNew(wxCommandEvent& event);     // ＋ 新建键位方案(复制当前键位存 config)
     void OnRename(wxCommandEvent& event);  // 重命名当前自定义方案
     void OnDelete(wxCommandEvent& event);  // － 删除当前自定义方案
@@ -64,12 +65,6 @@ private:
     void OnExport(wxCommandEvent& event);  // 导出(纯写文件,不改当前方案)
     void OnRollStatus(const wxString& text);
 
-    // config 内方案读写辅助
-    long FindIndex(const wxString& name) const;
-    bool ReadSchemeMap(const wxString& name, std::map<int, Util::KeyMapping>& out) const;
-    void WriteSchemeMap(const wxString& name, const std::map<int, Util::KeyMapping>& map) const;
-    bool ReadSchemePitch(const wxString& name, int& minP, int& maxP) const;   // 读方案音域
-    void WriteSchemePitch(const wxString& name, int minP, int maxP) const;    // 写方案音域
     wxString GenerateUniqueName(const wxString& base) const;
 
     wxDECLARE_EVENT_TABLE();

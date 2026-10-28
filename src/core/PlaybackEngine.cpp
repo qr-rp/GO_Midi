@@ -20,14 +20,6 @@
 
 namespace Core
 {
-    /// 用于 rebuild_events 的配置快照（局部定义）
-    struct ValidConfig {
-        ChannelSettings* settings;
-        bool is_specific_track;
-        int target_track;
-        bool is_smart_transpose;
-    };
-
     PlaybackEngine::PlaybackEngine()
         : m_running(false), m_playing(false), m_paused(false),
           m_current_time(0.0), m_playback_speed(1.0)
@@ -119,156 +111,10 @@ namespace Core
                       return a.start_s < b.start_s;
                   });
 
-        // Optimization: Build pitch histograms with duration and velocity weighting
-        m_track_pitch_histograms.clear();
-        m_track_pitch_histograms.resize(midi_file.raw_notes_by_track.size(), std::vector<float>(128, 0.0f));
-        m_global_histogram.clear();
-        m_global_histogram.resize(128, 0.0f);
-
-        for (const auto &raw : m_all_notes)
-        {
-            if (raw.pitch >= 0 && raw.pitch < 128)
-            {
-                if (raw.track_index >= 0 && raw.track_index < m_track_pitch_histograms.size())
-                {
-                    // sqrt(duration) * velocity: compress extreme duration values while preserving relative importance
-                    m_track_pitch_histograms[raw.track_index][raw.pitch] += std::sqrt(raw.duration) * raw.velocity;
-                }
-                // 全局直方图：排除打击乐（channel 10）、Bass乐器（program 33-40）和低音提琴（program 43）
-                if (raw.channel != 10 && raw.program != 43 && (raw.program < 33 || raw.program > 40))
-                {
-                    m_global_histogram[raw.pitch] += std::sqrt(raw.duration) * raw.velocity;
-                }
-            }
-        }
-        // 加权偏态系数：负值表示音符偏左分布（高音稀疏），正值表示偏右分布（高音密集）
-        auto compute_skewness = [](const std::vector<float>& hist, int low, int high) -> float {
-            double sum_w = 0.0, sum_pw = 0.0;
-            for (int p = low; p <= high; ++p) {
-                if (hist[p] > 0.0f) {
-                    double w = hist[p];
-                    sum_w += w;
-                    sum_pw += static_cast<double>(p) * w;
-                }
-            }
-            if (sum_w < 1e-10) return 0.0f;
-            double mean = sum_pw / sum_w;
-            double var = 0.0, skew = 0.0;
-            for (int p = low; p <= high; ++p) {
-                if (hist[p] > 0.0f) {
-                    double d = static_cast<double>(p) - mean;
-                    double w = hist[p];
-                    var += d * d * w;
-                    skew += d * d * d * w;
-                }
-            }
-            var /= sum_w;
-            if (var < 1e-10) return 0.0f;
-            double sigma = std::sqrt(var);
-            skew /= sum_w;
-            return static_cast<float>(skew / (sigma * sigma * sigma));
-        };
-
-        // 最高音加固参数（命名常量，便于调试和调整）
-        constexpr float kHighNoteBaseBoost = 1.2f;   // 最高音加固基准系数
-        constexpr float kHighNoteStepDecay = 0.1f;   // 每下降一个半音加固衰减量
-        constexpr int   kMinBoostDepth     = 4;      // 加固最少覆盖半音数
-        constexpr int   kBoostDepthPercent = 15;     // 加固深度占音域宽度的百分比
-
-        // Apply highest pitch weighting to protect melody high points from being transposed out of range
-        for (size_t t = 0; t < m_track_pitch_histograms.size(); ++t)
-        {
-            auto &hist = m_track_pitch_histograms[t];
-
-            // Find highest pitch (topmost non-zero weight)
-            int highest_pitch = 60;  // Default to middle C
-            for (int p = 127; p >= 0; --p)
-            {
-                if (hist[p] > 0.0f)
-                {
-                    highest_pitch = p;
-                    break;
-                }
-            }
-
-            // 基于音域宽度动态计算加固深度（至少 4 个半音，通常为音域宽度的 15%）
-            int lowest_pitch = highest_pitch;
-            for (int p = 0; p < highest_pitch; ++p)
-            {
-                if (hist[p] > 0.0f)
-                {
-                    lowest_pitch = p;
-                    break;
-                }
-            }
-            int pitch_range = highest_pitch - lowest_pitch;
-
-            // 基于分布偏态自适应调整加固深度：负偏态（高音稀疏）→ 加强保护
-            float skewness = compute_skewness(hist, lowest_pitch, highest_pitch);
-            float skew_adjust = 1.0f + std::clamp(-skewness * 0.12f, -0.3f, 0.5f);
-
-            int boost_depth = std::max(kMinBoostDepth, static_cast<int>(pitch_range * kBoostDepthPercent / 100 * skew_adjust));
-            float base_boost = 1.0f + (kHighNoteBaseBoost - 1.0f) * skew_adjust;
-
-            // Apply highest pitch boost: protect melody high points from being transposed out of range
-            int start_pitch = highest_pitch - boost_depth + 1;
-            if (start_pitch < 0) start_pitch = 0;
-            for (int p = start_pitch; p <= highest_pitch; ++p)
-            {
-                if (hist[p] > 0.0f)
-                {
-                    float distance = static_cast<float>(highest_pitch - p);
-                    float boost = base_boost - kHighNoteStepDecay * distance;
-                    if (boost > 1.0f)
-                        hist[p] *= boost;
-                }
-            }
-        }
-
-        // Apply highest pitch weighting to global histogram
-        {
-            int highest_pitch = 60;
-            for (int p = 127; p >= 0; --p)
-            {
-                if (m_global_histogram[p] > 0.0f)
-                {
-                    highest_pitch = p;
-                    break;
-                }
-            }
-
-            // 基于音域宽度动态计算加固深度
-            int lowest_pitch = highest_pitch;
-            for (int p = 0; p < highest_pitch; ++p)
-            {
-                if (m_global_histogram[p] > 0.0f)
-                {
-                    lowest_pitch = p;
-                    break;
-                }
-            }
-            int pitch_range = highest_pitch - lowest_pitch;
-
-            // 全局直方图的偏态自适应加固
-            float skewness = compute_skewness(m_global_histogram, lowest_pitch, highest_pitch);
-            float skew_adjust = 1.0f + std::clamp(-skewness * 0.12f, -0.3f, 0.5f);
-
-            int boost_depth = std::max(kMinBoostDepth, static_cast<int>(pitch_range * kBoostDepthPercent / 100 * skew_adjust));
-            float base_boost = 1.0f + (kHighNoteBaseBoost - 1.0f) * skew_adjust;
-
-            int start_pitch = highest_pitch - boost_depth + 1;
-            if (start_pitch < 0) start_pitch = 0;
-            for (int p = start_pitch; p <= highest_pitch; ++p)
-            {
-                if (m_global_histogram[p] > 0.0f)
-                {
-                    float distance = static_cast<float>(highest_pitch - p);
-                    float boost = base_boost - kHighNoteStepDecay * distance;
-                    if (boost > 1.0f)
-                        m_global_histogram[p] *= boost;
-                }
-            }
-        }
+        auto histograms = build_transpose_histograms(
+            m_all_notes, midi_file.raw_notes_by_track.size());
+        m_track_pitch_histograms = std::move(histograms.tracks);
+        m_global_histogram = std::move(histograms.global);
 
         LOG_INFO("MIDI 文件已加载: 音符数=" << m_all_notes.size()
                                             << ", 时长=" << m_total_duration << "s"
@@ -368,23 +214,74 @@ namespace Core
         m_simulator.release_keys(keys);
     }
 
+    PlannerConfig PlaybackEngine::make_planner_config_snapshot()
+    {
+        PlannerConfig config;
+        config.min_pitch = m_min_pitch.load();
+        config.max_pitch = m_max_pitch.load();
+        config.decompose = m_decompose.load();
+        config.smart_algorithm = SmartTransposeAlgorithm::CONFLICT_AWARE;
+        config.conflict_key_mode = ConflictKeyMode::PHYSICAL;
+
+        for (std::size_t i = 0; i < m_channels.size(); ++i)
+        {
+            PlannerChannelConfig channel;
+            channel.channel_index = static_cast<int>(i);
+            channel.track_index = m_channels[i]->track_index.load();
+            channel.transpose = m_channels[i]->transpose.load();
+            channel.enabled = m_channels[i]->enabled.load();
+            channel.window_handle = m_channels[i]->window_handle.load();
+            config.channels.push_back(channel);
+        }
+
+        const auto keymap_snapshot = m_key_manager.get_map();
+        for (const auto& [pitch, mapping] : keymap_snapshot)
+            config.keymap[pitch] = {mapping.vk_code, mapping.modifier};
+        return config;
+    }
+
     bool PlaybackEngine::try_rebuild_events(std::unique_lock<std::mutex>& lock)
     {
-        // 在锁内快照共享数据，离开锁后执行重建，避免长时间持锁阻塞 UI 线程
+        // 在锁内快照全部共享数据，确保一次计划只使用同一个配置版本。
         std::vector<Midi::RawNote> notes_snapshot = m_all_notes;
         std::vector<std::vector<float>> track_hists_snapshot = m_track_pitch_histograms;
         std::vector<float> global_hist_snapshot = m_global_histogram;
         int notes_gen = m_all_notes_generation.load(std::memory_order_acquire);
+        int config_version = m_config_version.load(std::memory_order_acquire);
+        PlannerConfig plan_config = make_planner_config_snapshot();
+
         lock.unlock();
 
-        rebuild_events(notes_snapshot, track_hists_snapshot, global_hist_snapshot);
+        PlaybackPlan plan = build_playback_plan(
+            notes_snapshot, track_hists_snapshot, global_hist_snapshot, plan_config);
 
         lock.lock();
-        if (m_all_notes_generation.load(std::memory_order_acquire) == notes_gen) {
-            m_built_version = m_config_version.load();
+        if (m_all_notes_generation.load(std::memory_order_acquire) == notes_gen &&
+            m_config_version.load(std::memory_order_acquire) == config_version)
+        {
+            if (!plan.ok)
+            {
+                LOG_ERROR("智能移调计划生成失败，保留上一版事件");
+                return false;
+            }
+
+            m_events = std::move(plan.events);
+            m_built_version = config_version;
+
+            const double retention = plan.metrics.source_duration_weight > 0.0
+                ? plan.metrics.retained_duration_weight * 100.0 /
+                      plan.metrics.source_duration_weight
+                : 100.0;
+            LOG_INFO("播放计划完成: 全局移调=" << plan.global_shift
+                     << " 半音, 映射=" << plan.metrics.mapped_notes
+                     << ", 冲突=" << plan.metrics.conflict_merges
+                     << ", 精确重复=" << plan.metrics.exact_duplicates
+                     << ", 回卷=" << plan.metrics.folded_notes
+                     << ", 保留时值=" << retention << "%");
             return true;
         }
-        // 数据已过期，在下一轮循环检测到版本变化后会再次重建
+
+        // MIDI 或配置在锁外生成计划期间发生变化，丢弃旧计划。
         return false;
     }
 
@@ -417,22 +314,32 @@ namespace Core
         m_playback_speed = speed;
     }
 
+    bool PlaybackEngine::is_valid_channel(int channel) const
+    {
+        return channel >= 0 &&
+               channel < 8 &&
+               static_cast<std::size_t>(channel) < m_channels.size();
+    }
+
+    void PlaybackEngine::request_plan_rebuild()
+    {
+        m_config_version++;
+        m_cv.notify_all();
+    }
+
     void PlaybackEngine::set_channel_transpose(int channel, int semitones)
     {
         LOG_DEBUG("设置通道 " << channel << " 移调: " << semitones << " 半音");
 
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (channel >= 0 && channel < 8 && channel < m_channels.size())
+        if (is_valid_channel(channel))
         {
             if (m_channels[channel]->transpose != semitones)
             {
                 m_channels[channel]->transpose = semitones;
                 // 未启用通道配置变化无需重建(不参与播放), 启用时 set_channel_enable 会触发
                 if (m_channels[channel]->enabled)
-                {
-                    m_config_version++;
-                    m_cv.notify_all();
-                }
+                    request_plan_rebuild();
             }
         }
         else
@@ -446,13 +353,12 @@ namespace Core
         LOG_DEBUG("设置通道 " << channel << " 启用状态: " << (enabled ? "启用" : "禁用"));
 
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (channel >= 0 && channel < 8 && channel < m_channels.size())
+        if (is_valid_channel(channel))
         {
             if (m_channels[channel]->enabled != enabled)
             {
                 m_channels[channel]->enabled = enabled;
-                m_config_version++;
-                m_cv.notify_all();
+                request_plan_rebuild();
             }
         }
         else
@@ -466,16 +372,13 @@ namespace Core
         LOG_DEBUG("设置通道 " << channel << " 目标窗口: " << hwnd);
 
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (channel >= 0 && channel < 8 && channel < m_channels.size())
+        if (is_valid_channel(channel))
         {
             if (m_channels[channel]->window_handle != hwnd)
             {
                 m_channels[channel]->window_handle = hwnd;
                 if (m_channels[channel]->enabled)
-                {
-                    m_config_version++;
-                    m_cv.notify_all();
-                }
+                    request_plan_rebuild();
             }
         }
         else
@@ -489,16 +392,13 @@ namespace Core
         LOG_DEBUG("设置通道 " << channel << " 目标音轨: " << track_index);
 
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (channel >= 0 && channel < 8 && channel < m_channels.size())
+        if (is_valid_channel(channel))
         {
             if (m_channels[channel]->track_index != track_index)
             {
                 m_channels[channel]->track_index = track_index;
                 if (m_channels[channel]->enabled)
-                {
-                    m_config_version++;
-                    m_cv.notify_all();
-                }
+                    request_plan_rebuild();
             }
         }
         else
@@ -516,8 +416,7 @@ namespace Core
         {
             m_min_pitch = min_pitch;
             m_max_pitch = max_pitch;
-            m_config_version++;
-            m_cv.notify_all();
+            request_plan_rebuild();
         }
     }
 
@@ -529,457 +428,21 @@ namespace Core
         if (m_decompose != decompose)
         {
             m_decompose = decompose;
-            m_config_version++;
-            m_cv.notify_all();
+            request_plan_rebuild();
         }
     }
 
     void PlaybackEngine::notify_keymap_changed()
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_config_version++;
-        m_cv.notify_all();
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            request_plan_rebuild();
+        }
+        LOG_DEBUG("键位映射已变更，播放计划等待重建");
     }
 
-    // Helper structures and functions
-    // TempNote struct moved to header
-
-    static int clamp_pitch(int pitch, int min_p, int max_p, bool smart)
+    void PlaybackEngine::configure_playback_thread()
     {
-        int current = pitch;
-        if (smart)
-        {
-            while (current < min_p)
-                current += 12;
-            while (current > max_p)
-                current -= 12;
-            if (current < min_p)
-                current = min_p;
-            if (current > max_p)
-                current = max_p;
-        }
-        else
-        {
-            // Manual transpose: Do not clamp.
-            // If out of range, it will be dropped by key mapping check.
-        }
-        return current;
-    }
-
-    void PlaybackEngine::rebuild_events(const std::vector<Midi::RawNote>& input_notes,
-                                       const std::vector<std::vector<float>>& track_hists,
-                                       const std::vector<float>& global_hist)
-    {
-        LOG_DEBUG("重建事件列表");
-
-        m_events.clear();
-
-        // 内存管理：如果容量远大于可能需要的最大值，释放多余内存
-        size_t max_events = input_notes.size() * 2;
-        if (m_events.capacity() > max_events * 4) {
-            m_events.shrink_to_fit();
-        }
-
-        if (input_notes.empty())
-        {
-            LOG_DEBUG("音符列表为空，跳过重建");
-            return;
-        }
-
-        // 即用即走：临时音符列表作为局部变量
-        std::vector<TempNote> temp_notes;
-        temp_notes.reserve(input_notes.size());
-        auto &notes = temp_notes;
-
-        // 1. Filter and Map
-        int total_added = 0;
-
-        std::vector<ChannelSettings *> active_configs;
-        for (const auto &ch : m_channels)
-        {
-            if (ch->enabled)
-                active_configs.push_back(ch.get());
-        }
-
-        // Fallback: If no channels enabled, use default global config (match Python behavior)
-        ChannelSettings default_global;
-        if (active_configs.empty())
-        {
-            default_global.enabled = true;
-            default_global.track_index = -1;
-            default_global.transpose = 0;
-            default_global.window_handle = nullptr;
-            active_configs.push_back(&default_global);
-        }
-
-        // 即用即走：配置快照作为局部变量
-        std::vector<ValidConfig> valid_configs;
-
-        for (auto *ch_config : active_configs)
-        {
-            // active_configs 已只含 enabled 通道(default_global.enabled=true), 无需再查 enabled
-            // 无窗口通道不跳过: 设计意图"没选窗口=全局发送"
-            ValidConfig vc;
-            vc.settings = ch_config;
-            vc.target_track = ch_config->track_index;
-            vc.is_specific_track = (vc.target_track != -1);
-            vc.is_smart_transpose = (ch_config->transpose == 0);
-            valid_configs.push_back(vc);
-        }
-
-        // 优化：使用栈数组替代 vector，消除堆分配
-        // 使用 float 支持时值加权直方图
-        // 八度移调（模12），保持和弦性质不变
-        auto compute_best_shift = [&](const std::vector<float> &hist)
-        {
-            const float center = (m_min_pitch + m_max_pitch) / 2.0f;
-            const float half_range = std::max((m_max_pitch - m_min_pitch) / 2.0f, 1.0f);
-            
-            // 尝试 -4 到 +4 八度的移调（保持和弦性质）
-            float scores[9] = {};
-            for (int oct = -4; oct <= 4; ++oct)
-            {
-                int shift = oct * 12;
-                int low = m_min_pitch - shift;
-                int high = m_max_pitch - shift;
-                if (low < 0)
-                    low = 0;
-                if (high > 127)
-                    high = 127;
-                if (low <= high)
-                {
-                    // 加权计数：靠近音域中心（m_min_pitch ~ m_max_pitch 的中央）的音符获得更高权重
-                    // 边界权重趋近于 0，中心权重 = 1.0，避免选择音符卡在键盘边界的移调
-                    float &score = scores[oct + 4];
-                    for (int p = low; p <= high; ++p)
-                    {
-                        if (hist[p] > 0.0f)
-                        {
-                            float mapped = static_cast<float>(p + shift);
-                            float dist = std::abs(mapped - center);
-                            // Gaussian 加权：音域中心权重 1.0，向边缘平滑衰减至趋于 0
-                            // 相比线性衰减，Gaussian 在中心附近更平缓、在边界更陡峭，
-                            // 避免移调结果将音符挤在键盘最边缘
-                            const float sigma = half_range * 0.4f;
-                            float weight = std::exp(-0.5f * (dist / sigma) * (dist / sigma));
-                            score += hist[p] * weight;
-                        }
-                    }
-                }
-            }
-            
-            float best_score = -1.0f;
-            int best_oct_idx = 4; // 默认不移调
-            for (int i = 0; i < 9; ++i)
-            {
-                if (scores[i] > best_score)
-                {
-                    best_score = scores[i];
-                    best_oct_idx = i;
-                }
-                else if (scores[i] == best_score)
-                {
-                    // 相同分数时选择绝对值较小的移调
-                    if (std::abs(i - 4) < std::abs(best_oct_idx - 4))
-                    {
-                        best_oct_idx = i;
-                    }
-                }
-            }
-            return (best_oct_idx - 4) * 12;
-        };
-
-        // 计算移调值：支持混合模式
-        // - 特定音轨配置：使用该音轨独立计算的移调值
-        // - 全部音轨配置：使用全局直方图计算的统一移调值（相对移调，保持音轨音高关系）
-        std::vector<int> track_best_shifts(track_hists.size(), 0);
-        int global_shift = 0;
-
-        // 先检查配置类型，按需计算
-        bool has_global_config = false;
-        bool has_specific_track_config = false;
-        for (const auto &vc : valid_configs)
-        {
-            if (vc.is_specific_track)
-                has_specific_track_config = true;
-            else
-                has_global_config = true;
-        }
-
-        // 音域为全范围 (0-127) 时禁用智能移调，避免对打击乐等特殊音轨产生干扰
-        bool is_full_range = (m_min_pitch == 0 && m_max_pitch == 127);
-
-        // 仅在有特定音轨配置且非全范围时才计算独立移调值
-        if (has_specific_track_config && !is_full_range)
-        {
-            for (size_t i = 0; i < track_hists.size(); ++i)
-            {
-                track_best_shifts[i] = compute_best_shift(track_hists[i]);
-            }
-        }
-
-        // 全局配置：使用预计算的全局直方图计算统一移调值
-        if (has_global_config && !is_full_range)
-        {
-            global_shift = compute_best_shift(global_hist);
-        }
-
-        // Optimization: Iterate input_notes ONCE (Cache Locality)
-        // input_notes is already sorted by start time, so we iterate in time order.
-        for (const auto &raw : input_notes)
-        {
-            for (const auto &vc : valid_configs)
-            {
-                // Track Filter logic
-                if (vc.is_specific_track)
-                {
-                    if (raw.track_index != vc.target_track)
-                        continue;
-                }
-                else
-                {
-                    // Global config: Skip percussion (Channel 10)
-                    if (raw.channel == 10)
-                        continue;
-                }
-
-                int transpose = vc.settings->transpose;
-
-                // 智能移调：特定音轨用独立移调，全部音轨用统一移调
-                if (vc.is_smart_transpose)
-                {
-                    if (vc.is_specific_track)
-                    {
-                        // 特定音轨：使用该音轨独立计算的移调值
-                        if (raw.track_index >= 0 && raw.track_index < static_cast<int>(track_best_shifts.size()))
-                        {
-                            transpose += track_best_shifts[raw.track_index];
-                        }
-                    }
-                    else
-                    {
-                        // 全部音轨：使用全局统一移调值（相对移调，保持音轨音高关系）
-                        transpose += global_shift;
-                    }
-                }
-
-                int raw_pitch = raw.pitch + transpose;
-
-                int current_pitch = clamp_pitch(raw_pitch, m_min_pitch, m_max_pitch, vc.is_smart_transpose);
-
-                // 映射已提前到冲突处理之前(见下方 Key Mapping 阶段)：
-                // 冲突按最终 vk 分组，同键多音(不同 pitch 映射同一物理键)才能正确截断
-
-                notes.push_back({raw.start_s,
-                                 raw.start_s + raw.duration,
-                                 0, // vk placeholder
-                                 0, // modifier placeholder
-                                 vc.settings->window_handle,
-                                 current_pitch,
-                                 raw.track_index});
-                total_added++;
-            }
-        }
-
-        if (notes.empty())
-            return;
-
-        // Pre-allocate for On + Off events
-        m_events.reserve(notes.size() * 2);
-
-        // ── 5. Key Mapping (提前到冲突处理之前: 冲突按最终 vk 分组) ──
-        int dropped_mapping_late = 0;
-        for (auto &note : notes)
-        {
-            if (note.end <= note.start)
-                continue; // Skip invalid notes
-
-            auto mapping = m_key_manager.get_mapping(note.pitch);
-            if (mapping.vk_code == 0)
-            {
-                dropped_mapping_late++;
-                note.end = note.start; // Mark as invalid
-                continue;
-            }
-            note.vk = mapping.vk_code;
-            note.modifier = mapping.modifier;
-        }
-
-        if (dropped_mapping_late > 0)
-        {
-            LOG_WARN("键位映射丢弃统计: 丢弃数量=" << dropped_mapping_late);
-        }
-
-        {
-            // Removed MIN_GAP to allow perfect legato (NoteOff at t, NoteOn at t)
-            // Sorting ensures NoteOff comes before NoteOn at same timestamp.
-
-            // Helpers for conflict resolution (按 vk 分组: 同一物理键同一时刻只能一个音符)
-            // 一个 pitch 只有一个映射 → 同 pitch 必然同 vk, vk 级冲突自动包含 pitch 级冲突;
-            // 同键多音(不同 pitch 映射到同一物理键)也在此统一处理, 语义与同音高 legato 一致。
-            auto resolve = [&](TempNote *prev, TempNote *curr)
-            {
-                // 0. Exact overlap check
-                if (std::abs(prev->start - curr->start) < 1e-5 &&
-                    std::abs(prev->end - prev->start - (curr->end - curr->start)) < 1e-5)
-                {
-                    curr->end = curr->start - 1.0; // Mark invalid
-                    return;
-                }
-
-                // 1. If start times are too close (basically simultaneous), ensure order
-                if (curr->start < prev->start)
-                {
-                    curr->start = prev->start; // Should be handled by sort, but safety
-                }
-
-                // 2. Process containment
-                if (prev->end > curr->end)
-                {
-                    curr->end = prev->end;
-                }
-
-                // 3. Truncate previous note to avoid overlap
-                if (prev->end > curr->start)
-                {
-                    prev->end = curr->start;
-                }
-            };
-
-            // 即用即走：使用局部 unordered_map，O(1) 查找
-            struct PairHash {
-                size_t operator()(const std::pair<void*, int>& p) const {
-                    return std::hash<uintptr_t>()(reinterpret_cast<uintptr_t>(p.first)) ^
-                           (std::hash<int>()(p.second) << 16);
-                }
-            };
-            // 冲突分组键: (hwnd, vk) —— 同一物理键同一时刻只能一个音符
-            std::unordered_map<std::pair<void*, int>, TempNote*, PairHash> active_notes_map;
-
-            for (auto &curr : notes)
-            {
-                // 未映射或已无效的音符跳过(冲突只在真实物理键之间发生)
-                if (curr.vk == 0 || curr.end <= curr.start)
-                    continue;
-                auto key = std::make_pair(curr.hwnd, curr.vk);
-                auto it = active_notes_map.find(key);
-
-                if (it != active_notes_map.end())
-                {
-                    resolve(it->second, &curr);
-                }
-
-                if (curr.end > curr.start)
-                {
-                    active_notes_map[key] = &curr;
-                }
-            }
-        }
-
-        // ── 4. Decompose Logic (Run last if enabled) ──
-        if (m_decompose)
-        {
-            const double CHORD_THRESHOLD = 0.03;
-            const double STAGGER = 0.05;
-
-            std::unordered_map<void *, std::vector<TempNote>> grouped;
-            for (const auto &n : notes)
-            {
-                if (n.end > n.start)
-                {
-                    grouped[n.hwnd].push_back(n);
-                }
-            }
-
-            std::vector<TempNote> mono_notes;
-            mono_notes.reserve(notes.size());
-
-            for (auto &group : grouped)
-            {
-                auto &g = group.second;
-                std::sort(g.begin(), g.end(), [](const TempNote &a, const TempNote &b)
-                          { return a.start < b.start; });
-
-                size_t i = 0;
-                while (i < g.size())
-                {
-                    size_t j = i + 1;
-                    // 同物理键的音符不算和弦：冲突处理已把它们截成 legato，
-                    // 分解再错开会制造空隙（如 0.02 结束 → 0.07 才按下）
-                    while (j < g.size() && (g[j].start - g[i].start) < CHORD_THRESHOLD
-                                        && g[j].vk != g[i].vk)
-                    {
-                        j++;
-                    }
-
-                    if (j - i > 1)
-                    {
-                        std::sort(g.begin() + i, g.begin() + j, [](const TempNote &a, const TempNote &b)
-                                  { return a.pitch < b.pitch; });
-
-                        for (size_t k = 1; k < j - i; ++k)
-                        {
-                            double shift = k * STAGGER;
-                            g[i + k].start += shift;
-                            g[i + k].end += shift;
-                        }
-                    }
-
-                    i = j;
-                }
-
-                std::sort(g.begin(), g.end(), [](const TempNote &a, const TempNote &b)
-                          { return a.start < b.start; });
-
-                for (size_t k = 0; k + 1 < g.size(); ++k)
-                {
-                    // Enforce gap between notes in monophonic mode
-                    // Removed MONO_GAP to allow perfect legato
-                    double max_end = g[k + 1].start;
-                    if (g[k].end > max_end)
-                    {
-                        g[k].end = max_end;
-                    }
-                }
-
-                for (const auto &n : g)
-                {
-                    if (n.end > n.start)
-                    {
-                        mono_notes.push_back(n);
-                    }
-                }
-            }
-
-            notes = std::move(mono_notes);
-        }
-
-        // 6. Generate Events
-        m_events.reserve(notes.size() * 2);
-        for (const auto &note : notes)
-        {
-            if (note.end > note.start)
-            {
-                // Note On 事件
-                m_events.push_back({note.start, true, note.vk, note.modifier, note.hwnd});
-                // Note Off 事件
-                m_events.push_back({note.end, false, note.vk, note.modifier, note.hwnd});
-            }
-        }
-
-        // 7. Final Sort
-        std::sort(m_events.begin(), m_events.end());
-
-        LOG_INFO("事件重建完成: 原始音符=" << notes.size()
-                                           << ", 过滤后音符=" << notes.size()
-                                           << ", 事件数=" << m_events.size());
-    }
-
-    void PlaybackEngine::playback_thread()
-    {
-        // 提高定时器精度以获得准确的 sleep
-        timeBeginPeriod(1);
-        // 提高线程优先级
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
 
         // 设置线程亲和性到最后一个逻辑处理器，避免与游戏争抢 CPU
@@ -1005,6 +468,25 @@ namespace Core
                 LOG_DEBUG("播放线程亲和性设置为逻辑处理器 " << cpuIdx);
             }
         }
+    }
+
+    std::size_t PlaybackEngine::event_index_at_or_after(double time) const
+    {
+        const auto it = std::lower_bound(
+            m_events.begin(), m_events.end(), time,
+            [](const PlaybackEvent& event, double target)
+            {
+                return event.time < target;
+            });
+        return static_cast<std::size_t>(std::distance(m_events.begin(), it));
+    }
+
+    void PlaybackEngine::playback_thread()
+    {
+        // 提高定时器精度以获得准确的 sleep
+        timeBeginPeriod(1);
+        configure_playback_thread();
+
         size_t next_event_idx = 0;
         auto last_loop_time = std::chrono::high_resolution_clock::now();
 
@@ -1017,13 +499,8 @@ namespace Core
             {
                 try_rebuild_events(lock);
 
-                // Reset index based on current time (Binary search for efficiency)
-                auto it = std::lower_bound(m_events.begin(), m_events.end(), m_current_time.load(),
-                                           [](const ProcessedEvent &evt, double time)
-                                           {
-                                               return evt.time < time;
-                                           });
-                next_event_idx = std::distance(m_events.begin(), it);
+                // Reset index based on current time
+                next_event_idx = event_index_at_or_after(m_current_time.load());
             }
 
             // Wait if paused or not playing
@@ -1038,15 +515,7 @@ namespace Core
                     try_rebuild_events(lock);
                 }
 
-                // Re-sync index
-                next_event_idx = 0;
-                // Optimization: Binary search
-                auto it = std::lower_bound(m_events.begin(), m_events.end(), m_current_time.load(),
-                                           [](const ProcessedEvent &evt, double time)
-                                           {
-                                               return evt.time < time;
-                                           });
-                next_event_idx = std::distance(m_events.begin(), it);
+                next_event_idx = event_index_at_or_after(m_current_time.load());
             }
 
             if (!m_running)
@@ -1055,12 +524,7 @@ namespace Core
             if (m_seek_triggered)
             {
                 m_seek_triggered = false;
-                auto it = std::lower_bound(m_events.begin(), m_events.end(), m_current_time.load(),
-                                           [](const ProcessedEvent &evt, double time)
-                                           {
-                                               return evt.time < time;
-                                           });
-                next_event_idx = std::distance(m_events.begin(), it);
+                next_event_idx = event_index_at_or_after(m_current_time.load());
                 // 重置计时器，避免 seek 后 m_current_time 多跳一个 dt
                 last_loop_time = std::chrono::high_resolution_clock::now();
             }

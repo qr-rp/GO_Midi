@@ -207,6 +207,59 @@ namespace
         return true;
     }
 
+    bool is_valid_utf8(const std::vector<char>& buffer)
+    {
+        return MultiByteToWideChar(
+            CP_UTF8,
+            MB_ERR_INVALID_CHARS,
+            buffer.data(),
+            static_cast<int>(buffer.size()),
+            nullptr,
+            0) > 0;
+    }
+
+    std::string decode_legacy_buffer(const std::vector<char>& buffer,
+                                     const EncodingInfo& encoding)
+    {
+        const EncodingInfo encodings[] = {
+            {"GBK", 936, 10},
+            {"GB2312", 936, 15},
+            {"Big5", 950, 20},
+            {"Shift-JIS", 932, 30},
+            {"Windows-1252", 1252, 40},
+            {"ISO-8859-1", 28591, 50},
+            {"System", GetACP(), 100}
+        };
+
+        std::string result;
+        if (encoding.priority < 100)
+        {
+            if (try_convert_to_utf8(buffer, encoding.codepage, result))
+            {
+                LOG_DEBUG("[read_file_with_encoding] 使用分析出的编码转换成功: "
+                          << encoding.name);
+                return result;
+            }
+            LOG_DEBUG("[read_file_with_encoding] 使用分析出的编码转换失败: "
+                      << encoding.name);
+        }
+
+        for (const auto& candidate : encodings)
+        {
+            if (encoding.priority < 100 && candidate.codepage == encoding.codepage)
+                continue;
+            if (try_convert_to_utf8(buffer, candidate.codepage, result))
+            {
+                LOG_DEBUG("[read_file_with_encoding] 使用编码转换成功: " << candidate.name);
+                return result;
+            }
+            LOG_DEBUG("[read_file_with_encoding] 使用编码转换失败: " << candidate.name);
+        }
+
+        LOG_DEBUG("[read_file_with_encoding] 所有编码转换失败，返回原始数据");
+        return std::string(buffer.begin(), buffer.end());
+    }
+
     // 检测文件编码并转换为 UTF-8（宽字符路径版本 - 推荐）
     std::string read_file_with_encoding(const std::wstring &path)
     {
@@ -237,81 +290,7 @@ namespace
             return std::string(buffer.begin() + 3, buffer.end());
         }
 
-        // 尝试作为 UTF-8 处理（不带 BOM）- 严格的 UTF-8 有效性检查
-        bool is_utf8 = true;
-        size_t i = 0;
-        while (i < buffer.size())
-        {
-            unsigned char c = static_cast<unsigned char>(buffer[i]);
-
-            if (c < 0x80)
-            {
-                // ASCII 字符
-                i++;
-            }
-            else if (c < 0xC0)
-            {
-                // 独立的高位字节，不是有效的 UTF-8 开始
-                is_utf8 = false;
-                break;
-            }
-            else if (c < 0xE0)
-            {
-                // 2 字节序列
-                if (i + 1 >= buffer.size() ||
-                    (static_cast<unsigned char>(buffer[i + 1]) & 0xC0) != 0x80)
-                {
-                    is_utf8 = false;
-                    break;
-                }
-                i += 2;
-            }
-            else if (c < 0xF0)
-            {
-                // 3 字节序列
-                if (i + 2 >= buffer.size() ||
-                    (static_cast<unsigned char>(buffer[i + 1]) & 0xC0) != 0x80 ||
-                    (static_cast<unsigned char>(buffer[i + 2]) & 0xC0) != 0x80)
-                {
-                    is_utf8 = false;
-                    break;
-                }
-                // 验证 UTF-16 代签（surrogate pair in UTF-8）
-                if (c == 0xED && static_cast<unsigned char>(buffer[i + 1]) > 0x9F)
-                {
-                    is_utf8 = false;
-                    break;
-                }
-                i += 3;
-            }
-            else if (c < 0xF8)
-            {
-                // 4 字节序列
-                if (i + 3 >= buffer.size() ||
-                    (static_cast<unsigned char>(buffer[i + 1]) & 0xC0) != 0x80 ||
-                    (static_cast<unsigned char>(buffer[i + 2]) & 0xC0) != 0x80 ||
-                    (static_cast<unsigned char>(buffer[i + 3]) & 0xC0) != 0x80)
-                {
-                    is_utf8 = false;
-                    break;
-                }
-                // 验证 Unicode 范围（不能超过 U+10FFFF）
-                if (c == 0xF4 && static_cast<unsigned char>(buffer[i + 1]) > 0x8F)
-                {
-                    is_utf8 = false;
-                    break;
-                }
-                i += 4;
-            }
-            else
-            {
-                // 无效的 UTF-8 开始字节
-                is_utf8 = false;
-                break;
-            }
-        }
-
-        if (is_utf8)
+        if (is_valid_utf8(buffer))
         {
             LOG_DEBUG("[read_file_with_encoding] 检测到 UTF-8 (无 BOM)");
             return std::string(buffer.begin(), buffer.end());
@@ -320,54 +299,7 @@ namespace
         // UTF-8 检测失败，使用字节频率分析来辅助检测编码
         EncodingInfo encoding = analyze_encoding(buffer);
         LOG_DEBUG("[read_file_with_encoding] 分析出的编码: " << encoding.name << ", codepage: " << encoding.codepage);
-
-        // 按优先级尝试不同的编码转换
-        // 编码优先级列表：GBK, GB2312, Big5, Shift-JIS, Windows-1252, ISO-8859-1, 系统默认
-        const EncodingInfo encodings[] = {
-            {"GBK", 936, 10},
-            {"GB2312", 936, 15}, // GB2312 也使用代码页 936
-            {"Big5", 950, 20},
-            {"Shift-JIS", 932, 30},
-            {"Windows-1252", 1252, 40},
-            {"ISO-8859-1", 28591, 50}, // ISO-8859-1
-            {"System", GetACP(), 100}};
-
-        // 如果分析结果优先级更高，优先尝试
-        std::string result;
-        if (encoding.priority < 100)
-        {
-            if (try_convert_to_utf8(buffer, encoding.codepage, result))
-            {
-                LOG_DEBUG("[read_file_with_encoding] 使用分析出的编码转换成功: " << encoding.name);
-                return result;
-            }
-            else
-            {
-                LOG_DEBUG("[read_file_with_encoding] 使用分析出的编码转换失败: " << encoding.name);
-            }
-        }
-
-        // 按优先级顺序尝试其他编码
-        for (const auto &enc : encodings)
-        {
-            // 跳过已经尝试过的编码
-            if (encoding.priority < 100 && enc.codepage == encoding.codepage)
-                continue;
-
-            if (try_convert_to_utf8(buffer, enc.codepage, result))
-            {
-                LOG_DEBUG("[read_file_with_encoding] 使用编码转换成功: " << enc.name);
-                return result;
-            }
-            else
-            {
-                LOG_DEBUG("[read_file_with_encoding] 使用编码转换失败: " << enc.name);
-            }
-        }
-
-        // 所有编码都失败，返回原始数据
-        LOG_DEBUG("[read_file_with_encoding] 所有编码转换失败，返回原始数据");
-        return std::string(buffer.begin(), buffer.end());
+        return decode_legacy_buffer(buffer, encoding);
     }
 
     const std::map<std::string, int> &get_vk_map()
@@ -399,18 +331,6 @@ namespace Util
     {
         LOG_DEBUG("[KeyManager] 初始化，加载默认键位映射");
         init_default_map();
-    }
-
-    KeyMapping KeyManager::get_mapping(int note)
-    {
-        // 优化：使用 O(1) 缓存数组查找，避免 std::map 的 O(log n) 开销
-        // 加锁：播放线程读取期间 UI 线程可能 set_map 重建缓存
-        std::lock_guard<std::mutex> lock(m_mutex);
-        if (note >= 0 && note < 128 && m_lookup_valid[note])
-        {
-            return m_lookup_cache[note];
-        }
-        return {0, 0};
     }
 
     /// 加载键位配置
@@ -484,7 +404,6 @@ namespace Util
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_note_map = new_map;
-            rebuild_lookup_cache();
             LOG_INFO("键位配置加载成功: " << valid_count << " 个映射 (共 " << line_count << " 行)");
             return true;
         }
@@ -579,9 +498,13 @@ namespace Util
 
     void KeyManager::set_map(const std::map<int, KeyMapping> &map)
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_note_map = map;
-        rebuild_lookup_cache();
+        std::size_t mapping_count = 0;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_note_map = map;
+            mapping_count = m_note_map.size();
+        }
+        LOG_DEBUG("[KeyManager] 已应用键位映射，映射数=" << mapping_count);
     }
 
     std::map<int, KeyMapping> KeyManager::get_map() const
@@ -592,16 +515,28 @@ namespace Util
 
     void KeyManager::reset_to_default()
     {
-        LOG_DEBUG("[KeyManager] 重置为默认键位映射");
-        std::lock_guard<std::mutex> lock(m_mutex);
-        init_default_map();
+        apply_preset(false);
     }
 
     void KeyManager::load_yysls_preset()
     {
-        LOG_DEBUG("[KeyManager] 加载燕云十六声键位预设");
-        std::lock_guard<std::mutex> lock(m_mutex);
-        init_yysls_map();
+        apply_preset(true);
+    }
+
+    void KeyManager::apply_preset(bool use_yysls)
+    {
+        std::size_t mapping_count = 0;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (use_yysls)
+                init_yysls_map();
+            else
+                init_default_map();
+            mapping_count = m_note_map.size();
+        }
+        LOG_DEBUG("[KeyManager] 已应用"
+                  << (use_yysls ? "燕云" : "默认")
+                  << "键位，映射数=" << mapping_count);
     }
 
     void KeyManager::init_default_map()
@@ -661,8 +596,6 @@ namespace Util
         m_note_map[78] = {'G', 0};
         m_note_map[79] = {'B', 0};
         m_note_map[84] = {VK_OEM_2, 0}; // /
-        rebuild_lookup_cache();
-
         LOG_DEBUG("默认键位映射已加载: " << m_note_map.size() << " 个映射");
     }
 
@@ -718,22 +651,7 @@ namespace Util
         m_note_map[82] = {'U', 2};       // A#5 → u- (Ctrl)
         m_note_map[83] = {'U', 0};       // B5 → u
 
-        rebuild_lookup_cache();
-
         LOG_DEBUG("燕云十六声键位映射已加载: " << m_note_map.size() << " 个映射");
-    }
-
-    void KeyManager::rebuild_lookup_cache()
-    {
-        std::memset(m_lookup_valid, 0, sizeof(m_lookup_valid));
-        for (const auto &pair : m_note_map)
-        {
-            if (pair.first >= 0 && pair.first < 128)
-            {
-                m_lookup_cache[pair.first] = pair.second;
-                m_lookup_valid[pair.first] = true;
-            }
-        }
     }
 
     std::string KeyManager::format_key_string(int vk, int modifier) const

@@ -23,9 +23,6 @@ namespace Core {
         KeyboardSimulator();
         ~KeyboardSimulator();
 
-        void send_key_down(int vk_code, int modifier = 0, void* hwnd = nullptr);
-        void send_key_up(int vk_code, int modifier = 0, void* hwnd = nullptr);
-
         /// 批量发送按键（A2 优化）：
         /// - 无目标窗口的按键合并为单次 SendInput（减少系统调用，消除同帧按键错位）
         /// - 有目标窗口的按键保持逐键 PostMessage 语义
@@ -49,8 +46,6 @@ namespace Core {
         static std::vector<WindowInfo> GetWindowList();
 
     private:
-        void send_input(int vk_code, int modifier, bool key_up);
-
         /// 修饰键物理状态（按目标窗口分组; nullptr 目标用 0 键）
         /// 瞬时包裹下 held 只在单个音符的包裹内非零, 用于鼠标消息携带的键盘修饰状态
         struct ModState {

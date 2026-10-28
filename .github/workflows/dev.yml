@@ -57,6 +57,10 @@ jobs:
         cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release
         cmake --build . --config Release -j ${{ steps.cpu.outputs.count }}
 
+    - name: Validate
+      shell: pwsh
+      run: cmake --build build --target validate --config Release -j ${{ steps.cpu.outputs.count }}
+
     - name: Prepare Release Asset
       id: prepare
       shell: pwsh

@@ -8,28 +8,42 @@
 namespace Core
 {
 
-    // 鼠标修饰键按下/释放 flag（配合 Util::kModMouseL/M/R 使用）
-    static DWORD MouseDownFlag(int modbit)
+    struct ModEvent
+    {
+        int vk{0};
+        UINT downMessage{0};
+        UINT upMessage{0};
+        DWORD downFlag{0};
+        DWORD upFlag{0};
+    };
+
+    static ModEvent ResolveMod(int modbit)
     {
         switch (modbit)
         {
-            case Util::kModMouseL: return MOUSEEVENTF_LEFTDOWN;
-            case Util::kModMouseM: return MOUSEEVENTF_MIDDLEDOWN;
-            case Util::kModMouseR: return MOUSEEVENTF_RIGHTDOWN;
+            case Util::kModShift:
+                return {VK_SHIFT, 0, 0, 0, 0};
+            case Util::kModCtrl:
+                return {VK_CONTROL, 0, 0, 0, 0};
+            case Util::kModAlt:
+                return {VK_MENU, 0, 0, 0, 0};
+            case Util::kModMouseL:
+                return {0, WM_LBUTTONDOWN, WM_LBUTTONUP,
+                        MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP};
+            case Util::kModMouseM:
+                return {0, WM_MBUTTONDOWN, WM_MBUTTONUP,
+                        MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP};
+            case Util::kModMouseR:
+                return {0, WM_RBUTTONDOWN, WM_RBUTTONUP,
+                        MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP};
         }
-        return 0;
+        return {};
     }
 
-    static DWORD MouseUpFlag(int modbit)
-    {
-        switch (modbit)
-        {
-            case Util::kModMouseL: return MOUSEEVENTF_LEFTUP;
-            case Util::kModMouseM: return MOUSEEVENTF_MIDDLEUP;
-            case Util::kModMouseR: return MOUSEEVENTF_RIGHTUP;
-        }
-        return 0;
-    }
+    static const int kAllModBits[6] = {
+        Util::kModShift, Util::kModCtrl, Util::kModAlt,
+        Util::kModMouseL, Util::kModMouseM, Util::kModMouseR
+    };
 
     // 获取按键扫描码（无缓存，线程安全）
     static UINT GetScanCode(int vk)
@@ -48,284 +62,6 @@ namespace Core
     {
         LOG_DEBUG("[KeyboardSimulator] 销毁");
     }
-
-    void KeyboardSimulator::send_input(int vk_code, int modifier, bool key_up)
-    {
-        // 优化：使用栈数组避免堆分配
-        // 容量: 6 修饰键 down + 主键 + 6 修饰键 up = 13, 取 16 富余
-        INPUT inputs[16] = {};
-        int count = 0;
-
-        // 辅助 lambda 填充键盘 INPUT 结构
-        auto add_key_input = [&](int vk, bool up)
-        {
-            if (count >= 16)
-                return;
-            INPUT &input = inputs[count++];
-
-            input.type = INPUT_KEYBOARD;
-            input.ki.wVk = static_cast<WORD>(vk);
-            input.ki.dwFlags = 0;
-
-            // 使用 vk 码而非扫描码，避免 KEYEVENTF_SCANCODE + KEYEVENTF_EXTENDEDKEY 冲突
-            // 同时省去扫描码查找开销，天然线程安全
-
-            if (up)
-            {
-                input.ki.dwFlags |= KEYEVENTF_KEYUP;
-            }
-        };
-
-        // 辅助 lambda 填充鼠标 INPUT 结构（当前光标位置点击）
-        auto add_mouse_input = [&](DWORD flags)
-        {
-            if (count >= 16)
-                return;
-            INPUT &input = inputs[count++];
-
-            input.type = INPUT_MOUSE;
-            input.mi.dx = 0;
-            input.mi.dy = 0;
-            input.mi.mouseData = 0;
-            input.mi.dwFlags = flags;
-            input.mi.time = 0;
-            input.mi.dwExtraInfo = 0;
-        };
-
-        // 按下/释放修饰键（位掩码: Shift/Ctrl/Alt/鼠标左中右）
-        auto mods = [&](bool up)
-        {
-            if (modifier & Util::kModShift)
-                add_key_input(VK_SHIFT, up);
-            if (modifier & Util::kModCtrl)
-                add_key_input(VK_CONTROL, up);
-            if (modifier & Util::kModAlt)
-                add_key_input(VK_MENU, up);
-            // 鼠标修饰键 → 鼠标事件（当前光标位置）
-            if (modifier & Util::kModMouseL)
-                add_mouse_input(up ? MouseUpFlag(Util::kModMouseL) : MouseDownFlag(Util::kModMouseL));
-            if (modifier & Util::kModMouseM)
-                add_mouse_input(up ? MouseUpFlag(Util::kModMouseM) : MouseDownFlag(Util::kModMouseM));
-            if (modifier & Util::kModMouseR)
-                add_mouse_input(up ? MouseUpFlag(Util::kModMouseR) : MouseDownFlag(Util::kModMouseR));
-        };
-
-        if (!key_up)
-        {
-            // 按键按下序列
-            // 1. 按下修饰键
-            mods(false);
-
-            // 2. 按下主键（主键永远是键盘 VK）
-            add_key_input(vk_code, false);
-
-            // 3. 释放修饰键（瞬时策略）
-            mods(true);
-        }
-        else
-        {
-            // 按键释放序列：只释放主键
-            add_key_input(vk_code, true);
-
-            // 同时释放修饰键（安全措施）
-            mods(true);
-        }
-
-        if (count > 0)
-        {
-            SendInput(static_cast<UINT>(count), inputs, sizeof(INPUT));
-        }
-    }
-
-    void KeyboardSimulator::send_key_down(int vk_code, int modifier, void *hwnd)
-    {
-        LOG_DEBUG("按键按下: VK=0x" << std::hex << vk_code << std::dec
-                                    << ", 修饰符=" << modifier
-                                    << ", 窗口=" << hwnd);
-
-        if (hwnd)
-        {
-            HWND h = static_cast<HWND>(hwnd);
-
-            // 键盘按键 PostMessage（scanCode / extended / up 标志）
-            auto send_msg = [&](int vk, bool up)
-            {
-                UINT scanCode = GetScanCode(vk);
-                LPARAM lParam = 1; // 重复计数 1
-                lParam |= (scanCode << 16);
-
-                bool extended = ((vk >= VK_PRIOR && vk <= VK_DOWN) || vk == VK_INSERT || vk == VK_DELETE);
-                if (extended)
-                    lParam |= ((LPARAM)1 << 24);
-
-                if (up)
-                {
-                    lParam |= ((LPARAM)1 << 30); // 前一按键状态
-                    lParam |= ((LPARAM)1 << 31); // 转换状态
-                    PostMessage(h, WM_KEYUP, vk, lParam);
-                }
-                else
-                {
-                    PostMessage(h, WM_KEYDOWN, vk, lParam);
-                }
-            };
-
-            // 鼠标消息 PostMessage（客户区中心; wParam 带键盘修饰状态, 无 Alt 标志位）
-            auto post_mouse_msg = [&](UINT msg, int mods)
-            {
-                WPARAM wp = 0;
-                if (mods & Util::kModShift) wp |= MK_SHIFT;
-                if (mods & Util::kModCtrl)  wp |= MK_CONTROL;
-                RECT rc{};
-                if (GetClientRect(h, &rc))
-                {
-                    LPARAM lp = MAKELPARAM((rc.right - rc.left) / 2, (rc.bottom - rc.top) / 2);
-                    PostMessage(h, msg, wp, lp);
-                }
-            };
-
-            // 修饰键 PostMessage: 键盘 → WM_KEYDOWN/UP; 鼠标 → WM_*BUTTONDOWN/UP(客户区中心)
-            auto send_mod = [&](int modbit, bool down)
-            {
-                switch (modbit)
-                {
-                    case Util::kModShift: send_msg(VK_SHIFT, !down); break;
-                    case Util::kModCtrl: send_msg(VK_CONTROL, !down); break;
-                    case Util::kModAlt: send_msg(VK_MENU, !down); break;
-                    case Util::kModMouseL: post_mouse_msg(down ? WM_LBUTTONDOWN : WM_LBUTTONUP, modifier); break;
-                    case Util::kModMouseM: post_mouse_msg(down ? WM_MBUTTONDOWN : WM_MBUTTONUP, modifier); break;
-                    case Util::kModMouseR: post_mouse_msg(down ? WM_RBUTTONDOWN : WM_RBUTTONUP, modifier); break;
-                }
-            };
-
-            // 1. 按下修饰键
-            if (modifier & Util::kModShift) send_mod(Util::kModShift, true);
-            if (modifier & Util::kModCtrl)  send_mod(Util::kModCtrl, true);
-            if (modifier & Util::kModAlt)   send_mod(Util::kModAlt, true);
-            if (modifier & Util::kModMouseL) send_mod(Util::kModMouseL, true);
-            if (modifier & Util::kModMouseM) send_mod(Util::kModMouseM, true);
-            if (modifier & Util::kModMouseR) send_mod(Util::kModMouseR, true);
-
-            // 2. 按下主键（主键永远是键盘 VK）
-            send_msg(vk_code, false);
-
-            // 3. 释放修饰键（瞬时）
-            if (modifier & Util::kModShift) send_mod(Util::kModShift, false);
-            if (modifier & Util::kModCtrl)  send_mod(Util::kModCtrl, false);
-            if (modifier & Util::kModAlt)   send_mod(Util::kModAlt, false);
-            if (modifier & Util::kModMouseL) send_mod(Util::kModMouseL, false);
-            if (modifier & Util::kModMouseM) send_mod(Util::kModMouseM, false);
-            if (modifier & Util::kModMouseR) send_mod(Util::kModMouseR, false);
-        }
-        else
-        {
-            send_input(vk_code, modifier, false);
-        }
-    }
-
-    void KeyboardSimulator::send_key_up(int vk_code, int modifier, void *hwnd)
-    {
-        LOG_DEBUG("按键释放: VK=0x" << std::hex << vk_code << std::dec
-                                    << ", 修饰符=" << modifier
-                                    << ", 窗口=" << hwnd);
-
-        if (hwnd)
-        {
-            HWND h = static_cast<HWND>(hwnd);
-
-            // 键盘按键 PostMessage（UP）
-            auto send_msg = [&](int vk)
-            {
-                UINT scanCode = GetScanCode(vk);
-                LPARAM lParam = 1;
-                lParam |= (scanCode << 16);
-
-                if ((vk >= VK_PRIOR && vk <= VK_DOWN) || vk == VK_INSERT || vk == VK_DELETE)
-                {
-                    lParam |= ((LPARAM)1 << 24);
-                }
-
-                lParam |= ((LPARAM)1 << 30);
-                lParam |= ((LPARAM)1 << 31);
-
-                PostMessage(h, WM_KEYUP, vk, lParam);
-            };
-
-            // 鼠标消息 PostMessage（客户区中心; wParam 带键盘修饰状态）
-            auto post_mouse_msg = [&](UINT msg, int mods)
-            {
-                WPARAM wp = 0;
-                if (mods & Util::kModShift) wp |= MK_SHIFT;
-                if (mods & Util::kModCtrl)  wp |= MK_CONTROL;
-                RECT rc{};
-                if (GetClientRect(h, &rc))
-                {
-                    LPARAM lp = MAKELPARAM((rc.right - rc.left) / 2, (rc.bottom - rc.top) / 2);
-                    PostMessage(h, msg, wp, lp);
-                }
-            };
-
-            // 修饰键 PostMessage 释放
-            auto send_mod_up = [&](int modbit)
-            {
-                switch (modbit)
-                {
-                    case Util::kModShift: send_msg(VK_SHIFT); break;
-                    case Util::kModCtrl: send_msg(VK_CONTROL); break;
-                    case Util::kModAlt: send_msg(VK_MENU); break;
-                    case Util::kModMouseL: post_mouse_msg(WM_LBUTTONUP, modifier); break;
-                    case Util::kModMouseM: post_mouse_msg(WM_MBUTTONUP, modifier); break;
-                    case Util::kModMouseR: post_mouse_msg(WM_RBUTTONUP, modifier); break;
-                }
-            };
-
-            // 释放主键
-            send_msg(vk_code);
-
-            // 同时释放修饰键（安全措施）
-            if (modifier & Util::kModShift) send_mod_up(Util::kModShift);
-            if (modifier & Util::kModCtrl)  send_mod_up(Util::kModCtrl);
-            if (modifier & Util::kModAlt)   send_mod_up(Util::kModAlt);
-            if (modifier & Util::kModMouseL) send_mod_up(Util::kModMouseL);
-            if (modifier & Util::kModMouseM) send_mod_up(Util::kModMouseM);
-            if (modifier & Util::kModMouseR) send_mod_up(Util::kModMouseR);
-        }
-        else
-        {
-            send_input(vk_code, modifier, true);
-        }
-    }
-
-    // ---- 修饰位工具（键盘修饰 → VK; 鼠标修饰 → 鼠标 flag）----
-    // 返回键盘 VK（Shift/Ctrl/Alt），鼠标修饰返回 0
-    static int ModToVk(int modbit)
-    {
-        switch (modbit)
-        {
-            case Util::kModShift: return VK_SHIFT;
-            case Util::kModCtrl:  return VK_CONTROL;
-            case Util::kModAlt:   return VK_MENU;
-        }
-        return 0;
-    }
-
-    // 返回鼠标事件 flag（左/中/右），键盘修饰返回 0
-    static DWORD ModToMouseFlag(int modbit, bool down)
-    {
-        switch (modbit)
-        {
-            case Util::kModMouseL: return down ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
-            case Util::kModMouseM: return down ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP;
-            case Util::kModMouseR: return down ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP;
-        }
-        return 0;
-    }
-
-    // 全部修饰位（键鼠）
-    static const int kAllModBits[6] = {
-        Util::kModShift, Util::kModCtrl, Util::kModAlt,
-        Util::kModMouseL, Util::kModMouseM, Util::kModMouseR
-    };
 
     void KeyboardSimulator::send_key_events(const std::vector<KeyInputEvent>& events)
     {
@@ -405,6 +141,7 @@ namespace Core
 
         // 发送单个修饰位（按目标路由: nullptr → SendInput 批, hwnd → PostMessage）
         auto emit_mod = [&](void* target, int modbit, bool down) {
+            const ModEvent mod = ResolveMod(modbit);
             int cur_mods = 0;
             auto it = m_mod_state.find(target);
             if (it != m_mod_state.end())
@@ -413,26 +150,17 @@ namespace Core
             if (target)
             {
                 HWND h = static_cast<HWND>(target);
-                int vk = ModToVk(modbit);
-                if (vk)
-                    post_key_msg(h, vk, !down);
-                else
-                {
-                    switch (modbit)
-                    {
-                        case Util::kModMouseL: post_mouse_msg(h, down ? WM_LBUTTONDOWN : WM_LBUTTONUP, cur_mods); break;
-                        case Util::kModMouseM: post_mouse_msg(h, down ? WM_MBUTTONDOWN : WM_MBUTTONUP, cur_mods); break;
-                        case Util::kModMouseR: post_mouse_msg(h, down ? WM_RBUTTONDOWN : WM_RBUTTONUP, cur_mods); break;
-                    }
-                }
+                if (mod.vk)
+                    post_key_msg(h, mod.vk, !down);
+                else if (mod.downMessage)
+                    post_mouse_msg(h, down ? mod.downMessage : mod.upMessage, cur_mods);
             }
             else
             {
-                int vk = ModToVk(modbit);
-                if (vk)
-                    add_key_input(vk, !down);
-                else
-                    add_mouse_input(ModToMouseFlag(modbit, down));
+                if (mod.vk)
+                    add_key_input(mod.vk, !down);
+                else if (mod.downFlag)
+                    add_mouse_input(down ? mod.downFlag : mod.upFlag);
             }
         };
 
@@ -518,26 +246,20 @@ namespace Core
                 {
                     if (!(st.held & bit))
                         continue;
-                    int vk = ModToVk(bit);
-                    if (vk)
+                    const ModEvent mod = ResolveMod(bit);
+                    if (mod.vk)
                     {
-                        UINT scanCode = GetScanCode(vk);
+                        UINT scanCode = GetScanCode(mod.vk);
                         LPARAM lParam = 1 | (scanCode << 16)
                                       | ((LPARAM)1 << 30)
                                       | ((LPARAM)1 << 31);
-                        if ((vk >= VK_PRIOR && vk <= VK_DOWN) || vk == VK_INSERT || vk == VK_DELETE)
+                        if ((mod.vk >= VK_PRIOR && mod.vk <= VK_DOWN) ||
+                            mod.vk == VK_INSERT || mod.vk == VK_DELETE)
                             lParam |= ((LPARAM)1 << 24);
-                        PostMessage(h, WM_KEYUP, vk, lParam);
+                        PostMessage(h, WM_KEYUP, mod.vk, lParam);
                     }
                     else
                     {
-                        UINT msg = 0;
-                        switch (bit)
-                        {
-                            case Util::kModMouseL: msg = WM_LBUTTONUP; break;
-                            case Util::kModMouseM: msg = WM_MBUTTONUP; break;
-                            case Util::kModMouseR: msg = WM_RBUTTONUP; break;
-                        }
                         WPARAM wp = 0;
                         if (cur_mods & Util::kModShift) wp |= MK_SHIFT;
                         if (cur_mods & Util::kModCtrl)  wp |= MK_CONTROL;
@@ -545,7 +267,7 @@ namespace Core
                         if (GetClientRect(h, &rc))
                         {
                             LPARAM lp = MAKELPARAM((rc.right - rc.left) / 2, (rc.bottom - rc.top) / 2);
-                            PostMessage(h, msg, wp, lp);
+                            PostMessage(h, mod.upMessage, wp, lp);
                         }
                     }
                 }
@@ -557,12 +279,12 @@ namespace Core
                 {
                     if (!(st.held & bit))
                         continue;
-                    int vk = ModToVk(bit);
-                    if (vk)
+                    const ModEvent mod = ResolveMod(bit);
+                    if (mod.vk)
                     {
                         if (input_count >= 16) flush();
                         inputs[input_count].type = INPUT_KEYBOARD;
-                        inputs[input_count].ki.wVk = static_cast<WORD>(vk);
+                        inputs[input_count].ki.wVk = static_cast<WORD>(mod.vk);
                         inputs[input_count].ki.dwFlags = KEYEVENTF_KEYUP;
                         input_count++;
                     }
@@ -573,7 +295,7 @@ namespace Core
                         inputs[input_count].mi.dx = 0;
                         inputs[input_count].mi.dy = 0;
                         inputs[input_count].mi.mouseData = 0;
-                        inputs[input_count].mi.dwFlags = ModToMouseFlag(bit, false);
+                        inputs[input_count].mi.dwFlags = mod.upFlag;
                         inputs[input_count].mi.time = 0;
                         inputs[input_count].mi.dwExtraInfo = 0;
                         input_count++;

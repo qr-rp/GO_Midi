@@ -74,6 +74,8 @@ namespace Midi {
         };
         
         TrackParseResult parse_track(size_t start, size_t len, int track_index);
+        bool parse_meta_event(size_t& position, size_t track_end, int abs_tick,
+                              TrackParseResult& result, bool& end_of_track);
         
         uint16_t readU16(size_t offset);
         uint32_t readU32(size_t offset);

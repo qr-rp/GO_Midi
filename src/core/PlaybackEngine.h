@@ -14,6 +14,7 @@
 // 项目头文件
 #include "../midi/MidiParser.h"
 #include "KeyboardSimulator.h"
+#include "TransposePlanner.h"
 #include "../util/KeyManager.h"
 
 namespace Core {
@@ -71,45 +72,24 @@ namespace Core {
         Util::KeyManager& get_key_manager() { return m_key_manager; }
 
     private:
-        struct ProcessedEvent {
-            double time;
-            bool is_note_on;
-            int vk_code;
-            int modifier;
-            void* window_handle;
-
-            bool operator<(const ProcessedEvent& other) const {
-                if (std::abs(time - other.time) > 1e-6)
-                    return time < other.time;
-                // Note Off 在 Note On 之前，确保平滑过渡
-                return is_note_on < other.is_note_on; 
-            }
-        };
-
-        struct TempNote {
-            double start;
-            double end;
-            int vk;
-            int modifier;
-            void* hwnd;
-            int pitch;
-            int track;
-        };
-
         void playback_thread();
-        void rebuild_events(const std::vector<Midi::RawNote>& input_notes,
-                            const std::vector<std::vector<float>>& track_hists,
-                            const std::vector<float>& global_hist);
+        void configure_playback_thread();
+        std::size_t event_index_at_or_after(double time) const;
 
         /// 释放所有活跃按键（stop/pause 共用）
         void release_all_keys();
         /// 在锁外重建事件列表，成功后更新 m_built_version
         /// 调用时需持有 m_mutex（方法内会临时解锁再重锁）
         bool try_rebuild_events(std::unique_lock<std::mutex>& lock);
+        /// 调用时需持有 m_mutex，保证配置和键位来自同一时刻
+        PlannerConfig make_planner_config_snapshot();
+        bool is_valid_channel(int channel) const;
+        /// 调用时需持有 m_mutex
+        void request_plan_rebuild();
 
         /// 核心数据：持久化持有
         std::vector<Midi::RawNote> m_all_notes;
-        std::vector<ProcessedEvent> m_events;
+        std::vector<PlaybackEvent> m_events;
         
         /// 每轨道的音高统计缓存（用于智能移调）
         std::vector<std::vector<float>> m_track_pitch_histograms;
