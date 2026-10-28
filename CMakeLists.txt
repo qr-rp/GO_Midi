@@ -131,6 +131,8 @@ set(SOURCES
     src/ui/MainFrame.h
     src/ui/PianoRollCtrl.cpp
     src/ui/PianoRollCtrl.h
+    src/ui/PianoRollModel.cpp
+    src/ui/PianoRollModel.h
     src/ui/PlaybackState.cpp
     src/ui/PlaybackState.h
     src/ui/UIHelpers.cpp
@@ -245,6 +247,14 @@ if(GO_MIDI_BUILD_TESTS)
     go_midi_enable_warnings(keymap_scheme_config_tests)
     add_test(NAME keymap_scheme_config_tests COMMAND keymap_scheme_config_tests)
 
+    add_executable(piano_roll_model_tests
+        tests/PianoRollModelTests.cpp
+        src/ui/PianoRollModel.cpp
+    )
+    target_include_directories(piano_roll_model_tests PRIVATE src)
+    go_midi_enable_warnings(piano_roll_model_tests)
+    add_test(NAME piano_roll_model_tests COMMAND piano_roll_model_tests)
+
     add_executable(midi_parser_tests
         tests/MidiParserTests.cpp
         src/midi/MidiParser.cpp
@@ -273,6 +283,7 @@ if(GO_MIDI_BUILD_TESTS)
         transpose_planner_tests
         key_manager_tests
         keymap_scheme_config_tests
+        piano_roll_model_tests
         midi_parser_tests
         transpose_regression_tests
     )
