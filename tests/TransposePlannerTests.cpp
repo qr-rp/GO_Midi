@@ -55,9 +55,9 @@ namespace
         note.duration = duration;
         note.pitch = pitch;
         note.track_index = 0;
-        note.channel = 1;
-        note.velocity = velocity;
-        note.program = 0;
+        note.channel = static_cast<std::uint8_t>(1);
+        note.velocity = static_cast<std::uint8_t>(velocity);
+        note.program = static_cast<std::int16_t>(0);
         return note;
     }
 
