@@ -33,7 +33,7 @@ namespace Core
         }
 
         m_running = true;
-        m_thread = std::thread(&PlaybackEngine::playback_thread, this);
+        m_thread = std::jthread([this] { playback_thread(); });
 
         LOG_INFO("PlaybackEngine 初始化完成，播放线程已启动");
     }

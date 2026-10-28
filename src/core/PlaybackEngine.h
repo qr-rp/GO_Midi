@@ -102,7 +102,7 @@ namespace Core {
         int m_built_version{-1};                ///< 最后构建的版本
         bool m_seek_triggered{false};           ///< 跳转触发标志
 
-        std::thread m_thread;
+        std::jthread m_thread;
         std::atomic<bool> m_running;            ///< 线程运行状态
         std::atomic<bool> m_playing;            ///< 逻辑播放状态
         std::atomic<bool> m_paused;
