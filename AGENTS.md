@@ -269,9 +269,9 @@ namespace UIConstants {
 项目使用无第三方依赖的 CTest 测试目标：
 
 - **一键验证**: `cmake --build build_mingw --target validate -j2`
-- **核心测试**: 移调计划器、KeyManager、键位方案配置、MIDI 解析、钢琴卷模型
+- **核心测试**: 移调计划器、KeyManager、键位方案配置、MIDI 解析、钢琴卷模型与控件事件
 - **端到端回归**: 6 首公开授权 MIDI 的 36/37 键八度、保留时值和事件哈希快照
-- **钢琴卷**: C/C# 起点、全音域布局属性、黑键命中、冲突分析、导航和撤销/重做
+- **钢琴卷**: C/C# 起点、全音域布局属性、黑键命中、冲突分析、导航、撤销/重做和事件分派
 - **交叉编译**: Unix + MinGW 构建时 CTest 自动通过 Wine 执行 Windows 测试
 - **CI**: `main`/`dev` push、PR 及正式/开发标签发布前都自动执行 `validate`
 - **人工门禁**: Win32 `SendInput` 和真实游戏效果仍按 `docs/game-input-validation.md` 验收

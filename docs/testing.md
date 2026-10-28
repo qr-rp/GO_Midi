@@ -28,6 +28,8 @@ emulator if `wine` is available.
 - `keymap_scheme_config_tests`: config map/pitch round-trip and scheme lookup.
 - `piano_roll_model_tests`: all MIDI range layouts, C/C# boundaries, black-key
   hit priority, logical/physical conflicts, navigation, and undo/redo history.
+- `piano_roll_ctrl_tests`: wxWidgets event dispatch for selection, binding,
+  conflict updates, undo/redo, right-click clearing, and keyboard navigation.
 - `midi_parser_tests`: six external MIDI files covering track alignment,
   pitch/channel/duration ranges and note counts.
 - `transpose_regression_tests`: end-to-end 36/37-key plans for six external

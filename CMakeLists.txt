@@ -255,6 +255,27 @@ if(GO_MIDI_BUILD_TESTS)
     go_midi_enable_warnings(piano_roll_model_tests)
     add_test(NAME piano_roll_model_tests COMMAND piano_roll_model_tests)
 
+    add_executable(piano_roll_ctrl_tests
+        tests/PianoRollCtrlTests.cpp
+        src/ui/PianoRollCtrl.cpp
+        src/ui/PianoRollModel.cpp
+    )
+    target_include_directories(piano_roll_ctrl_tests PRIVATE src)
+    target_link_libraries(piano_roll_ctrl_tests wx::core wx::base imm32 user32 kernel32)
+    go_midi_enable_warnings(piano_roll_ctrl_tests)
+    if(CMAKE_CROSSCOMPILING AND CMAKE_HOST_UNIX)
+        find_program(GO_MIDI_XVFB_RUN xvfb-run)
+        if(GO_MIDI_XVFB_RUN AND GO_MIDI_WINE_EXECUTABLE)
+            add_test(NAME piano_roll_ctrl_tests
+                     COMMAND ${GO_MIDI_XVFB_RUN} -a ${GO_MIDI_WINE_EXECUTABLE}
+                             $<TARGET_FILE:piano_roll_ctrl_tests>)
+        else()
+            add_test(NAME piano_roll_ctrl_tests COMMAND piano_roll_ctrl_tests)
+        endif()
+    else()
+        add_test(NAME piano_roll_ctrl_tests COMMAND piano_roll_ctrl_tests)
+    endif()
+
     add_executable(midi_parser_tests
         tests/MidiParserTests.cpp
         src/midi/MidiParser.cpp
@@ -284,6 +305,7 @@ if(GO_MIDI_BUILD_TESTS)
         key_manager_tests
         keymap_scheme_config_tests
         piano_roll_model_tests
+        piano_roll_ctrl_tests
         midi_parser_tests
         transpose_regression_tests
     )
