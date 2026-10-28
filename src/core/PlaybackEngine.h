@@ -72,6 +72,12 @@ namespace Core {
         Util::KeyManager& get_key_manager() { return m_key_manager; }
 
     private:
+        struct PlaybackSource {
+            std::vector<Midi::RawNote> notes;
+            std::vector<std::vector<float>> track_histograms;
+            std::vector<float> global_histogram;
+        };
+
         void playback_thread();
         void configure_playback_thread();
         std::size_t event_index_at_or_after(double time) const;
@@ -87,18 +93,11 @@ namespace Core {
         /// 调用时需持有 m_mutex
         void request_plan_rebuild();
 
-        /// 核心数据：持久化持有
-        std::vector<Midi::RawNote> m_all_notes;
+        /// 核心数据：不可变快照，配置热更新只复制 shared_ptr
+        std::shared_ptr<const PlaybackSource> m_source;
         std::vector<PlaybackEvent> m_events;
-        
-        /// 每轨道的音高统计缓存（用于智能移调）
-        std::vector<std::vector<float>> m_track_pitch_histograms;
-        
-        /// 全局音高直方图（排除打击乐 channel 10，预计算）
-        std::vector<float> m_global_histogram;
-        
+
         std::atomic<int> m_config_version{0};   ///< 触发重建的版本号
-        std::atomic<int> m_all_notes_generation{0}; ///< m_all_notes 的代数，用于检测锁外重建时的并发修改
         int m_built_version{-1};                ///< 最后构建的版本
         bool m_seek_triggered{false};           ///< 跳转触发标志
 

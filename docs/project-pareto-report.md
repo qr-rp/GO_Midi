@@ -40,6 +40,9 @@ This refactor treats a change as Pareto-improving only when:
 - The 36-key and 37-key legacy note CSVs for all six files retain the same SHA-256 before and after the parser/KeyManager refactors.
 - FF14 and Yysls keymaps retain 37 and 36 entries respectively, including `C4 -> Q` and `C#3 -> Shift+Z`.
 - UTF-8 BOM keymap loading passes after the encoding reader refactor.
+- Playback configuration rebuilds now share an immutable `PlaybackSource`
+  snapshot instead of copying all notes and histograms, reducing hot config
+  changes from O(N) copying to O(1) snapshot handoff.
 
 ## Tests
 

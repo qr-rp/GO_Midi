@@ -84,7 +84,7 @@ namespace Core
         m_current_time = 0.0;
         m_total_duration = midi_file.length;
 
-        m_all_notes.clear();
+        auto source = std::make_shared<PlaybackSource>();
 
         // 预估大小以减少重分配
         size_t totalNotes = 0;
@@ -93,36 +93,32 @@ namespace Core
             totalNotes += track_notes.size();
         }
 
-        // 内存管理：如果当前容量远大于新文件所需，释放多余内存
-        if (m_all_notes.capacity() > totalNotes * 4) {
-            m_all_notes.shrink_to_fit();
-        }
-        m_all_notes.reserve(totalNotes);
+        source->notes.reserve(totalNotes);
 
         for (const auto &track_notes : midi_file.raw_notes_by_track)
         {
-            m_all_notes.insert(m_all_notes.end(),
-                               track_notes.begin(), track_notes.end());
+            source->notes.insert(source->notes.end(),
+                                 track_notes.begin(), track_notes.end());
         }
 
         // Sort raw notes by start time globally
-        std::ranges::sort(m_all_notes,
+        std::ranges::sort(source->notes,
                           [](const Midi::RawNote& left, const Midi::RawNote& right)
         {
             return left.start_s < right.start_s;
         });
 
         auto histograms = build_transpose_histograms(
-            m_all_notes, midi_file.raw_notes_by_track.size());
-        m_track_pitch_histograms = std::move(histograms.tracks);
-        m_global_histogram = std::move(histograms.global);
+            source->notes, midi_file.raw_notes_by_track.size());
+        source->track_histograms = std::move(histograms.tracks);
+        source->global_histogram = std::move(histograms.global);
+        m_source = std::move(source);
 
-        LOG_INFO("MIDI 文件已加载: 音符数=" << m_all_notes.size()
+        LOG_INFO("MIDI 文件已加载: 音符数=" << m_source->notes.size()
                                             << ", 时长=" << m_total_duration << "s"
                                             << ", 音轨数=" << midi_file.raw_notes_by_track.size());
 
         m_config_version++; // Trigger rebuild
-        m_all_notes_generation.fetch_add(1, std::memory_order_release);
         m_cv.notify_all();
     }
 
@@ -244,20 +240,28 @@ namespace Core
     bool PlaybackEngine::try_rebuild_events(std::unique_lock<std::mutex>& lock)
     {
         // 在锁内快照全部共享数据，确保一次计划只使用同一个配置版本。
-        std::vector<Midi::RawNote> notes_snapshot = m_all_notes;
-        std::vector<std::vector<float>> track_hists_snapshot = m_track_pitch_histograms;
-        std::vector<float> global_hist_snapshot = m_global_histogram;
-        int notes_gen = m_all_notes_generation.load(std::memory_order_acquire);
+        const auto source_snapshot = m_source;
         int config_version = m_config_version.load(std::memory_order_acquire);
         PlannerConfig plan_config = make_planner_config_snapshot();
 
         lock.unlock();
 
+        if (!source_snapshot)
+        {
+            lock.lock();
+            m_events.clear();
+            m_built_version = config_version;
+            return true;
+        }
+
         PlaybackPlan plan = build_playback_plan(
-            notes_snapshot, track_hists_snapshot, global_hist_snapshot, plan_config);
+            source_snapshot->notes,
+            source_snapshot->track_histograms,
+            source_snapshot->global_histogram,
+            plan_config);
 
         lock.lock();
-        if (m_all_notes_generation.load(std::memory_order_acquire) == notes_gen &&
+        if (m_source == source_snapshot &&
             m_config_version.load(std::memory_order_acquire) == config_version)
         {
             if (!plan.ok)
