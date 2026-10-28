@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -24,7 +23,10 @@ namespace
         Core::SmartTransposeAlgorithm algorithm;
         int expected_shift;
         double expected_retained_percent;
-        std::uint64_t expected_structure_hash;
+        std::size_t expected_folded_notes;
+        std::size_t expected_conflict_merges;
+        std::size_t expected_exact_duplicates;
+        std::size_t expected_output_notes;
     };
 
     int g_failures = 0;
@@ -36,30 +38,6 @@ namespace
             std::cerr << "FAIL: " << message << '\n';
             ++g_failures;
         }
-    }
-
-    void hash_bytes(std::uint64_t& hash, const void* data, std::size_t size)
-    {
-        const auto* bytes = static_cast<const unsigned char*>(data);
-        for (std::size_t index = 0; index < size; ++index)
-        {
-            hash ^= bytes[index];
-            hash *= 1099511628211ULL;
-        }
-    }
-
-    std::uint64_t hash_event_structure(
-        const std::vector<Core::PlaybackEvent>& events)
-    {
-        std::uint64_t hash = 1469598103934665603ULL;
-        for (const auto& event : events)
-        {
-            const int note_on = event.is_note_on ? 1 : 0;
-            hash_bytes(hash, &note_on, sizeof(note_on));
-            hash_bytes(hash, &event.vk_code, sizeof(event.vk_code));
-            hash_bytes(hash, &event.modifier, sizeof(event.modifier));
-        }
-        return hash;
     }
 
     Core::PlannerConfig make_config(const Midi::MidiFile& midi,
@@ -120,40 +98,40 @@ namespace
         return {
             {"frere-jacques.mid", 36, 48, 83,
              Core::HistogramMode::LEGACY, Core::SmartTransposeAlgorithm::LEGACY,
-             0, 86.975, 5590444977943540547ULL},
+             0, 86.975, 41, 346, 1, 328},
             {"frere-jacques.mid", 37, 48, 84,
              Core::HistogramMode::LEGACY, Core::SmartTransposeAlgorithm::LEGACY,
-             0, 90.130, 9254349733983088099ULL},
+             0, 90.130, 9, 345, 1, 332},
             {"maple-leaf-rag.mid", 36, 48, 83,
              Core::HistogramMode::LEGACY, Core::SmartTransposeAlgorithm::LEGACY,
-             0, 86.659, 17738541734706982626ULL},
+             0, 86.659, 343, 2546, 296, 2267},
             {"maple-leaf-rag.mid", 37, 48, 84,
              Core::HistogramMode::LEGACY, Core::SmartTransposeAlgorithm::LEGACY,
-             0, 87.358, 4892001154823266915ULL},
+             0, 87.358, 320, 2530, 286, 2280},
             {"chopin-etude-10-4.mid", 36, 48, 83,
              Core::HistogramMode::LEGACY, Core::SmartTransposeAlgorithm::LEGACY,
-             0, 92.987, 14734398799802802035ULL},
+             0, 92.987, 404, 2191, 75, 2132},
             {"chopin-etude-10-4.mid", 37, 48, 84,
              Core::HistogramMode::LEGACY, Core::SmartTransposeAlgorithm::LEGACY,
-             0, 93.236, 8760538702446191955ULL},
+             0, 93.236, 395, 2175, 72, 2136},
             {"bach-brandenburg-3.mid", 36, 48, 83,
              Core::HistogramMode::LEGACY, Core::SmartTransposeAlgorithm::LEGACY,
-             12, 43.457, 16327978132568884850ULL},
+             12, 43.457, 5879, 27367, 13102, 12911},
             {"bach-brandenburg-3.mid", 37, 48, 84,
              Core::HistogramMode::LEGACY, Core::SmartTransposeAlgorithm::LEGACY,
-             12, 43.793, 2841837423640545347ULL},
+             12, 43.793, 5263, 27351, 13066, 12996},
             {"beethoven-symphony-5.mid", 36, 48, 83,
              Core::HistogramMode::LEGACY, Core::SmartTransposeAlgorithm::LEGACY,
-             0, 53.625, 12021813977114246019ULL},
+             0, 53.625, 1181, 8274, 3052, 4584},
             {"beethoven-symphony-5.mid", 37, 48, 84,
              Core::HistogramMode::LEGACY, Core::SmartTransposeAlgorithm::LEGACY,
-             0, 55.598, 15166508342754699378ULL},
+             0, 55.598, 993, 8258, 2960, 4719},
             {"star-spangled-hillery.mid", 36, 48, 83,
              Core::HistogramMode::LEGACY, Core::SmartTransposeAlgorithm::LEGACY,
-             0, 66.667, 4949705700803926035ULL},
+             0, 66.667, 0, 284, 101, 202},
             {"star-spangled-hillery.mid", 37, 48, 84,
              Core::HistogramMode::LEGACY, Core::SmartTransposeAlgorithm::LEGACY,
-             0, 66.667, 16419427902945691747ULL}
+             0, 66.667, 0, 282, 101, 202}
         };
     }
 
@@ -191,7 +169,10 @@ namespace
                 std::cout << label
                           << " shift=" << plan.global_shift
                           << " retained=" << retained_percent(plan)
-                          << " hash=" << hash_event_structure(plan.events) << '\n';
+                          << " folded=" << plan.metrics.folded_notes
+                          << " conflicts=" << plan.metrics.conflict_merges
+                          << " duplicates=" << plan.metrics.exact_duplicates
+                          << " output=" << plan.metrics.output_notes << '\n';
                 continue;
             }
 
@@ -202,8 +183,14 @@ namespace
             // rounding without hiding octave/folding regressions.
             expect(std::abs(retained_percent(plan) - regression.expected_retained_percent) < 0.5,
                    label + " retained-duration regression");
-            expect(hash_event_structure(plan.events) == regression.expected_structure_hash,
-                   label + " event structure hash regression");
+            expect(plan.metrics.folded_notes == regression.expected_folded_notes,
+                   label + " folded-note regression");
+            expect(plan.metrics.conflict_merges == regression.expected_conflict_merges,
+                   label + " conflict-merge regression");
+            expect(plan.metrics.exact_duplicates == regression.expected_exact_duplicates,
+                   label + " exact-duplicate regression");
+            expect(plan.metrics.output_notes == regression.expected_output_notes,
+                   label + " output-note regression");
 
             if (regression.algorithm == Core::SmartTransposeAlgorithm::CONFLICT_AWARE)
             {

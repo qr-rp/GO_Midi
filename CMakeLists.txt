@@ -305,10 +305,16 @@ if(GO_MIDI_BUILD_TESTS)
         key_manager_tests
         keymap_scheme_config_tests
         piano_roll_model_tests
-        piano_roll_ctrl_tests
         midi_parser_tests
         transpose_regression_tests
     )
+    # GitHub's non-interactive Windows service session cannot host a wx GUI
+    # message loop reliably. Keep the event test available for local/Wine runs.
+    if(WIN32 AND NOT CMAKE_CROSSCOMPILING)
+        set_tests_properties(piano_roll_ctrl_tests PROPERTIES DISABLED TRUE)
+    else()
+        list(APPEND GO_MIDI_TESTS piano_roll_ctrl_tests)
+    endif()
     set_tests_properties(${GO_MIDI_TESTS} PROPERTIES TIMEOUT 60)
     set_tests_properties(piano_roll_ctrl_tests PROPERTIES TIMEOUT 120)
 

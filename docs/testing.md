@@ -30,12 +30,15 @@ emulator if `wine` is available.
   hit priority, logical/physical conflicts, navigation, and undo/redo history.
 - `piano_roll_ctrl_tests`: wxWidgets event dispatch for selection, binding,
   conflict updates, undo/redo, right-click clearing, and keyboard navigation.
+  It runs automatically in Linux cross-builds through Xvfb/Wine. It is
+  disabled on native Windows CI because the hosted runner has no reliable
+  interactive desktop session; the test executable is still built there.
 - `midi_parser_tests`: six external MIDI files covering track alignment,
   pitch/channel/duration ranges and note counts.
 - `transpose_regression_tests`: end-to-end 36/37-key plans for six external
   MIDI files. It pins octave choice, retained-duration percentage,
-  compiler-independent event-structure hash, and verifies the selected
-  candidate is Pareto-optimal.
+  folded/conflict/duplicate/output counts, and verifies the selected candidate
+  is Pareto-optimal.
 
 ## Continuous integration
 
