@@ -67,6 +67,14 @@ namespace
         return hist;
     }
 
+    Core::PlaybackPlan build_plan(const std::vector<Midi::RawNote>& notes,
+                                  const std::vector<float>& hist,
+                                  const Core::PlannerConfig& config)
+    {
+        const std::vector<std::vector<float>> track_hists = {hist};
+        return Core::build_playback_plan(notes, track_hists, hist, config);
+    }
+
     bool dominates(const Core::ShiftCandidateMetrics& left,
                    const Core::ShiftCandidateMetrics& right)
     {
@@ -94,8 +102,8 @@ namespace
             notes.push_back(make_note(0.0f, 1.0f, pitch));
 
         const auto hist = make_hist(notes);
-        const auto result = Core::build_playback_plan(
-            notes, {hist}, hist,
+        const auto result = build_plan(
+            notes, hist,
             make_config(48, 84, Core::SmartTransposeAlgorithm::LEGACY,
                         Core::ConflictKeyMode::PHYSICAL));
 
@@ -120,8 +128,8 @@ namespace
         auto improved_config = legacy_config;
         improved_config.smart_algorithm = Core::SmartTransposeAlgorithm::CONFLICT_AWARE;
 
-        const auto legacy = Core::build_playback_plan(notes, {hist}, hist, legacy_config);
-        const auto improved = Core::build_playback_plan(notes, {hist}, hist, improved_config);
+        const auto legacy = build_plan(notes, hist, legacy_config);
+        const auto improved = build_plan(notes, hist, improved_config);
 
         expect(legacy.ok && improved.ok, "both comparison plans should succeed");
         expect(legacy.global_shift == 12,
@@ -170,8 +178,8 @@ namespace
         auto logical_config = physical_config;
         logical_config.conflict_key_mode = Core::ConflictKeyMode::LOGICAL;
 
-        const auto physical = Core::build_playback_plan(notes, {hist}, hist, physical_config);
-        const auto logical = Core::build_playback_plan(notes, {hist}, hist, logical_config);
+        const auto physical = build_plan(notes, hist, physical_config);
+        const auto logical = build_plan(notes, hist, logical_config);
 
         expect(physical.metrics.output_notes == 1,
                "physical conflict mode should merge the same VK even with different modifiers");
@@ -186,8 +194,8 @@ namespace
             make_note(0.0f, 1.0f, 96)
         };
         const auto hist = make_hist(notes);
-        const auto result = Core::build_playback_plan(
-            notes, {hist}, hist,
+        const auto result = build_plan(
+            notes, hist,
             make_config(48, 84, Core::SmartTransposeAlgorithm::LEGACY,
                         Core::ConflictKeyMode::PHYSICAL));
 
@@ -208,7 +216,7 @@ namespace
             Core::ConflictKeyMode::LOGICAL);
         config.decompose = true;
 
-        const auto result = Core::build_playback_plan(notes, {hist}, hist, config);
+        const auto result = build_plan(notes, hist, config);
         std::vector<double> note_on_times;
         for (const auto& event : result.events)
         {

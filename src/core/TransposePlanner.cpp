@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <ranges>
 #include <unordered_map>
 #include <utility>
 
@@ -64,9 +65,9 @@ namespace Core
 
         struct ShiftSearchContext
         {
-            const std::vector<Midi::RawNote>& notes;
-            const std::vector<std::vector<float>>& track_hists;
-            const std::vector<float>& global_hist;
+            std::span<const Midi::RawNote> notes;
+            std::span<const std::vector<float>> track_hists;
+            std::span<const float> global_hist;
             const PlannerConfig& config;
             AutoGroups groups;
             bool full_range{false};
@@ -112,7 +113,10 @@ namespace Core
             return folded_pitch >= 0 && folded_pitch <= 127;
         }
 
-        float center_shift_score(const std::vector<float>& hist, int shift, int min_pitch, int max_pitch)
+        float center_shift_score(std::span<const float> hist,
+                                 int shift,
+                                 int min_pitch,
+                                 int max_pitch)
         {
             if (hist.size() != 128)
                 return 0.0f;
@@ -140,7 +144,9 @@ namespace Core
             return score;
         }
 
-        int choose_legacy_shift(const std::vector<float>& hist, int min_pitch, int max_pitch)
+        int choose_legacy_shift(std::span<const float> hist,
+                                int min_pitch,
+                                int max_pitch)
         {
             float scores[9] = {};
             for (int octave = -4; octave <= 4; ++octave)
@@ -167,7 +173,7 @@ namespace Core
             return (best_index - 4) * 12;
         }
 
-        AutoGroups find_auto_groups(const std::vector<PlannerChannelConfig>& channels,
+        AutoGroups find_auto_groups(std::span<const PlannerChannelConfig> channels,
                                     std::size_t track_count)
         {
             AutoGroups groups;
@@ -254,7 +260,7 @@ namespace Core
                 if (current.vk == 0 || current.end <= current.start)
                     continue;
 
-                auto it = std::find_if(active.begin(), active.end(), [&](const WorkingNote* previous)
+                auto it = std::ranges::find_if(active, [&](const WorkingNote* previous)
                 {
                     return conflict_key_equal(*previous, current, mode);
                 });
@@ -274,7 +280,7 @@ namespace Core
 
         void sort_notes_by_start(std::vector<WorkingNote>& notes)
         {
-            std::sort(notes.begin(), notes.end(), [](const WorkingNote& left, const WorkingNote& right)
+            std::ranges::sort(notes, [](const WorkingNote& left, const WorkingNote& right)
             {
                 return left.start < right.start;
             });
@@ -296,8 +302,8 @@ namespace Core
             if (end - first <= 1)
                 return end;
 
-            std::sort(group.begin() + first, group.begin() + end,
-                      [](const WorkingNote& left, const WorkingNote& right)
+            std::ranges::sort(group.begin() + first, group.begin() + end,
+                              [](const WorkingNote& left, const WorkingNote& right)
             {
                 return left.pitch < right.pitch;
             });
@@ -374,7 +380,7 @@ namespace Core
 
         int effective_transpose(const PlannerChannelConfig& channel,
                                 int global_shift,
-                                const std::vector<int>& track_shifts)
+                                std::span<const int> track_shifts)
         {
             if (channel.transpose != 0)
                 return channel.transpose;
@@ -443,9 +449,9 @@ namespace Core
         }
 
         void collect_working_notes(
-            const std::vector<Midi::RawNote>& input_notes,
+            std::span<const Midi::RawNote> input_notes,
             int global_shift,
-            const std::vector<int>& track_shifts,
+            std::span<const int> track_shifts,
             const PlannerConfig& config,
             PlanBuild& build)
         {
@@ -490,13 +496,17 @@ namespace Core
                 ++build.metrics.output_notes;
             }
 
-            std::sort(build.events.begin(), build.events.end());
+            std::ranges::sort(build.events,
+                              [](const PlaybackEvent& left, const PlaybackEvent& right)
+            {
+                return left < right;
+            });
             build.metrics.output_events = build.events.size();
         }
 
-        PlanBuild build_for_shifts(const std::vector<Midi::RawNote>& input_notes,
+        PlanBuild build_for_shifts(std::span<const Midi::RawNote> input_notes,
                                    int global_shift,
-                                   const std::vector<int>& track_shifts,
+                                   std::span<const int> track_shifts,
                                    const PlannerConfig& config)
         {
             PlanBuild build;
@@ -582,7 +592,7 @@ namespace Core
         }
 
         std::vector<CandidateScore> pareto_frontier(
-            const std::vector<CandidateScore>& candidates)
+            std::span<const CandidateScore> candidates)
         {
             std::vector<CandidateScore> frontier;
             for (std::size_t index = 0; index < candidates.size(); ++index)
@@ -606,12 +616,12 @@ namespace Core
 
         void mark_pareto_candidates(
             std::vector<ShiftCandidateMetrics>& candidates,
-            const std::vector<CandidateScore>& frontier)
+            std::span<const CandidateScore> frontier)
         {
             for (auto& candidate : candidates)
             {
-                candidate.pareto_optimal = std::any_of(
-                    frontier.begin(), frontier.end(), [&](const CandidateScore& score)
+                candidate.pareto_optimal = std::ranges::any_of(
+                    frontier, [&](const CandidateScore& score)
                 {
                     return candidate.shift == score.shift;
                 });
@@ -629,7 +639,7 @@ namespace Core
         }
 
         CandidateRanges measure_candidate_ranges(
-            const std::vector<CandidateScore>& candidates)
+            std::span<const CandidateScore> candidates)
         {
             CandidateRanges ranges{
                 candidates.front().retained_weight,
@@ -694,15 +704,15 @@ namespace Core
         }
 
         CandidateScore select_pareto_candidate(
-            const std::vector<CandidateScore>& frontier,
+            std::span<const CandidateScore> frontier,
             int preferred_shift)
         {
             if (frontier.size() == 1)
                 return frontier.front();
 
             // 原算法若仍处于 Pareto 前沿，则没有必须接受任何单维退化。
-            const auto preferred = std::find_if(
-                frontier.begin(), frontier.end(), [&](const CandidateScore& candidate)
+            const auto preferred = std::ranges::find_if(
+                frontier, [&](const CandidateScore& candidate)
             {
                 return candidate.shift == preferred_shift;
             });
@@ -840,7 +850,7 @@ namespace Core
             }
         }
 
-        float compute_skewness(const std::vector<float>& hist, int low, int high)
+        float compute_skewness(std::span<const float> hist, int low, int high)
         {
             double sum_weight = 0.0;
             double sum_pitch_weight = 0.0;
@@ -878,7 +888,7 @@ namespace Core
             return static_cast<float>(skewness / (sigma * sigma * sigma));
         }
 
-        void apply_high_note_boost(std::vector<float>& hist, HistogramMode mode)
+        void apply_high_note_boost(std::span<float> hist, HistogramMode mode)
         {
             constexpr float kHighNoteBaseBoost = 1.2f;
             constexpr float kHighNoteStepDecay = 0.1f;
@@ -931,7 +941,7 @@ namespace Core
     }
 
     TransposeHistograms build_transpose_histograms(
-        const std::vector<Midi::RawNote>& notes,
+        std::span<const Midi::RawNote> notes,
         std::size_t track_count,
         HistogramMode mode)
     {
@@ -967,9 +977,9 @@ namespace Core
     }
 
     PlaybackPlan build_playback_plan(
-        const std::vector<Midi::RawNote>& input_notes,
-        const std::vector<std::vector<float>>& track_hists,
-        const std::vector<float>& global_hist,
+        std::span<const Midi::RawNote> input_notes,
+        std::span<const std::vector<float>> track_hists,
+        std::span<const float> global_hist,
         const PlannerConfig& config)
     {
         PlaybackPlan plan;

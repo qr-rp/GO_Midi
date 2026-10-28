@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -125,13 +126,13 @@ namespace Core
     };
 
     TransposeHistograms build_transpose_histograms(
-        const std::vector<Midi::RawNote>& notes,
+        std::span<const Midi::RawNote> notes,
         std::size_t track_count,
         HistogramMode mode = HistogramMode::CORRECTED);
 
     PlaybackPlan build_playback_plan(
-        const std::vector<Midi::RawNote>& input_notes,
-        const std::vector<std::vector<float>>& track_hists,
-        const std::vector<float>& global_hist,
+        std::span<const Midi::RawNote> input_notes,
+        std::span<const std::vector<float>> track_hists,
+        std::span<const float> global_hist,
         const PlannerConfig& config);
 }
