@@ -147,7 +147,7 @@ C5: k
 
 ### 前置要求
 
-- CMake 3.10+
+- CMake 3.25+
 - MinGW-w64 或 Visual Studio 2022
 
 ### MinGW 构建（推荐）
@@ -196,13 +196,13 @@ cmake --build . --config Release
 ## 🛠️ 技术栈
 
 <p align="center">
-  <img src="https://img.shields.io/badge/C++-17-blue?style=flat-square" alt="C++17">
+  <img src="https://img.shields.io/badge/C++-23-blue?style=flat-square" alt="C++23">
   <img src="https://img.shields.io/badge/wxWidgets-3.3.1-green?style=flat-square" alt="wxWidgets">
-  <img src="https://img.shields.io/badge/CMake-3.10+-red?style=flat-square" alt="CMake">
+  <img src="https://img.shields.io/badge/CMake-3.25+-red?style=flat-square" alt="CMake 3.25+">
   <img src="https://img.shields.io/badge/Platform-Windows-blue?style=flat-square" alt="Windows">
 </p>
 
-- **语言**: C++17
+- **语言**: C++23
 - **GUI 框架**: wxWidgets 3.3.1
 - **构建系统**: CMake
 - **目标平台**: Windows 10/11

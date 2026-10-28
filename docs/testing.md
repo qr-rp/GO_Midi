@@ -26,6 +26,8 @@ emulator if `wine` is available.
 - `key_manager_tests`: FF14/Yysls presets, map snapshot round-trip, reset,
   UTF-8 keymap loading.
 - `keymap_scheme_config_tests`: config map/pitch round-trip and scheme lookup.
+- `piano_roll_model_tests`: all MIDI range layouts, C/C# boundaries, black-key
+  hit priority, logical/physical conflicts, navigation, and undo/redo history.
 - `midi_parser_tests`: six external MIDI files covering track alignment,
   pitch/channel/duration ranges and note counts.
 - `transpose_regression_tests`: end-to-end 36/37-key plans for six external
@@ -38,6 +40,14 @@ emulator if `wine` is available.
   targeting `main` or `dev`.
 - `.github/workflows/dev.yml` and `.github/workflows/release.yml` run the same
   validation target before preparing release assets.
+
+## Manual Windows gate
+
+Wine can exercise the GUI and CTest binaries, but it cannot prove that a game
+receives the generated input correctly. Perform the checklist in
+[`game-input-validation.md`](game-input-validation.md) on Windows before a
+release that changes keyboard simulation, timing, transpose selection, or
+keymap editing.
 
 ## External fixtures
 

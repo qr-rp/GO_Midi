@@ -6,13 +6,13 @@
 
 - **语言**: C++23 (禁用异常/RTTI)
 - **GUI**: wxWidgets 3.3.1（源码编译，静态链接）
-- **构建**: CMake 3.10+，仅 Windows 目标
+- **构建**: CMake 3.25+，仅 Windows 目标
 - **平台**: Windows 10/11 64-bit，需要管理员权限（SendInput 键盘模拟）
 
 ## Architecture & Data Flow
 
 ```
-[MIDI file] → MidiParser → MidiEvent[] → PlaybackEngine → KeyboardSimulator → [Target Window]
+[MIDI file] → MidiParser → RawNote[] → PlaybackEngine → KeyboardSimulator → [Target Window]
                                                  ↑
 [UI/MainFrame] ── config changes ────────────────┘
       ↑               (atomic m_config_version)
@@ -22,8 +22,8 @@
 
 ### 核心数据流
 
-1. **MIDI 解析** — `MidiParser` 读取 `.mid` 文件，解析为 `MidiEvent` 列表（含 tick、音符、力度、通道号），将 tick 转换为秒
-2. **播放引擎** — `PlaybackEngine` 在独立线程运行，从事件队列中按时间调度 `MidiEvent`，对每通道应用移调后发送到 `KeyboardSimulator`
+1. **MIDI 解析** — `MidiParser` 读取 `.mid` 文件，解析为 `RawNote` 列表（含起始秒、时值、音高、力度、通道号）
+2. **播放引擎** — `PlaybackEngine` 在独立线程运行，按时间调度 `PlaybackEvent`，对每通道应用移调后发送到 `KeyboardSimulator`
 3. **键盘模拟** — `KeyboardSimulator` 调用 `SendInput` (keybd 模式) 或 `PostMessage` (窗口消息模式)，支持两种键位映射路径
 4. **UI 通信** — `MainFrame` 通过 `wxTimer` 轮询引擎状态（位置、播放中/暂停），配置变更通过原子版本号 (`m_config_version`) 加条件变量通知引擎线程
 
@@ -48,11 +48,16 @@ GO_Midi/
 │   ├── App.cpp/h            # wxWidgets 应用入口，wxApp 子类
 │   ├── core/
 │   │   ├── PlaybackEngine   # 播放引擎：事件调度、配置热更新、移调、AB 循环
+│   │   ├── TransposePlanner # 纯移调/冲突计划器
 │   │   └── KeyboardSimulator # Win32 键盘模拟（SendInput/PostMessage 双路径）
 │   ├── midi/
 │   │   └── MidiParser       # MIDI Format 0/1 解析，tick→秒转换
 │   ├── ui/
 │   │   ├── MainFrame        # 主窗口：面板布局、控件、事件处理、配置 I/O
+│   │   ├── KeymapEditorDialog # 键位方案管理与编辑弹窗
+│   │   ├── KeymapSchemeConfig # 配置内键位方案读写
+│   │   ├── PianoRollCtrl    # 钢琴卷绘制与输入
+│   │   ├── PianoRollModel   # 可单测的布局、冲突、导航和撤销模型
 │   │   ├── PlaybackState    # 状态机（Idle/Playing/Paused/Stopped/Scheduled/Error）
 │   │   ├── UIHelpers        # UIConstants（字符串常量）、工具函数
 │   │   └── Widgets          # 自定义控件：ModernSlider、ScrollingText
@@ -68,9 +73,11 @@ GO_Midi/
 ├── wxWidgets-3.3.1/         # wxWidgets 源码（构建时编译，gitignored）
 ├── build_mingw/             # MinGW 构建输出目录（gitignored）
 ├── CMakeLists.txt           # 根构建文件
+├── CMakePresets.json        # MSVC / MinGW 构建预设
 ├── mingw-toolchain.cmake    # MinGW 交叉编译工具链
 ├── build_mingw.bat          # MinGW 构建脚本
 └── .github/workflows/
+    ├── validate.yml         # push/PR 自动测试
     ├── dev.yml              # 开发版 CI（dev-v* 标签触发，prerelease）
     └── release.yml          # 正式版 CI（v* 标签触发，正式 release）
 ```
@@ -84,7 +91,7 @@ build_mingw.bat
 # 输出: build_mingw/GO_MIDI!.exe
 ```
 
-要求：CMake 3.10+、MinGW-w64 (x86_64)。wxWidgets 3.3.1 源码需在项目根目录 `wxWidgets-3.3.1/`。
+要求：CMake 3.25+、MinGW-w64 (x86_64)。wxWidgets 3.3.1 源码需在项目根目录 `wxWidgets-3.3.1/`。
 
 ### 本地构建（Visual Studio 2022）
 
@@ -99,11 +106,12 @@ cmake --build . --config Release
 
 - `dev-v*` 标签推送 → 触发 `dev.yml`，输出 `GO_MIDI!_<version>-dev.exe` 作为 prerelease
 - `v*` 标签推送 → 触发 `release.yml`，输出 `GO_MIDI!_<version>.exe` 作为正式 release
+- `main` / `dev` 的 push 和 PR → 触发 `validate.yml`，运行全部 CTest 目标
 - CI 使用 `windows-latest` + MSVC，wxWidgets 缓存 key 基于 CMakeLists.txt 和源文件 hash
 
 ### 注意事项
 
-- **无测试框架**、**无 lint 工具**、**无格式化配置**
+- **无第三方测试框架**、**无内置 lint 工具**、**无格式化配置**；使用 CMake/CTest 自包含测试
 - 首次构建约 10-30 分钟（需编译 wxWidgets），后续增量构建快
 - CI 和本地构建工具链不同（MSVC vs MinGW），CMakeLists.txt 中有各自的优化 flags
 
@@ -195,7 +203,7 @@ namespace UIConstants {
 ### Playback Engine Patterns
 
 - **状态机**: `PlaybackStateMachine` (Idle / Playing / Paused / Stopped / Scheduled / Error)
-- **配置热更新**: 原子版本号 `m_config_version` + `std::condition_variable` 通知播放线程
+- **配置热更新**: 不可变 `PlaybackSource` 快照 + 原子版本号 `m_config_version` + `std::condition_variable` 通知播放线程
 - **活跃按键追踪**: `ActiveKeySet` (`unordered_set<pair<int, void*>>`) + 引用计数防止卡键
 - **智能移调**: 基于音高直方图自动计算最佳移调量（Gaussian 加权、偏态自适应最高音保护）
 - **AB 循环**: 进度条右键设 A/B 点，循环播放，第三次右键清除
@@ -219,9 +227,14 @@ namespace UIConstants {
 |---|---|
 |`src/App.cpp`|wxWidgets 入口 `OnInit()` / `OnExit()`|
 |`src/core/PlaybackEngine.cpp/h`|播放引擎核心（~39KB），线程调度、配置热更新|
+|`src/core/TransposePlanner.cpp/h`|纯移调/冲突计划器和 Pareto 候选评估|
 |`src/core/KeyboardSimulator.cpp/h`|Win32 键盘模拟（SendInput/PostMessage）|
 |`src/midi/MidiParser.cpp/h`|MIDI 解析（Format 0/1，~23KB）|
 |`src/ui/MainFrame.cpp/h`|主窗口（~95KB，项目最大文件），所有控件和事件|
+|`src/ui/KeymapEditorDialog.cpp/h`|键位方案编辑弹窗和持久化调度|
+|`src/ui/KeymapSchemeConfig.cpp/h`|config 内键位方案读写|
+|`src/ui/PianoRollCtrl.cpp/h`|钢琴卷绘制、键位捕获和编辑交互|
+|`src/ui/PianoRollModel.cpp/h`|钢琴卷布局、冲突分析、导航和撤销模型|
 |`src/ui/PlaybackState.cpp/h`|状态机实现|
 |`src/ui/UIHelpers.cpp/h`|UI 字符串常量和辅助函数|
 |`src/ui/Widgets.cpp/h`|自定义控件（ModernSlider, ScrollingText）|
@@ -234,6 +247,7 @@ namespace UIConstants {
 |`build_mingw.bat`|MinGW 一键构建脚本|
 |`.github/workflows/dev.yml`|开发版 CI|
 |`.github/workflows/release.yml`|正式版 CI|
+|`.github/workflows/validate.yml`|push/PR 自动验证|
 
 ## Runtime/Tooling Preferences
 
@@ -255,10 +269,12 @@ namespace UIConstants {
 项目使用无第三方依赖的 CTest 测试目标：
 
 - **一键验证**: `cmake --build build_mingw --target validate -j2`
-- **核心测试**: 移调计划器、KeyManager、键位方案配置、MIDI 解析
+- **核心测试**: 移调计划器、KeyManager、键位方案配置、MIDI 解析、钢琴卷模型
 - **端到端回归**: 6 首公开授权 MIDI 的 36/37 键八度、保留时值和事件哈希快照
+- **钢琴卷**: C/C# 起点、全音域布局属性、黑键命中、冲突分析、导航和撤销/重做
 - **交叉编译**: Unix + MinGW 构建时 CTest 自动通过 Wine 执行 Windows 测试
 - **CI**: `main`/`dev` push、PR 及正式/开发标签发布前都自动执行 `validate`
+- **人工门禁**: Win32 `SendInput` 和真实游戏效果仍按 `docs/game-input-validation.md` 验收
 
 ## Git Workflow
 
