@@ -36,6 +36,29 @@ struct PianoPitchRange {
     }
 };
 
+class PianoRollMouseState {
+public:
+    void press(int modifier) { m_pressed |= modifier; }
+    void release(int modifier) { m_pressed &= ~modifier; }
+    void reset() { m_pressed = 0; }
+
+    [[nodiscard]] int effective_modifier(
+        bool left_down, bool middle_down, bool right_down) const
+    {
+        int modifier = 0;
+        if ((m_pressed & Util::kModMouseL) && left_down)
+            modifier |= Util::kModMouseL;
+        if ((m_pressed & Util::kModMouseM) && middle_down)
+            modifier |= Util::kModMouseM;
+        if ((m_pressed & Util::kModMouseR) && right_down)
+            modifier |= Util::kModMouseR;
+        return modifier;
+    }
+
+private:
+    int m_pressed = 0;
+};
+
 /// 键位编辑撤销/重做快照。记录的是操作前/后的完整映射, 最多保留 64 步。
 class PianoRollEditHistory {
 public:

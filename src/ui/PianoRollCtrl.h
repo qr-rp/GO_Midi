@@ -33,7 +33,7 @@ private:
     int m_selectedNote = -1;   // 当前选中等待绑定
     int m_navigationAnchor = -1;
     int m_hoverNote = -1;
-    int m_mouseModifier = 0;
+    PianoRollMouseState m_mouseState;
     wxString m_lastHint;
 
     int m_viewW;

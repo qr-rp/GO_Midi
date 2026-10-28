@@ -149,6 +149,26 @@ namespace {
         expect(!end.has_value(), "navigation should stop at the editable boundary");
     }
 
+    void test_mouse_modifiers_require_pressed_button()
+    {
+        UI::PianoRollMouseState mouse;
+        mouse.press(Util::kModMouseL);
+        mouse.press(Util::kModMouseR);
+        expect(mouse.effective_modifier(true, false, false) == Util::kModMouseL,
+               "mouse state should report only the button that is still down");
+        expect(mouse.effective_modifier(false, false, true) == Util::kModMouseR,
+               "right mouse should become effective when held");
+        expect(mouse.effective_modifier(false, false, false) == 0,
+               "released buttons should not leak into key modifiers");
+
+        mouse.release(Util::kModMouseL);
+        expect(mouse.effective_modifier(true, false, true) == Util::kModMouseR,
+               "releasing one mouse button should preserve the others");
+        mouse.reset();
+        expect(mouse.effective_modifier(true, true, true) == 0,
+               "reset should clear all mouse modifiers");
+    }
+
     void verify_layout_range(int min_note, int max_note)
     {
         const auto layout = make_layout(min_note, max_note);
@@ -185,6 +205,7 @@ int main()
     test_analysis_ignores_invalid_vk();
     test_edit_history_roundtrip();
     test_navigation_continues_from_anchor_and_skips_disabled_notes();
+    test_mouse_modifiers_require_pressed_button();
     test_layout_properties();
 
     if (g_failures != 0) {

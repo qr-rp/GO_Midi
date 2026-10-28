@@ -306,7 +306,7 @@ wxRect PianoRollCtrl::ScrollThumbRect() const {
 void PianoRollCtrl::SetMap(const std::map<int, Util::KeyMapping>& map) {
     m_map = map;
     m_history.reset();
-    m_mouseModifier = 0;
+    m_mouseState.reset();
     m_selectedNote = -1;
     m_navigationAnchor = -1;
     RecalcDisplayRange();
@@ -494,7 +494,7 @@ void PianoRollCtrl::OnMouse(wxMouseEvent& event) {
     if (event.LeftDown()) {
         HandlePrimaryDown(pos);
     } else if (event.LeftUp()) {
-        m_mouseModifier &= ~Util::kModMouseL;
+        m_mouseState.release(Util::kModMouseL);
         if (m_draggingScroll) {
             m_draggingScroll = false;
             if (HasCapture()) ReleaseMouse();
@@ -502,11 +502,11 @@ void PianoRollCtrl::OnMouse(wxMouseEvent& event) {
     } else if (event.MiddleDown()) {
         SetMouseModifierFromButton(Util::kModMouseM, pos);
     } else if (event.MiddleUp()) {
-        m_mouseModifier &= ~Util::kModMouseM;
+        m_mouseState.release(Util::kModMouseM);
     } else if (event.RightDown()) {
         HandleSecondaryDown(pos);
     } else if (event.RightUp()) {
-        m_mouseModifier &= ~Util::kModMouseR;
+        m_mouseState.release(Util::kModMouseR);
     }
     event.Skip();
 }
@@ -573,7 +573,7 @@ void PianoRollCtrl::HandlePrimaryDown(const wxPoint& pos) {
         return;
     }
     if (m_selectedNote == note) {
-        m_mouseModifier |= Util::kModMouseL;
+        m_mouseState.press(Util::kModMouseL);
         if (onStatus)
             onStatus(wxString::FromUTF8("鼠标左键已作为修饰键, 按主键完成绑定"));
         return;
@@ -584,7 +584,7 @@ void PianoRollCtrl::HandlePrimaryDown(const wxPoint& pos) {
 bool PianoRollCtrl::SetMouseModifierFromButton(int modifier, const wxPoint& pos) {
     if (m_selectedNote < 0 || HitTest(pos) < 0)
         return false;
-    m_mouseModifier |= modifier;
+    m_mouseState.press(modifier);
     if (onStatus)
         onStatus(wxString::FromUTF8("鼠标键已作为修饰键, 按主键完成绑定"));
     return true;
@@ -717,7 +717,7 @@ void PianoRollCtrl::ApplyHistory(bool undo) {
 void PianoRollCtrl::CommitMapChanged() {
     m_selectedNote = -1;
     m_hoverNote = -1;
-    m_mouseModifier = 0;
+    m_mouseState.reset();
     UnsetToolTip();
     RecalcDisplayRange();
     UpdateSize();
@@ -790,12 +790,8 @@ int PianoRollCtrl::CurrentModifier(const wxKeyEvent& event) const {
     if (mods & wxMOD_ALT) modifier |= Util::kModAlt;
     // 只接受本控件显式捕获且当前仍按住的鼠标键, 避免全局鼠标状态误入绑定。
     const wxMouseState mouse = wxGetMouseState();
-    if ((m_mouseModifier & Util::kModMouseL) && mouse.LeftIsDown())
-        modifier |= Util::kModMouseL;
-    if ((m_mouseModifier & Util::kModMouseM) && mouse.MiddleIsDown())
-        modifier |= Util::kModMouseM;
-    if ((m_mouseModifier & Util::kModMouseR) && mouse.RightIsDown())
-        modifier |= Util::kModMouseR;
+    modifier |= m_mouseState.effective_modifier(
+        mouse.LeftIsDown(), mouse.MiddleIsDown(), mouse.RightIsDown());
     return modifier;
 }
 
@@ -813,7 +809,7 @@ bool PianoRollCtrl::BindKey(int vk, int modifier) {
         if (onStatus)
             onStatus(wxString::FromUTF8("该音符已使用此键位, 无需重复绑定"));
         m_selectedNote = -1;
-        m_mouseModifier = 0;
+        m_mouseState.reset();
         Refresh();
         return true;
     }

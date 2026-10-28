@@ -61,3 +61,19 @@ jobs:
     - name: Build and validate
       shell: pwsh
       run: cmake --build --preset windows-ninja --target validate -j ${{ steps.cpu.outputs.count }}
+
+  sanitize-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build and run sanitized piano-roll model tests
+      run: |
+        g++ -std=c++23 -Wall -Wextra -Wpedantic -Werror \
+          -fsanitize=address,undefined -fno-omit-frame-pointer \
+          -Isrc tests/PianoRollModelTests.cpp src/ui/PianoRollModel.cpp \
+          -o /tmp/piano_roll_model_san
+        /tmp/piano_roll_model_san
