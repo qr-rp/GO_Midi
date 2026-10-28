@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <filesystem>
 #include <optional>
+#include <ranges>
 #include "../util/Logger.h"
 
 namespace Midi
@@ -369,10 +370,10 @@ namespace Midi
         }
 
         m_tempo_events = all_tempo_events;
-        std::sort(m_tempo_events.begin(), m_tempo_events.end());
+        std::ranges::sort(m_tempo_events);
 
         m_time_sig_events = all_time_sig_events;
-        std::sort(m_time_sig_events.begin(), m_time_sig_events.end());
+        std::ranges::sort(m_time_sig_events);
 
         // Optimization: Clear raw data to free memory
         m_data.clear();
@@ -626,7 +627,7 @@ namespace Midi
         }
 
         auto events = tempo_events;
-        std::sort(events.begin(), events.end());
+        std::ranges::sort(events);
 
         if (events.empty() || events[0].first != 0)
         {

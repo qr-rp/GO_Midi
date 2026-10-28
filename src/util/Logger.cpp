@@ -4,6 +4,7 @@
 #include <iostream>
 #include <filesystem>
 #include <algorithm>
+#include <ranges>
 #include <vector>
 #include <cctype>
 
@@ -346,12 +347,13 @@ namespace Util
             }
 
             // 按修改时间排序（新的在前）
-            std::sort(logFiles.begin(), logFiles.end(),
-                      [](const std::filesystem::path &a, const std::filesystem::path &b)
-                      {
-                          return std::filesystem::last_write_time(a) >
-                                 std::filesystem::last_write_time(b);
-                      });
+            std::ranges::sort(logFiles,
+                              [](const std::filesystem::path& left,
+                                 const std::filesystem::path& right)
+            {
+                return std::filesystem::last_write_time(left) >
+                       std::filesystem::last_write_time(right);
+            });
 
             // 删除超出数量限制的旧日志
             for (size_t i = static_cast<size_t>(maxFiles); i < logFiles.size(); ++i)

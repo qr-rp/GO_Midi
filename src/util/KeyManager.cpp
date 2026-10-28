@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <ranges>
 #include <regex>
 #include <sstream>
 
@@ -15,8 +16,8 @@ namespace
 {
     std::string to_lower_copy(std::string s)
     {
-        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c)
-                       { return static_cast<char>(std::tolower(c)); });
+        std::ranges::transform(s, s.begin(), [](unsigned char c)
+                               { return static_cast<char>(std::tolower(c)); });
         return s;
     }
 
@@ -421,7 +422,7 @@ namespace Util
             {
                 keys.push_back(pair.first);
             }
-            std::sort(keys.begin(), keys.end());
+            std::ranges::sort(keys);
 
             entries.reserve(keys.size());
             for (int k : keys)

@@ -1,5 +1,6 @@
 #include <wx/tglbtn.h>
 #include <bit>
+#include <ranges>
 #include "MainFrame.h"
 #include "UIHelpers.h"
 #include "KeymapSchemeConfig.h"
@@ -1881,7 +1882,7 @@ void MainFrame::UpdateWindowList() {
     m_windowList = Core::KeyboardSimulator::GetWindowList();
 
     // Sort windows by title (case insensitive)
-    std::sort(m_windowList.begin(), m_windowList.end(), [](const Core::KeyboardSimulator::WindowInfo& a, const Core::KeyboardSimulator::WindowInfo& b) {
+    std::ranges::sort(m_windowList, [](const Core::KeyboardSimulator::WindowInfo& a, const Core::KeyboardSimulator::WindowInfo& b) {
 #ifdef _WIN32
         return _stricmp(a.title.c_str(), b.title.c_str()) < 0;
 #else

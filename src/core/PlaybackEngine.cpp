@@ -4,6 +4,7 @@
 #include <map>
 #include <cmath>
 #include <iostream>
+#include <ranges>
 #include <windows.h>
 #include <mmsystem.h>
 #ifdef max
@@ -105,11 +106,11 @@ namespace Core
         }
 
         // Sort raw notes by start time globally
-        std::sort(m_all_notes.begin(), m_all_notes.end(),
-                  [](const Midi::RawNote &a, const Midi::RawNote &b)
-                  {
-                      return a.start_s < b.start_s;
-                  });
+        std::ranges::sort(m_all_notes,
+                          [](const Midi::RawNote& left, const Midi::RawNote& right)
+        {
+            return left.start_s < right.start_s;
+        });
 
         auto histograms = build_transpose_histograms(
             m_all_notes, midi_file.raw_notes_by_track.size());
