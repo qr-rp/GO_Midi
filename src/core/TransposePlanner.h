@@ -56,9 +56,9 @@ namespace Core
     struct PlaybackEvent
     {
         double time{0.0};
-        bool is_note_on{false};
-        int vk_code{0};
-        int modifier{0};
+        unsigned is_note_on : 1;
+        unsigned vk_code : 8;
+        unsigned modifier : 8;
         void* window_handle{nullptr};
 
         bool operator<(const PlaybackEvent& other) const
@@ -67,6 +67,13 @@ namespace Core
                 return time < other.time;
             return is_note_on < other.is_note_on;
         }
+    };
+
+    enum class PlanOutputMode
+    {
+        METRICS_ONLY,
+        EVENTS,
+        EVENTS_AND_NOTES
     };
 
     struct PlanMetrics
@@ -134,5 +141,6 @@ namespace Core
         std::span<const Midi::RawNote> input_notes,
         std::span<const std::vector<float>> track_hists,
         std::span<const float> global_hist,
-        const PlannerConfig& config);
+        const PlannerConfig& config,
+        PlanOutputMode output_mode = PlanOutputMode::EVENTS_AND_NOTES);
 }

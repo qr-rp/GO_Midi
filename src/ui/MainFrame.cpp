@@ -1040,14 +1040,8 @@ bool MainFrame::PlayIndex(int viewIndex, bool autoPlay, bool showDialog) {
         LOG("Midi parsed successfully. Length: " + std::to_string(m_current_midi->length));
         
         LOG("Loading midi into engine...");
-        m_engine.load_midi(*m_current_midi);
+        m_engine.load_midi(std::move(*m_current_midi));
         LOG("Engine loaded midi.");
-
-
-        
-        // 优化：引擎已复制所有音符数据，释放 MidiFile 中的冗余副本
-        m_current_midi->raw_notes_by_track.clear();
-        m_current_midi->raw_notes_by_track.shrink_to_fit();
         
         m_progressSlider->SetRange(0, static_cast<int>(m_current_midi->length * 1000));
         

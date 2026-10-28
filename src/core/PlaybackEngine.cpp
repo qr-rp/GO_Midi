@@ -3,6 +3,7 @@
 #include <chrono>
 #include <map>
 #include <cmath>
+#include <iterator>
 #include <iostream>
 #include <ranges>
 #include <windows.h>
@@ -73,7 +74,7 @@ namespace Core
         }
     }
 
-    void PlaybackEngine::load_midi(const Midi::MidiFile &midi_file)
+    void PlaybackEngine::load_midi(Midi::MidiFile &&midi_file)
     {
         LOG_ENTRY();
 
@@ -84,6 +85,7 @@ namespace Core
         m_current_time = 0.0;
         m_total_duration = midi_file.length;
 
+        const std::size_t track_count = midi_file.raw_notes_by_track.size();
         auto source = std::make_shared<PlaybackSource>();
 
         // 预估大小以减少重分配
@@ -95,11 +97,15 @@ namespace Core
 
         source->notes.reserve(totalNotes);
 
-        for (const auto &track_notes : midi_file.raw_notes_by_track)
+        for (auto &track_notes : midi_file.raw_notes_by_track)
         {
             source->notes.insert(source->notes.end(),
-                                 track_notes.begin(), track_notes.end());
+                                 std::make_move_iterator(track_notes.begin()),
+                                 std::make_move_iterator(track_notes.end()));
+            std::vector<Midi::RawNote>().swap(track_notes);
         }
+        midi_file.raw_notes_by_track.clear();
+        midi_file.raw_notes_by_track.shrink_to_fit();
 
         // Sort raw notes by start time globally
         std::ranges::sort(source->notes,
@@ -109,14 +115,14 @@ namespace Core
         });
 
         auto histograms = build_transpose_histograms(
-            source->notes, midi_file.raw_notes_by_track.size());
+            source->notes, track_count);
         source->track_histograms = std::move(histograms.tracks);
         source->global_histogram = std::move(histograms.global);
         m_source = std::move(source);
 
         LOG_INFO("MIDI 文件已加载: 音符数=" << m_source->notes.size()
                                             << ", 时长=" << m_total_duration << "s"
-                                            << ", 音轨数=" << midi_file.raw_notes_by_track.size());
+                                            << ", 音轨数=" << track_count);
 
         m_config_version++; // Trigger rebuild
         m_cv.notify_all();
@@ -258,7 +264,8 @@ namespace Core
             source_snapshot->notes,
             source_snapshot->track_histograms,
             source_snapshot->global_histogram,
-            plan_config);
+            plan_config,
+            PlanOutputMode::EVENTS);
 
         lock.lock();
         if (m_source == source_snapshot &&

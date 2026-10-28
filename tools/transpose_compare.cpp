@@ -35,9 +35,9 @@ namespace
             output << note.start_s << ','
                    << note.start_s + note.duration << ','
                    << note.pitch << ','
-                   << note.velocity << ','
+                   << static_cast<int>(note.velocity) << ','
                    << note.track_index << ','
-                   << note.channel << ','
+                   << static_cast<int>(note.channel) << ','
                    << note.program << ','
                    << note.duration << '\n';
         }

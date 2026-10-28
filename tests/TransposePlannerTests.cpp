@@ -7,6 +7,11 @@
 #include <string>
 #include <vector>
 
+static_assert(sizeof(Midi::RawNote) <= 20,
+              "RawNote should stay compact for large MIDI files");
+static_assert(sizeof(Core::PlaybackEvent) <= 24,
+              "PlaybackEvent should stay compact for playback storage");
+
 namespace
 {
     int g_failures = 0;
@@ -204,6 +209,30 @@ namespace
                "a source range wider than the target should report octave folds");
     }
 
+    void test_event_only_output_skips_note_payload()
+    {
+        std::vector<Midi::RawNote> notes = {
+            make_note(0.0f, 1.0f, 60)
+        };
+        const auto hist = make_hist(notes);
+        const auto config = make_config(
+            48, 84, Core::SmartTransposeAlgorithm::LEGACY,
+            Core::ConflictKeyMode::PHYSICAL);
+
+        const auto full = build_plan(notes, hist, config);
+        const auto events_only = Core::build_playback_plan(
+            notes, std::vector<std::vector<float>>{hist}, hist, config,
+            Core::PlanOutputMode::EVENTS);
+
+        expect(full.ok && events_only.ok, "both output modes should produce plans");
+        expect(events_only.notes.empty(),
+               "event-only mode should not retain PlanNote payload");
+        expect(events_only.events.size() == full.events.size(),
+               "event-only and full modes should emit the same event count");
+        expect(events_only.metrics.output_notes == full.metrics.output_notes,
+               "event-only mode should retain the same output metrics");
+    }
+
     void test_decompose_staggers_chords()
     {
         const std::vector<Midi::RawNote> notes = {
@@ -252,6 +281,7 @@ int main()
     test_conflict_aware_accounts_for_keymap_coverage();
     test_conflict_identity_modes();
     test_octave_fold_preserves_existing_fallback_behavior();
+    test_event_only_output_skips_note_payload();
     test_decompose_staggers_chords();
     test_corrected_skew_strengthens_sparse_high_notes();
 

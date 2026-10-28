@@ -547,7 +547,13 @@ void PianoRollCtrl::HandleSecondaryDown(const wxPoint& pos) {
         return;
     }
 
-    m_history.record(m_map);
+    const auto before = m_map.find(note);
+    m_history.record_change(
+        note,
+        before == m_map.end()
+            ? std::optional<Util::KeyMapping>{}
+            : std::optional<Util::KeyMapping>{before->second},
+        std::optional<Util::KeyMapping>{});
     m_map.erase(note);
     CommitMapChanged();
     if (onStatus)
@@ -700,14 +706,13 @@ bool PianoRollCtrl::HandleHistoryShortcut(const wxKeyEvent& event) {
 }
 
 void PianoRollCtrl::ApplyHistory(bool undo) {
-    auto snapshot = undo ? m_history.undo(m_map) : m_history.redo(m_map);
-    if (!snapshot) {
+    const bool changed = undo ? m_history.undo(m_map) : m_history.redo(m_map);
+    if (!changed) {
         if (onStatus)
             onStatus(wxString::FromUTF8(
                 undo ? "没有可撤销的键位修改" : "没有可重做的键位修改"));
         return;
     }
-    m_map = std::move(*snapshot);
     CommitMapChanged();
     if (onStatus)
         onStatus(wxString::FromUTF8(
@@ -814,7 +819,12 @@ bool PianoRollCtrl::BindKey(int vk, int modifier) {
         return true;
     }
 
-    m_history.record(m_map);
+    m_history.record_change(
+        note,
+        existing == m_map.end()
+            ? std::optional<Util::KeyMapping>{}
+            : std::optional<Util::KeyMapping>{existing->second},
+        mapping);
     m_map[note] = mapping;
     CommitMapChanged();
     wxString msg = wxString::FromUTF8("已绑定: ") + vk_name(vk, modifier);

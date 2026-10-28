@@ -107,22 +107,20 @@ namespace {
     void test_edit_history_roundtrip()
     {
         UI::PianoRollEditHistory history;
-        const std::map<int, Util::KeyMapping> original = {
-            {60, {'A', Util::kModNone}}
+        std::map<int, Util::KeyMapping> current = {
+            {60, {'B', Util::kModCtrl}}
         };
-        const std::map<int, Util::KeyMapping> changed = {
-            {60, {'B', Util::kModCtrl}},
-            {61, {'C', Util::kModShift}}
-        };
-
-        history.record(original);
-        const auto undone = history.undo(changed);
-        expect(undone.has_value() && *undone == original,
+        history.record_change(
+            60,
+            Util::KeyMapping{'A', Util::kModNone},
+            Util::KeyMapping{'B', Util::kModCtrl});
+        expect(history.undo(current) && current.at(60) ==
+                   Util::KeyMapping{'A', Util::kModNone},
                "undo should restore the snapshot recorded before the edit");
         expect(history.can_redo(), "undo should make the edit available for redo");
 
-        const auto redone = history.redo(original);
-        expect(redone.has_value() && *redone == changed,
+        expect(history.redo(current) && current.at(60) ==
+                   Util::KeyMapping{'B', Util::kModCtrl},
                "redo should restore the mapping replaced by undo");
         expect(history.can_undo(), "redo should move the edit back to the undo stack");
 

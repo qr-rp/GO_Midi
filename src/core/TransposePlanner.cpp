@@ -57,6 +57,21 @@ namespace Core
             PlanMetrics metrics;
         };
 
+        struct ShiftBuildInput
+        {
+            std::span<const Midi::RawNote> notes;
+            int global_shift{0};
+            std::span<const int> track_shifts;
+            const PlannerConfig& config;
+            PlanOutputMode output_mode{PlanOutputMode::METRICS_ONLY};
+        };
+
+        struct ShiftEvaluation
+        {
+            CandidateScore score;
+            ShiftCandidateMetrics metrics;
+        };
+
         struct AutoGroups
         {
             bool has_global{false};
@@ -472,53 +487,89 @@ namespace Core
             }
         }
 
-        void append_plan_output(std::vector<WorkingNote>& notes, PlanBuild& build)
+        void finalize_plan_output(std::vector<WorkingNote>& notes,
+                                  PlanBuild& build,
+                                  PlanOutputMode output_mode)
         {
-            build.events.reserve(notes.size() * 2);
-            build.notes.reserve(notes.size());
+            const bool emit_events = output_mode != PlanOutputMode::METRICS_ONLY;
+            const bool emit_notes = output_mode == PlanOutputMode::EVENTS_AND_NOTES;
+            std::size_t valid_notes = 0;
+            for (const auto& note : notes)
+            {
+                if (note.end > note.start)
+                {
+                    ++valid_notes;
+                    build.metrics.retained_duration_weight +=
+                        (note.end - note.start) * note_weight(note.velocity);
+                }
+            }
+            build.metrics.output_notes = valid_notes;
+
+            if (!emit_events)
+                return;
+
+            build.events.reserve(valid_notes * 2);
+            if (emit_notes)
+                build.notes.reserve(valid_notes);
             for (const auto& note : notes)
             {
                 if (note.end <= note.start)
                     continue;
 
-                build.notes.push_back({
-                    note.start,
-                    note.end,
-                    note.pitch,
-                    note.track,
-                    note.velocity,
-                    note.folded
-                });
-                build.events.push_back({note.start, true, note.vk, note.modifier, note.hwnd});
-                build.events.push_back({note.end, false, note.vk, note.modifier, note.hwnd});
-                build.metrics.retained_duration_weight +=
-                    (note.end - note.start) * note_weight(note.velocity);
-                ++build.metrics.output_notes;
+                if (emit_notes)
+                {
+                    build.notes.push_back({
+                        note.start,
+                        note.end,
+                        note.pitch,
+                        note.track,
+                        note.velocity,
+                        note.folded
+                    });
+                }
+                build.events.push_back(
+                    {note.start, true,
+                     static_cast<unsigned>(note.vk),
+                     static_cast<unsigned>(note.modifier),
+                     note.hwnd});
+                build.events.push_back(
+                    {note.end, false,
+                     static_cast<unsigned>(note.vk),
+                     static_cast<unsigned>(note.modifier),
+                     note.hwnd});
             }
 
-            std::ranges::sort(build.events,
-                              [](const PlaybackEvent& left, const PlaybackEvent& right)
-            {
-                return left < right;
-            });
+            std::ranges::sort(
+                build.events,
+                [](const PlaybackEvent& left, const PlaybackEvent& right)
+                {
+                    return left < right;
+                });
             build.metrics.output_events = build.events.size();
         }
 
-        PlanBuild build_for_shifts(std::span<const Midi::RawNote> input_notes,
-                                   int global_shift,
-                                   std::span<const int> track_shifts,
-                                   const PlannerConfig& config)
+        void build_for_shifts(const ShiftBuildInput& input, PlanBuild& build)
         {
-            PlanBuild build;
+            build.events.clear();
+            build.notes.clear();
+            build.working_notes.clear();
+            build.metrics = {};
             collect_working_notes(
-                input_notes, global_shift, track_shifts, config, build);
+                input.notes, input.global_shift, input.track_shifts,
+                input.config, build);
 
             apply_conflict_resolution(
-                build.working_notes, config.conflict_key_mode, build.metrics);
-            if (config.decompose)
+                build.working_notes, input.config.conflict_key_mode, build.metrics);
+            if (input.config.decompose)
                 apply_decompose(build.working_notes);
 
-            append_plan_output(build.working_notes, build);
+            finalize_plan_output(build.working_notes, build, input.output_mode);
+        }
+
+        PlanBuild build_for_shifts(const ShiftBuildInput& input)
+        {
+            PlanBuild build;
+            build_for_shifts(input, build);
             return build;
         }
 
@@ -782,6 +833,34 @@ namespace Core
             };
         }
 
+        ShiftEvaluation evaluate_shift(
+            const ShiftSearchContext& context,
+            int shift,
+            std::span<const int> track_shifts,
+            std::span<const float> histogram,
+            PlanBuild& build)
+        {
+            build_for_shifts({
+                context.notes,
+                shift,
+                track_shifts,
+                context.config,
+                PlanOutputMode::METRICS_ONLY
+            }, build);
+            const CandidateScore score = score_plan(
+                build,
+                shift,
+                center_shift_score(
+                    histogram,
+                    shift,
+                    context.config.min_pitch,
+                    context.config.max_pitch));
+            return {
+                score,
+                make_shift_metrics(shift, score, build)
+            };
+        }
+
         void optimize_global_shift(PlaybackPlan& plan,
                                    const ShiftSearchContext& context)
         {
@@ -791,22 +870,15 @@ namespace Core
             const int preferred_shift = plan.global_shift;
             std::vector<CandidateScore> candidates;
             candidates.reserve(9);
+            PlanBuild candidate_build;
             for (int octave = -4; octave <= 4; ++octave)
             {
                 const int shift = octave * 12;
-                PlanBuild candidate_build = build_for_shifts(
-                    context.notes, shift, plan.track_shifts, context.config);
-                CandidateScore score = score_plan(
-                    candidate_build,
-                    shift,
-                    center_shift_score(
-                        context.global_hist,
-                        shift,
-                        context.config.min_pitch,
-                        context.config.max_pitch));
-                plan.global_candidates.push_back(
-                    make_shift_metrics(shift, score, candidate_build));
-                candidates.push_back(score);
+                ShiftEvaluation evaluation = evaluate_shift(
+                    context, shift, plan.track_shifts,
+                    context.global_hist, candidate_build);
+                plan.global_candidates.push_back(evaluation.metrics);
+                candidates.push_back(evaluation.score);
             }
 
             const auto frontier = pareto_frontier(candidates);
@@ -826,21 +898,15 @@ namespace Core
                 const int preferred_shift = plan.track_shifts[track];
                 std::vector<CandidateScore> candidates;
                 candidates.reserve(9);
+                PlanBuild candidate_build;
                 for (int octave = -4; octave <= 4; ++octave)
                 {
                     const int shift = octave * 12;
                     plan.track_shifts[track] = shift;
-                    PlanBuild candidate = build_for_shifts(
-                        context.notes, plan.global_shift, plan.track_shifts, context.config);
-                    CandidateScore score = score_plan(
-                        candidate,
-                        shift,
-                        center_shift_score(
-                            context.track_hists[track],
-                            shift,
-                            context.config.min_pitch,
-                            context.config.max_pitch));
-                    candidates.push_back(score);
+                    ShiftEvaluation evaluation = evaluate_shift(
+                        context, plan.global_shift, plan.track_shifts,
+                        context.track_hists[track], candidate_build);
+                    candidates.push_back(evaluation.score);
                 }
 
                 const auto frontier = pareto_frontier(candidates);
@@ -980,7 +1046,8 @@ namespace Core
         std::span<const Midi::RawNote> input_notes,
         std::span<const std::vector<float>> track_hists,
         std::span<const float> global_hist,
-        const PlannerConfig& config)
+        const PlannerConfig& config,
+        PlanOutputMode output_mode)
     {
         PlaybackPlan plan;
         if (config.min_pitch < 0 || config.max_pitch > 127 ||
@@ -1009,7 +1076,13 @@ namespace Core
         }
 
         PlanBuild final_build = build_for_shifts(
-            input_notes, plan.global_shift, plan.track_shifts, config);
+            {
+                input_notes,
+                plan.global_shift,
+                plan.track_shifts,
+                config,
+                output_mode
+            });
         plan.events = std::move(final_build.events);
         plan.notes = std::move(final_build.notes);
         plan.metrics = final_build.metrics;

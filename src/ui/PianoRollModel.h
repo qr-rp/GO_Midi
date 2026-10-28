@@ -63,25 +63,29 @@ private:
 class PianoRollEditHistory {
 public:
     void reset();
-    void record(const std::map<int, Util::KeyMapping>& current);
-    [[nodiscard]] std::optional<std::map<int, Util::KeyMapping>> undo(
-        const std::map<int, Util::KeyMapping>& current);
-    [[nodiscard]] std::optional<std::map<int, Util::KeyMapping>> redo(
-        const std::map<int, Util::KeyMapping>& current);
+    void record_change(
+        int note,
+        std::optional<Util::KeyMapping> before,
+        std::optional<Util::KeyMapping> after);
+    bool undo(std::map<int, Util::KeyMapping>& current);
+    bool redo(std::map<int, Util::KeyMapping>& current);
 
     [[nodiscard]] bool can_undo() const { return !m_undo.empty(); }
     [[nodiscard]] bool can_redo() const { return !m_redo.empty(); }
 
 private:
-    static constexpr std::size_t kMaxSteps = 64;
-    std::vector<std::map<int, Util::KeyMapping>> m_undo;
-    std::vector<std::map<int, Util::KeyMapping>> m_redo;
+    struct Change {
+        int note{0};
+        std::optional<Util::KeyMapping> before;
+        std::optional<Util::KeyMapping> after;
+    };
 
-    static void push_limited(
-        std::vector<std::map<int, Util::KeyMapping>>& stack,
-        const std::map<int, Util::KeyMapping>& snapshot);
-    [[nodiscard]] std::optional<std::map<int, Util::KeyMapping>> restore(
-        bool undo, const std::map<int, Util::KeyMapping>& current);
+    static constexpr std::size_t kMaxSteps = 64;
+    std::vector<Change> m_undo;
+    std::vector<Change> m_redo;
+
+    static void push_limited(std::vector<Change>& stack, const Change& change);
+    bool restore(bool undo, std::map<int, Util::KeyMapping>& current);
 };
 
 struct PianoRollLayoutConfig {

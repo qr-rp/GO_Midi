@@ -49,46 +49,59 @@ void PianoRollEditHistory::reset()
     m_redo.clear();
 }
 
-void PianoRollEditHistory::record(
-    const std::map<int, Util::KeyMapping>& current)
+void PianoRollEditHistory::record_change(
+    int note,
+    std::optional<Util::KeyMapping> before,
+    std::optional<Util::KeyMapping> after)
 {
-    push_limited(m_undo, current);
+    push_limited(m_undo, {note, std::move(before), std::move(after)});
     m_redo.clear();
 }
 
-std::optional<std::map<int, Util::KeyMapping>> PianoRollEditHistory::undo(
-    const std::map<int, Util::KeyMapping>& current)
+bool PianoRollEditHistory::undo(std::map<int, Util::KeyMapping>& current)
 {
     return restore(true, current);
 }
 
-std::optional<std::map<int, Util::KeyMapping>> PianoRollEditHistory::redo(
-    const std::map<int, Util::KeyMapping>& current)
+bool PianoRollEditHistory::redo(std::map<int, Util::KeyMapping>& current)
 {
     return restore(false, current);
 }
 
 void PianoRollEditHistory::push_limited(
-    std::vector<std::map<int, Util::KeyMapping>>& stack,
-    const std::map<int, Util::KeyMapping>& snapshot)
+    std::vector<Change>& stack, const Change& change)
 {
     if (stack.size() >= kMaxSteps)
         stack.erase(stack.begin());
-    stack.push_back(snapshot);
+    stack.push_back(change);
 }
 
-std::optional<std::map<int, Util::KeyMapping>> PianoRollEditHistory::restore(
-    bool undo, const std::map<int, Util::KeyMapping>& current)
+bool PianoRollEditHistory::restore(
+    bool undo, std::map<int, Util::KeyMapping>& current)
 {
     auto& source = undo ? m_undo : m_redo;
     auto& target = undo ? m_redo : m_undo;
     if (source.empty())
-        return std::nullopt;
+        return false;
 
-    push_limited(target, current);
-    auto snapshot = std::move(source.back());
+    Change change = std::move(source.back());
     source.pop_back();
-    return snapshot;
+    if (undo)
+    {
+        if (change.before)
+            current[change.note] = *change.before;
+        else
+            current.erase(change.note);
+    }
+    else
+    {
+        if (change.after)
+            current[change.note] = *change.after;
+        else
+            current.erase(change.note);
+    }
+    push_limited(target, change);
+    return true;
 }
 
 PianoRollLayout::PianoRollLayout(const PianoRollLayoutConfig& config)

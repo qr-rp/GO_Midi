@@ -13,12 +13,12 @@ namespace Midi {
 
     struct RawNote {
         float start_s;
-        int pitch;
         float duration;
+        int pitch;
         int track_index;
-        int channel;
-        int velocity;  ///< MIDI 力度 (0-127)
-        int program;   ///< MIDI 乐器编号 (0-127), -1 表示未知
+        std::int16_t program;  ///< MIDI 乐器编号 (0-127), -1 表示未知
+        std::uint8_t channel;
+        std::uint8_t velocity; ///< MIDI 力度 (0-127)
     };
 
     class MidiTrack {

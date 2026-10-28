@@ -4,6 +4,7 @@
 #include <tuple>
 #include <unordered_map>
 #include <filesystem>
+#include <iterator>
 #include <optional>
 #include <ranges>
 #include "../util/Logger.h"
@@ -278,6 +279,10 @@ namespace Midi
         std::vector<std::vector<std::tuple<int, int, int, int, int, int>>> parsed_notes_by_track; // start, end, pitch, ch, velocity, program
         int last_tick_global = 0;
 
+        tracks.reserve(static_cast<std::size_t>(track_count));
+        parsed_notes_by_track.reserve(static_cast<std::size_t>(track_count));
+        raw_notes_by_track.reserve(static_cast<std::size_t>(track_count));
+
         for (int i = 0; i < track_count; ++i)
         {
             if (pos + 8 > m_data.size())
@@ -309,8 +314,14 @@ namespace Midi
             if (!m_valid) return false;
             tracks.push_back(std::move(res.track));
             parsed_notes_by_track.push_back(std::move(res.notes));
-            all_tempo_events.insert(all_tempo_events.end(), res.tempo_events.begin(), res.tempo_events.end());
-            all_time_sig_events.insert(all_time_sig_events.end(), res.time_sig_events.begin(), res.time_sig_events.end());
+            all_tempo_events.insert(
+                all_tempo_events.end(),
+                std::make_move_iterator(res.tempo_events.begin()),
+                std::make_move_iterator(res.tempo_events.end()));
+            all_time_sig_events.insert(
+                all_time_sig_events.end(),
+                std::make_move_iterator(res.time_sig_events.begin()),
+                std::make_move_iterator(res.time_sig_events.end()));
 
             LOG_DEBUG("音轨 " << i << " (" << tracks.back().name << "): "
                               << res.notes.size() << " 个音符, " << res.tempo_events.size() << " 个节奏事件");
@@ -330,6 +341,7 @@ namespace Midi
         {
             std::vector<RawNote> track_raw_notes;
             const auto &notes = parsed_notes_by_track[i];
+            track_raw_notes.reserve(notes.size());
             for (const auto &note : notes)
             {
                 int start_tick = std::get<0>(note);
@@ -352,13 +364,17 @@ namespace Midi
                 rn.pitch = pitch;
                 rn.duration = static_cast<float>(dur);
                 rn.track_index = static_cast<int>(i);
-                rn.channel = ch;
-                rn.velocity = vel;
-                rn.program = prog;
+                rn.channel = static_cast<std::uint8_t>(ch);
+                rn.velocity = static_cast<std::uint8_t>(vel);
+                rn.program = static_cast<std::int16_t>(prog);
                 track_raw_notes.push_back(rn);
             }
             raw_notes_by_track.push_back(std::move(track_raw_notes));
+            std::vector<std::tuple<int, int, int, int, int, int>>().swap(
+                parsed_notes_by_track[i]);
         }
+        parsed_notes_by_track.clear();
+        parsed_notes_by_track.shrink_to_fit();
 
         if (max_end <= 0.0 && last_tick_global > 0)
         {
@@ -369,10 +385,10 @@ namespace Midi
             length = static_cast<float>(max_end);
         }
 
-        m_tempo_events = all_tempo_events;
+        m_tempo_events = std::move(all_tempo_events);
         std::ranges::sort(m_tempo_events);
 
-        m_time_sig_events = all_time_sig_events;
+        m_time_sig_events = std::move(all_time_sig_events);
         std::ranges::sort(m_time_sig_events);
 
         // Optimization: Clear raw data to free memory
@@ -448,7 +464,9 @@ namespace Midi
         }
 
         // Estimate capacity to avoid reallocations (approx 4 bytes per event)
-        res.notes.reserve(len / 4);
+        // A note pair needs at least six MIDI bytes even with running status.
+        // len/4 over-reserved dense tracks by several times.
+        res.notes.reserve(len / 8);
 
         size_t pos = start;
         size_t end_pos = start + len;

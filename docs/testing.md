@@ -55,6 +55,19 @@ receives the generated input correctly. Perform the checklist in
 release that changes keyboard simulation, timing, transpose selection, or
 keymap editing.
 
+## Memory benchmark
+
+The planner-owned memory and throughput baseline is reproducible with:
+
+```bash
+cmake --build build_mingw --target planner_memory_benchmark -j2
+wine build_mingw/planner_memory_benchmark.exe \
+  tests/data/public_domain_midi/bach-brandenburg-3.mid
+```
+
+See [`memory-pareto-report.md`](memory-pareto-report.md) for the latest
+before/after measurements.
+
 ## External fixtures
 
 The six MIDI files under `tests/data/public_domain_midi/` are unmodified files

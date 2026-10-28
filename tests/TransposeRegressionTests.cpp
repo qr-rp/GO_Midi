@@ -205,6 +205,15 @@ namespace
                     });
                 expect(selected != plan.global_candidates.end() && selected->pareto_optimal,
                        label + " selected shift should be Pareto-optimal");
+                if (selected != plan.global_candidates.end())
+                {
+                    expect(selected->output_notes == plan.metrics.output_notes,
+                           label + " selected candidate output-note mismatch");
+                    expect(std::abs(
+                               selected->retained_duration_weight -
+                               plan.metrics.retained_duration_weight) < 1e-6,
+                           label + " selected candidate retention mismatch");
+                }
             }
         }
     }

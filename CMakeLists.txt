@@ -329,6 +329,17 @@ if(GO_MIDI_BUILD_TESTS)
     target_link_libraries(transpose_compare user32 kernel32)
     go_midi_enable_warnings(transpose_compare)
 
+    add_executable(planner_memory_benchmark
+        tools/planner_memory_benchmark.cpp
+        src/core/TransposePlanner.cpp
+        src/midi/MidiParser.cpp
+        src/util/KeyManager.cpp
+        src/util/Logger.cpp
+    )
+    target_include_directories(planner_memory_benchmark PRIVATE src)
+    target_link_libraries(planner_memory_benchmark user32 kernel32 psapi)
+    go_midi_enable_warnings(planner_memory_benchmark)
+
     add_custom_target(validate
         COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
         DEPENDS ${GO_MIDI_TESTS}

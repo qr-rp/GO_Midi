@@ -48,7 +48,7 @@ namespace Core {
         PlaybackEngine();
         ~PlaybackEngine();
 
-        void load_midi(const Midi::MidiFile& midi_file);
+        void load_midi(Midi::MidiFile&& midi_file);
         void play();
         void pause();
         void stop();
