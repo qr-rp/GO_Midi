@@ -1437,12 +1437,17 @@ void MainFrame::OnKeymapChoice(wxCommandEvent&) {
 
 void MainFrame::OnOpenKeymapEditor(wxCommandEvent&) {
     // 打开钢琴卷键位编辑器(对齐 next 分支设计)
-    UI::KeymapEditorDialog dlg(this, &m_engine, m_config.get(), m_keymapFiles, m_currentKeymapPath,
-        [this]() {
-            m_engine.notify_keymap_changed();
-            UpdateKeymapChoice();
-            ApplySchemePitch(m_currentKeymapPath);
-            SaveKeymapConfig();
+    UI::KeymapEditorDialog dlg(
+        this, &m_engine, m_config.get(), m_keymapFiles, m_currentKeymapPath,
+        {
+            [this]() {
+                m_engine.notify_keymap_changed();
+                UpdateKeymapChoice();
+                ApplySchemePitch(m_currentKeymapPath);
+            },
+            [this]() {
+                SaveKeymapConfig();
+            }
         });
     dlg.ShowModal();
 }

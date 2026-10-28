@@ -24,7 +24,7 @@ enum {
     ID_KM_EXPORT,
     ID_KM_MIN_PITCH,
     ID_KM_MAX_PITCH,
-    ID_KM_PITCH_SAVE_TIMER,
+    ID_KM_CONFIG_SAVE_TIMER,
 };
 
 wxBEGIN_EVENT_TABLE(KeymapEditorDialog, wxDialog)
@@ -36,7 +36,7 @@ wxBEGIN_EVENT_TABLE(KeymapEditorDialog, wxDialog)
     EVT_BUTTON(ID_KM_EXPORT, KeymapEditorDialog::OnExport)
     EVT_SPINCTRL(ID_KM_MIN_PITCH, KeymapEditorDialog::OnPitchChange)
     EVT_SPINCTRL(ID_KM_MAX_PITCH, KeymapEditorDialog::OnPitchChange)
-    EVT_TIMER(ID_KM_PITCH_SAVE_TIMER, KeymapEditorDialog::OnPitchSaveTimer)
+    EVT_TIMER(ID_KM_CONFIG_SAVE_TIMER, KeymapEditorDialog::OnConfigSaveTimer)
     EVT_CLOSE(KeymapEditorDialog::OnDialogClose)
 wxEND_EVENT_TABLE()
 
@@ -44,15 +44,16 @@ KeymapEditorDialog::KeymapEditorDialog(wxWindow* parent, Core::PlaybackEngine* e
                                        wxConfigBase* config,
                                        std::vector<wxString>& keymapFiles,
                                        wxString& currentPath,
-                                       std::function<void()> onChanged)
+                                       KeymapEditorCallbacks callbacks)
     : wxDialog(parent, wxID_ANY, wxString::FromUTF8("键位设置"),
                wxDefaultPosition, wxDefaultSize,
                wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER),
       m_engine(engine), m_config(config), m_km(nullptr),
       m_keymapFiles(keymapFiles), m_currentPath(currentPath),
-      m_onChanged(std::move(onChanged)) {
+      m_onChanged(std::move(callbacks.onChanged)),
+      m_onPersist(std::move(callbacks.onPersist)) {
     if (m_engine) m_km = &m_engine->get_key_manager();
-    m_pitchSaveTimer.SetOwner(this, ID_KM_PITCH_SAVE_TIMER);
+    m_configSaveTimer.SetOwner(this, ID_KM_CONFIG_SAVE_TIMER);
     BuildUI();
     SyncChoice();
     // 恢复当前方案音域
@@ -194,6 +195,22 @@ void KeymapEditorDialog::SyncRoll() {
 
 void KeymapEditorDialog::Notify() {
     if (m_onChanged) m_onChanged();
+    SchedulePersist();
+}
+
+void KeymapEditorDialog::SchedulePersist() {
+    m_configSaveTimer.Start(350, wxTIMER_ONE_SHOT);
+}
+
+void KeymapEditorDialog::PersistNow() {
+    m_configSaveTimer.Stop();
+    KeymapSchemeStore::write_scheme_pitch(
+        m_config, m_keymapFiles, m_currentPath, m_minPitch, m_maxPitch);
+    if (m_onPersist) {
+        m_onPersist();
+    } else if (m_config) {
+        m_config->Flush();
+    }
 }
 
 void KeymapEditorDialog::OnChoice(wxCommandEvent&) {
@@ -243,27 +260,18 @@ void KeymapEditorDialog::OnPitchChange(wxSpinEvent& event) {
     m_roll->SetPitchRange(minP, maxP);
     UpdateStats();
     Layout();
-    // #3: 音域写 config 去抖(300ms 尾沿), 持续拖拽不写盘, 停顿后落盘一次
-    m_pitchSaveTimer.Start(300, wxTIMER_ONE_SHOT);
+    KeymapSchemeStore::write_scheme_pitch(
+        m_config, m_keymapFiles, m_currentPath, minP, maxP);
     SetStatus(wxString::Format("目标音域: %d – %d", minP, maxP));
     Notify();
 }
 
-void KeymapEditorDialog::OnPitchSaveTimer(wxTimerEvent&) {
-    // 去抖落盘(引擎侧已通过 Notify 即时生效, 这里只负责持久化)
-    FlushPitchSave();
-}
-
-void KeymapEditorDialog::FlushPitchSave() {
-    KeymapSchemeStore::write_scheme_pitch(
-        m_config, m_keymapFiles, m_currentPath, m_minPitch, m_maxPitch);
-    if (m_config)
-        m_config->Flush();
+void KeymapEditorDialog::OnConfigSaveTimer(wxTimerEvent&) {
+    PersistNow();
 }
 
 void KeymapEditorDialog::OnDialogClose(wxCloseEvent& event) {
-    // 冲刷去抖中的音域写盘, 避免关窗丢失最后改动
-    FlushPitchSave();
+    PersistNow();
     event.Skip();
 }
 
