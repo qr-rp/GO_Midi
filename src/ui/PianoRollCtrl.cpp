@@ -1,5 +1,7 @@
 #include "PianoRollCtrl.h"
 
+#include <algorithm>
+
 #include <wx/dcclient.h>
 #include <wx/dcmemory.h>
 #include <wx/settings.h>
@@ -9,12 +11,112 @@
 
 namespace UI {
 
+namespace {
+
+    wxString modifier_code(int mod)
+    {
+        wxString code;
+        if (mod & Util::kModCtrl) code += L"C";
+        if (mod & Util::kModShift) code += L"S";
+        if (mod & Util::kModAlt) code += L"A";
+        if (mod & Util::kModMouseL) code += L"L";
+        if (mod & Util::kModMouseM) code += L"M";
+        if (mod & Util::kModMouseR) code += L"R";
+        return code;
+    }
+
+    wxString vk_short_name(int vk)
+    {
+        if (vk >= 'A' && vk <= 'Z') return wxString(static_cast<wxChar>(vk));
+        if (vk >= '0' && vk <= '9') return wxString(static_cast<wxChar>(vk));
+
+        switch (vk) {
+            case VK_SPACE: return L"Spc";
+            case VK_RETURN: return L"Ent";
+            case VK_TAB: return L"Tab";
+            case VK_BACK: return L"Bk";
+            case VK_ESCAPE: return L"Esc";
+            case VK_DELETE: return L"Del";
+            case VK_INSERT: return L"Ins";
+            case VK_HOME: return L"Hm";
+            case VK_END: return L"End";
+            case VK_PRIOR: return L"PU";
+            case VK_NEXT: return L"PD";
+            case VK_LEFT: return L"←";
+            case VK_RIGHT: return L"→";
+            case VK_UP: return L"↑";
+            case VK_DOWN: return L"↓";
+            case VK_SNAPSHOT: return L"Prt";
+            case VK_SCROLL: return L"Scr";
+            case VK_PAUSE: return L"Pse";
+            case VK_CAPITAL: return L"Cps";
+            case VK_NUMLOCK: return L"Num";
+            case VK_LWIN: case VK_RWIN: return L"Win";
+            case VK_APPS: return L"Menu";
+            case VK_OEM_1: return L";";
+            case VK_OEM_PLUS: return L"+";
+            case VK_OEM_COMMA: return L",";
+            case VK_OEM_MINUS: return L"-";
+            case VK_OEM_PERIOD: return L".";
+            case VK_OEM_2: return L"/";
+            case VK_OEM_3: return L"`";
+            case VK_OEM_4: return L"[";
+            case VK_OEM_5: return L"\\";
+            case VK_OEM_6: return L"]";
+            case VK_OEM_7: return L"'";
+            case VK_ADD: return L"N+";
+            case VK_SUBTRACT: return L"N-";
+            case VK_MULTIPLY: return L"N*";
+            case VK_DIVIDE: return L"N/";
+            case VK_DECIMAL: return L"N.";
+            default:
+                if (vk >= VK_F1 && vk <= VK_F24)
+                    return wxString::Format(L"F%d", vk - VK_F1 + 1);
+                if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9)
+                    return wxString::Format(L"N%d", vk - VK_NUMPAD0);
+                return wxString::Format(L"#%d", vk);
+        }
+    }
+
+    wxString fit_label(wxDC& dc, const wxString& text, int max_width)
+    {
+        if (text.IsEmpty() || max_width <= 0)
+            return wxString();
+        if (dc.GetTextExtent(text).x <= max_width)
+            return text;
+
+        const wxString ellipsis = L"…";
+        wxString fitted = text;
+        while (!fitted.IsEmpty() &&
+               dc.GetTextExtent(fitted + ellipsis).x > max_width) {
+            fitted.RemoveLast();
+        }
+        if (fitted.IsEmpty() || dc.GetTextExtent(ellipsis).x > max_width)
+            return wxString();
+        return fitted + ellipsis;
+    }
+
+    wxColour key_label_colour(bool in_range, bool black,
+                              bool logical, bool physical)
+    {
+        if (!in_range)
+            return black ? wxColour(0xa0, 0x5a, 0x5a) : wxColour(0x8a, 0x4a, 0x4a);
+        if (physical)
+            return wxColour(0xe0, 0x6a, 0x6a);
+        if (logical)
+            return wxColour(0xd6, 0xa5, 0x45);
+        return black ? wxColour(0xff, 0x9a, 0x9a) : wxColour(0xd0, 0x5a, 0x5a);
+    }
+
+} // namespace
+
 wxBEGIN_EVENT_TABLE(PianoRollCtrl, wxWindow)
     EVT_PAINT(PianoRollCtrl::OnPaint)
     EVT_LEFT_DOWN(PianoRollCtrl::OnMouse)
     EVT_LEFT_UP(PianoRollCtrl::OnMouse)
     EVT_MIDDLE_DOWN(PianoRollCtrl::OnMouse)
     EVT_RIGHT_DOWN(PianoRollCtrl::OnMouse)
+    EVT_SIZE(PianoRollCtrl::OnSize)
     EVT_MOTION(PianoRollCtrl::OnMouseMove)
     EVT_MOUSEWHEEL(PianoRollCtrl::OnMouseWheel)
     EVT_KEY_DOWN(PianoRollCtrl::OnKeyDown)
@@ -27,37 +129,50 @@ PianoRollCtrl::PianoRollCtrl(wxWindow* parent, int minPitch, int maxPitch)
       m_blackW(FromDIP(20)), m_blackH(FromDIP(56)), m_scrollH(FromDIP(6)),
       m_minPitch(minPitch), m_maxPitch(maxPitch),
       m_displayMin(minPitch), m_displayMax(maxPitch),
-      m_viewW(FromDIP(700)) {
+      m_preferredViewW(FromDIP(700)), m_viewW(FromDIP(700)) {
     SetBackgroundStyle(wxBG_STYLE_PAINT);
     // 键位捕获必须拿到物理按键: 输入法激活时数字/字母键会先变成 VK_PROCESSKEY,
     // wxKeyEvent::GetKeyCode() 返回 WXK_NONE(0), 导致所有键都被绑定成"键0".
     // 该控件只做按键采集, 不需要文本输入, 直接解除输入法上下文.
     ImmAssociateContext(static_cast<HWND>(GetHWND()), nullptr);
     m_lastHint = wxString::FromUTF8("点击琴键 → 按下新键即绑定 (可组合 Ctrl/Shift/Alt/鼠标左中右, Esc 取消)");
-    SetMinSize(wxSize(m_viewW, m_whiteH));
+    RefreshLayout();
+    SetMinSize(wxSize(FromDIP(240), m_whiteH));
     SetFocus();
 }
 
-void PianoRollCtrl::SetViewWidth(int w) {
-    if (w < 100) w = 100;
-    m_maxViewW = w;
-    UpdateSize();
+void PianoRollCtrl::RefreshLayout() {
+    m_layout.configure({
+        m_displayMin,
+        m_displayMax,
+        m_whiteW,
+        m_blackW,
+        m_whiteH,
+        m_blackH
+    });
+    m_analysis = analyze_key_bindings(m_map, m_minPitch, m_maxPitch);
 }
 
 void PianoRollCtrl::UpdateSize() {
-    // 控件宽 = min(内容宽, 最大可视宽); 内容窄则收缩不留右侧空隙, 内容超则滚动
-    int content = ContentWidth();
-    m_viewW = std::min(m_maxViewW, content);
-    if (m_viewW < 100) m_viewW = 100;
+    RefreshLayout();
+    int actualWidth = GetClientSize().x;
+    m_viewW = actualWidth > 1
+        ? actualWidth
+        : std::min(m_preferredViewW, ContentWidth());
+    if (m_viewW < 1) m_viewW = 1;
     ClampScroll();
-    // 高度 = 琴键高 + (仅当需要滚动时才 + 滚动条高, 否则不留深色预留条)
-    int needScroll = content > m_viewW;
+    int needScroll = ContentWidth() > m_viewW;
     int h = needScroll ? m_whiteH + m_scrollH + 2 : m_whiteH;
-    SetMinSize(wxSize(m_viewW, h));
-    SetSize(wxSize(m_viewW, h));
+    SetMinSize(wxSize(FromDIP(240), h));
     InvalidateBestSize();
     Refresh();
-    Update();
+}
+
+void PianoRollCtrl::OnSize(wxSizeEvent& event) {
+    m_viewW = std::max(1, event.GetSize().x);
+    ClampScroll();
+    Refresh();
+    event.Skip();
 }
 
 void PianoRollCtrl::ClampScroll() {
@@ -109,48 +224,8 @@ void PianoRollCtrl::RecalcDisplayRange() {
     }
 }
 
-int PianoRollCtrl::WhiteCount() const {
-    int c = 0;
-    for (int n = m_displayMin; n <= m_displayMax; ++n)
-        if (!IsBlackKey(n)) ++c;
-    return c;
-}
-
-bool PianoRollCtrl::IsBlackKey(int note) const {
-    int pc = (note % 12 + 12) % 12;
-    return pc == 1 || pc == 3 || pc == 6 || pc == 8 || pc == 10;
-}
-
-int PianoRollCtrl::NoteToWhiteIndex(int note) const {
-    int wi = 0;
-    for (int n = m_displayMin; n < note; ++n)
-        if (!IsBlackKey(n)) ++wi;
-    return wi;
-}
-
-wxRect PianoRollCtrl::KeyRect(int note) const {
-    if (!IsBlackKey(note)) {
-        return wxRect(NoteToWhiteIndex(note) * m_whiteW, 0, m_whiteW, m_whiteH);
-    }
-    // 黑键: 位于左侧白键(前一音)的右边缘
-    int leftWhite = note - 1;
-    int wi = NoteToWhiteIndex(leftWhite);
-    return wxRect(wi * m_whiteW + m_whiteW - m_blackW / 2, 0, m_blackW, m_blackH);
-}
-
 int PianoRollCtrl::HitTest(const wxPoint& pos) const {
-    if (pos.y < 0 || pos.y >= m_whiteH) return -1;
-    // 可视坐标 → 内容坐标(加回滚动偏移)
-    int cx = pos.x + m_scrollX;
-    if (cx < 0) return -1;
-    // 黑键优先(上层)
-    for (int n = m_displayMin; n <= m_displayMax; ++n) {
-        if (IsBlackKey(n) && KeyRect(n).Contains(cx, pos.y)) return n;
-    }
-    for (int n = m_displayMin; n <= m_displayMax; ++n) {
-        if (!IsBlackKey(n) && KeyRect(n).Contains(cx, pos.y)) return n;
-    }
-    return -1;
+    return m_layout.hit_test(pos.x + m_scrollX, pos.y);
 }
 
 wxString PianoRollCtrl::NoteLabel(int note) const {
@@ -265,10 +340,13 @@ int PianoRollCtrl::VkFromWx(int kc) const {
     }
 }
 
-wxString PianoRollCtrl::KeyLabel(int note) const {
-    auto it = m_map.find(note);
-    if (it == m_map.end()) return wxString();
-    return VkName(it->second.vk_code, it->second.modifier);
+wxString PianoRollCtrl::CompactKeyLabel(int note) const {
+    const auto it = m_map.find(note);
+    if (it == m_map.end())
+        return wxString();
+    const wxString modifiers = modifier_code(it->second.modifier);
+    const wxString key = vk_short_name(it->second.vk_code);
+    return modifiers.IsEmpty() ? key : modifiers + L"+" + key;
 }
 
 void PianoRollCtrl::OnPaint(wxPaintEvent&) {
@@ -282,62 +360,71 @@ void PianoRollCtrl::OnPaint(wxPaintEvent&) {
     wxFont smallFont{smallSize, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL};
     dc.SetFont(smallFont);
 
-    const wxColour kSelBorder(0x4f, 0x8c, 0xff);
-    const wxColour kWhite(0xf4, 0xf4, 0xf4);
-    const wxColour kBlack(0x1a, 0x1a, 0x1e);
-    const wxColour kBind(0xd0, 0x5a, 0x5a);
+    PaintKeys(dc, false);
+    PaintKeys(dc, true);
+    PaintScrollBar(dc);
+}
 
-    // 白键(音域外已绑定键灰显; 内容坐标平移 m_scrollX, 裁剪可视区)
-    for (int n = m_displayMin; n <= m_displayMax; ++n) {
-        if (IsBlackKey(n)) continue;
-        wxRect r = KeyRect(n);
-        r.x -= m_scrollX;
-        if (r.x + r.width < 0 || r.x > m_viewW) continue;
-        bool in = InAudioRange(n);
-        bool sel = (n == m_selectedNote);
-        dc.SetPen(wxPen(sel ? kSelBorder : wxColour(0x3a, 0x42, 0x52), sel ? 2 : 1));
-        dc.SetBrush(wxBrush(sel ? wxColour(0xcf, 0xe0, 0xff)
-                               : (in ? kWhite : wxColour(0x2e, 0x34, 0x3e))));
-        dc.DrawRectangle(r);
-        dc.SetTextForeground(in ? wxColour(0x30, 0x36, 0x42) : wxColour(0x5c, 0x64, 0x72));
-        dc.DrawText(NoteLabel(n), r.x + 2, r.y + 3);
-        wxString kl = KeyLabel(n);
-        if (!kl.IsEmpty()) {
-            dc.SetTextForeground(in ? kBind : wxColour(0x8a, 0x4a, 0x4a));
-            dc.DrawText(kl, r.x + 2, r.y + r.height - 14);
-        }
+void PianoRollCtrl::PaintKeys(wxDC& dc, bool paint_black) {
+    for (int note = m_layout.display_min(); note <= m_layout.display_max(); ++note) {
+        const auto key = m_layout.key_geometry(note);
+        if (key.black != paint_black)
+            continue;
+        if (key.x - m_scrollX + key.width < 0 || key.x - m_scrollX > m_viewW)
+            continue;
+        PaintKey(dc, note);
     }
-    // 黑键(音域外已绑定键灰显)
-    for (int n = m_displayMin; n <= m_displayMax; ++n) {
-        if (!IsBlackKey(n)) continue;
-        wxRect r = KeyRect(n);
-        r.x -= m_scrollX;
-        if (r.x + r.width < 0 || r.x > m_viewW) continue;
-        bool in = InAudioRange(n);
-        bool sel = (n == m_selectedNote);
-        dc.SetPen(wxPen(sel ? kSelBorder : wxColour(0x55, 0x5c, 0x6a), sel ? 2 : 1));
-        dc.SetBrush(wxBrush(sel ? wxColour(0x3a, 0x55, 0x8a)
-                               : (in ? kBlack : wxColour(0x14, 0x17, 0x1c))));
-        dc.DrawRectangle(r);
-        dc.SetTextForeground(in ? wxColour(0xcc, 0xd2, 0xdc) : wxColour(0x6a, 0x72, 0x80));
-        dc.DrawText(NoteLabel(n), r.x + 2, r.y + 3);
-        wxString kl = KeyLabel(n);
-        if (!kl.IsEmpty()) {
-            dc.SetTextForeground(in ? wxColour(0xff, 0x9a, 0x9a) : wxColour(0xa0, 0x5a, 0x5a));
-            dc.DrawText(kl, r.x + 2, r.y + r.height - 13);
-        }
-    }
+}
 
-    // 底部横向滚动条(内容超出可视区才显示)
-    if (ContentWidth() > m_viewW) {
-        wxRect bar = ScrollBarRect();
-        dc.SetPen(wxPen(wxColour(0x2a, 0x30, 0x3a)));
-        dc.SetBrush(wxBrush(wxColour(0x1c, 0x22, 0x2a)));
-        dc.DrawRoundedRectangle(bar, 3);
-        wxRect thumb = ScrollThumbRect();
-        dc.SetBrush(wxBrush(wxColour(0x4a, 0x54, 0x64)));
-        dc.DrawRoundedRectangle(thumb, 3);
-    }
+void PianoRollCtrl::PaintKey(wxDC& dc, int note) {
+    const auto key = m_layout.key_geometry(note);
+    const wxRect rect(key.x - m_scrollX, key.y, key.width, key.height);
+    const bool in = InAudioRange(note);
+    const bool selected = note == m_selectedNote;
+    const wxColour border = selected
+        ? wxColour(0x4f, 0x8c, 0xff)
+        : (key.black ? wxColour(0x55, 0x5c, 0x6a) : wxColour(0x3a, 0x42, 0x52));
+    const wxColour fill = selected
+        ? (key.black ? wxColour(0x3a, 0x55, 0x8a) : wxColour(0xcf, 0xe0, 0xff))
+        : (in
+            ? (key.black ? wxColour(0x1a, 0x1a, 0x1e) : wxColour(0xf4, 0xf4, 0xf4))
+            : (key.black ? wxColour(0x14, 0x17, 0x1c) : wxColour(0x2e, 0x34, 0x3e)));
+    dc.SetPen(wxPen(border, selected ? 2 : 1));
+    dc.SetBrush(wxBrush(fill));
+    dc.DrawRectangle(rect);
+    PaintKeyLabels(dc, rect, note, in);
+}
+
+void PianoRollCtrl::PaintKeyLabels(wxDC& dc, const wxRect& rect, int note, bool in_range) {
+    const auto key = m_layout.key_geometry(note);
+    const wxColour note_colour = key.black
+        ? (in_range ? wxColour(0xcc, 0xd2, 0xdc) : wxColour(0x6a, 0x72, 0x80))
+        : (in_range ? wxColour(0x30, 0x36, 0x42) : wxColour(0x5c, 0x64, 0x72));
+    const int label_width = std::max(0, rect.width - 4);
+    dc.SetTextForeground(note_colour);
+    dc.DrawText(fit_label(dc, NoteLabel(note), label_width), rect.x + 2, rect.y + 3);
+
+    const wxString key_label = CompactKeyLabel(note);
+    if (key_label.IsEmpty())
+        return;
+
+    const bool logical = m_analysis.logical_duplicates.contains(note);
+    const bool physical = m_analysis.physical_conflicts.contains(note);
+    dc.SetTextForeground(key_label_colour(in_range, key.black, logical, physical));
+    const int key_y = rect.y + rect.height - (key.black ? 13 : 14);
+    dc.DrawText(fit_label(dc, key_label, label_width), rect.x + 2, key_y);
+}
+
+void PianoRollCtrl::PaintScrollBar(wxDC& dc) {
+    if (ContentWidth() <= m_viewW)
+        return;
+
+    const wxRect bar = ScrollBarRect();
+    dc.SetPen(wxPen(wxColour(0x2a, 0x30, 0x3a)));
+    dc.SetBrush(wxBrush(wxColour(0x1c, 0x22, 0x2a)));
+    dc.DrawRoundedRectangle(bar, 3);
+    dc.SetBrush(wxBrush(wxColour(0x4a, 0x54, 0x64)));
+    dc.DrawRoundedRectangle(ScrollThumbRect(), 3);
 }
 
 void PianoRollCtrl::OnMouse(wxMouseEvent& event) {
@@ -417,8 +504,38 @@ void PianoRollCtrl::OnMouseMove(wxMouseEvent& event) {
             Refresh();
             Update();
         }
+        event.Skip();
+        return;
     }
+
+    UpdateHoverTooltip(event.GetPosition());
     event.Skip();
+}
+
+void PianoRollCtrl::UpdateHoverTooltip(const wxPoint& pos) {
+    const int note = HitTest(pos);
+    if (note == m_hoverNote)
+        return;
+    m_hoverNote = note;
+    if (note < 0) {
+        UnsetToolTip();
+        return;
+    }
+
+    wxString tip = NoteLabel(note);
+    const auto it = m_map.find(note);
+    if (it == m_map.end()) {
+        SetToolTip(tip);
+        return;
+    }
+
+    tip += wxString::FromUTF8(" · ") +
+           VkName(it->second.vk_code, it->second.modifier);
+    if (m_analysis.physical_conflicts.contains(note))
+        tip += wxString::FromUTF8(" · 物理主键冲突");
+    else if (m_analysis.logical_duplicates.contains(note))
+        tip += wxString::FromUTF8(" · 逻辑键位重复");
+    SetToolTip(tip);
 }
 
 void PianoRollCtrl::OnMouseWheel(wxMouseEvent& event) {

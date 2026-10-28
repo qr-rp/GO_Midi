@@ -107,10 +107,9 @@ void KeymapEditorDialog::BuildUI() {
     pitchRow->Add(pitchTip, 0, wxALL | wxALIGN_CENTER_VERTICAL, 6);
     root->Add(pitchRow, 0, wxEXPAND | wxLEFT | wxRIGHT, 12);
 
-    // 中部: 钢琴卷(内部自绘横向滚动, 可视宽固定 700, 扩大音域滚轮/拖动滚动条查看)
+    // 中部: 钢琴卷随窗口横向伸展; 空间不足时使用内部滚动条
     m_roll = new PianoRollCtrl(this, m_minPitch, m_maxPitch);
-    m_roll->SetViewWidth(FromDIP(700));
-    root->Add(m_roll, 0, wxALIGN_CENTER | wxALL, 8);
+    root->Add(m_roll, 1, wxEXPAND | wxALL, 8);
 
     // 底部: 当前方案 + 提示
     wxBoxSizer* foot = new wxBoxSizer(wxHORIZONTAL);
@@ -138,10 +137,10 @@ void KeymapEditorDialog::BuildUI() {
 
     SetSizer(root);
     root->SetSizeHints(this);
-    // 高度自适应内容(顶部+音域+钢琴卷+底部), 宽度固定 740
+    // 高度自适应内容; 初始宽度 740, 用户可继续拉宽以显示更多音域
     Fit();
-    // 给滚动条/边距额外余量, 避免滚动容器被压缩导致琴键截断
     SetSize(wxSize(FromDIP(740), std::max(GetSize().y, FromDIP(280))));
+    SetMinSize(wxSize(FromDIP(520), GetMinSize().y));
     CenterOnParent();
 }
 
@@ -166,7 +165,7 @@ void KeymapEditorDialog::SyncRoll() {
     else label = wxString::FromUTF8("当前方案: ") + m_currentPath.AfterLast('\\');
     if (m_fileLabel) m_fileLabel->SetLabel(label);
     SetStatus(wxString::FromUTF8("点击琴键 → 按下新键即绑定 (Esc 取消) · 右键清除绑定"));
-    Layout();   // 钢琴卷宽随显示范围变化, 重新布局
+    Layout();   // 钢琴卷随窗口宽度伸展, 内容变化时重新布局
 }
 
 void KeymapEditorDialog::Notify() {

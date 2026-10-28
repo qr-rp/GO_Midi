@@ -44,6 +44,8 @@ public:
 
     void configure(const PianoRollLayoutConfig& config);
 
+    [[nodiscard]] int display_min() const { return m_display_min; }
+    [[nodiscard]] int display_max() const { return m_display_max; }
     [[nodiscard]] int content_width() const { return m_content_width; }
 
     [[nodiscard]] bool contains(int note) const;
